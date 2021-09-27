@@ -1,14 +1,17 @@
-$bg-color: #000;
-$digits-color: #fff;
+@use "sass:math";
+@use "variables";
+
+$bg-color: variables.$black;
+$digits-color: variables.$white;
 $d-width: 14px;
 $d-hight: 6px;
-$d-hight-half: $d-hight / 2;
+$d-hight-half: math.div($d-hight, 2);
 $extra-hight: -$d-hight;
-$gap: $d-hight / 2;
+$gap: math.div($d-hight, 2);
 $first-top: $gap + $d-hight;
 $second-top: $first-top + $d-width + $d-hight + $first-top;
 $third-top: $first-top + ($d-width * 2) + $d-hight + $first-top + $gap;
-$middle-top: $first-top + $d-width + ($first-top / 2);
+$middle-top: $first-top + $d-width + math.div($first-top, 2);
 $d-left: -($gap + $d-hight);
 $d-right: $gap + $d-width;
 
@@ -26,7 +29,7 @@ $d-right: $gap + $d-width;
   padding: 12px 6px 12px 18px;
   border-radius: 20px;
   background: #e0e0e0;
-  box-shadow: inset -5px 5px 10px #bebebe, inset 5px -5px 10px #ffffff;
+  box-shadow: inset -5px 5px 10px #bebebe, inset 5px -5px 10px variables.$white;
 }
 
 .digits div {

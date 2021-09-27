@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import * as Tone from "tone";
 import Pad from "@/components/atoms/Pad";
-import Kick from "@/utils/kick";
+// import Kick from "@/utils/kick";
 import Snare from "@/utils/snare";
 import Hihat from "@/utils/hihat";
 import Clap from "@/utils/clap";
@@ -17,93 +17,49 @@ const Music: React.FC<Props> = () => {
     setAudio(new Audio());
   }, [setAudio]);
 
-  // const handleToneClick = useCallback(() => {
-  //   const synth = new Tone.Synth().toDestination();
-  //   // synth.triggerAttackRelease("C4", "8n");
-  //   const now = Tone.now();
-  //   const filter = new Tone.Filter(400, "bandpass").toDestination();
-  //   const feedbackDelay = new Tone.FeedbackDelay(0.125, 0.6).toDestination();
-  //   synth.connect(filter);
-  //   synth.connect(feedbackDelay);
-  //   // trigger the attack immediately
-  //   synth.triggerAttack("C4", now);
-  //   // wait one second before triggering the release
-  //   synth.triggerRelease(now + 1);
-  // }, []);
-
-  // 1
-  const handleS1Click = useCallback(() => {
-    const player = new Tone.Player("/samples/808/CB.WAV").toDestination();
+  // パッドにアサインする楽器を初期化
+  const pad1 = useMemo(() => {
+    if (!process.browser) return;
+    const instrument = new Tone.Player("/samples/808/CB.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
-    player.connect(distortion);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return instrument.connect(distortion);
   }, []);
 
-  // 2
-  const handleS2Click = useCallback(() => {
-    const player = new Tone.Player("/samples/voice/ah.wav").toDestination();
-    Tone.loaded().then(() => {
-      player.start();
-    });
-  }, []);
-
-  // 3
-  const handleS3Click = useCallback(() => {
-    const player = new Tone.Player("/samples/808/CB.WAV").toDestination();
+  const pad2 = useMemo(() => {
+    if (!process.browser) return;
+    const instrument = new Tone.Player("/samples/voice/ah.wav").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
-    player.connect(distortion);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return instrument.connect(distortion);
   }, []);
 
-  // 4
-  const handleS4Click = useCallback(() => {
-    const player = new Tone.Player("/samples/808/CB.WAV").toDestination();
+  const pad3 = useMemo(() => {
+    if (!process.browser) return;
+    const instrument = new Tone.Player("/samples/808/CB.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
-    player.connect(distortion);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return instrument.connect(distortion);
   }, []);
 
-  // const handleCLClick = useCallback(() => {
-  //   const player = new Tone.Player(
-  //     "/samples/Andy Warhol interview 1966.wav"
-  //   ).toDestination();
-  //   const distortion = new Tone.Distortion(0.4).toDestination();
-  //   const crusher = new Tone.BitCrusher(4).toDestination();
-  //   player.connect(distortion);
-  //   const filter = new Tone.Filter(400, "lowpass").toDestination();
-  //   player.connect(filter);
-  //   Tone.loaded().then(() => {
-  //     player.start();
-  //   });
-  // }, []);
+  const pad4 = useMemo(() => {
+    if (!process.browser) return;
+    const instrument = new Tone.Player("/samples/808/CB.WAV").toDestination();
+    const distortion = new Tone.Distortion(0.4).toDestination();
+    return instrument.connect(distortion);
+  }, []);
 
-  // 5
-  const handleHHClick = useCallback(() => {
-    let hihat = new Hihat(audio.ctx);
-    hihat.trigger(audio.ctx.currentTime);
+  const pad5 = useMemo(() => {
+    if (!process.browser) return;
+    return new Hihat(audio.ctx);
   }, [audio.ctx]);
 
-  // 6
-  const handleHH2Click = useCallback(() => {
-    const player = new Tone.Player("/samples/808/CP.WAV").toDestination();
+  const pad6 = useMemo(() => {
+    if (!process.browser) return;
+    const instrument = new Tone.Player("/samples/808/CP.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
-    const crusher = new Tone.BitCrusher(4).toDestination();
-    player.connect(distortion);
-    const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return instrument.connect(distortion);
   }, []);
 
-  // 7
-  const handleHH3Click = useCallback(() => {
+  const pad7 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player(
       "/samples/sd/rytm-00-hard.wav"
     ).toDestination();
@@ -111,107 +67,186 @@ const Music: React.FC<Props> = () => {
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 8
-  const handleHH4Click = useCallback(() => {
+  const pad8 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player("/samples/techno/001_1.wav").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 9
-  const handleSnareClick = useCallback(() => {
-    let snare = new Snare(audio.ctx);
-    snare.trigger(audio.ctx.currentTime);
+  const pad9 = useMemo(() => {
+    return new Snare(audio.ctx);
   }, [audio.ctx]);
 
-  // 10
-  const handleSnare2Click = useCallback(() => {
-    let clap = new Clap(audio.ctx);
-    clap.trigger(audio.ctx.currentTime);
+  const pad10 = useMemo(() => {
+    return new Clap(audio.ctx);
   }, [audio.ctx]);
 
-  // 11
-  const handleSnare3Click = useCallback(() => {
+  const pad11 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player("/samples/808/CP.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 12
-  const handleSnare4Click = useCallback(() => {
-    let snare = new Snare(audio.ctx);
-    snare.trigger(audio.ctx.currentTime);
+  const pad12 = useMemo(() => {
+    if (!process.browser) return;
+    return new Snare(audio.ctx);
   }, [audio.ctx]);
 
-  // 13
-  const handleKickClick = useCallback(() => {
+  const pad13 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player("/samples/808/RS.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 14
-  const handleKick2Click = useCallback(() => {
+  const pad14 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player("/samples/909/BT0A0A7.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 15
-  const handleKick3Click = useCallback(() => {
+  const pad15 = useMemo(() => {
+    if (!process.browser) return;
     const player = new Tone.Player("/samples/808bd/BD0025.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
 
-  // 16
-  const handleKick4Click = useCallback(() => {
+  const pad16 = useMemo(() => {
+    if (!process.browser) return;
+
     const player = new Tone.Player("/samples/808bd/BD0010.WAV").toDestination();
     const distortion = new Tone.Distortion(0.4).toDestination();
     const crusher = new Tone.BitCrusher(4).toDestination();
     player.connect(distortion);
     const filter = new Tone.Filter(400, "lowpass").toDestination();
-    player.connect(filter);
-    Tone.loaded().then(() => {
-      player.start();
-    });
+    return player.connect(filter);
   }, []);
+
+  // 1
+  const handleS1Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad1?.start();
+    });
+  }, [pad1]);
+
+  // 2
+  const handleS2Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad2?.start();
+    });
+  }, [pad2]);
+
+  // 3
+  const handleS3Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad3?.start();
+    });
+  }, [pad3]);
+
+  // 4
+  const handleS4Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad4?.start();
+    });
+  }, [pad4]);
+
+  // 5
+  const handleHHClick = useCallback(() => {
+    pad5?.trigger(audio.ctx.currentTime);
+  }, [pad5, audio.ctx]);
+
+  // 6
+  const handleHH2Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad6?.start();
+    });
+  }, [pad6]);
+
+  // 7
+  const handleHH3Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad7?.start();
+    });
+  }, [pad7]);
+
+  // 8
+  const handleHH4Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad8?.start();
+    });
+  }, [pad8]);
+
+  // 9
+  const handleSnareClick = useCallback(() => {
+    pad9?.trigger(audio.ctx.currentTime);
+  }, [pad9, audio.ctx]);
+
+  // 10
+  const handleSnare2Click = useCallback(() => {
+    pad10?.trigger(audio.ctx.currentTime);
+  }, [pad10, audio.ctx]);
+
+  // 11
+  const handleSnare3Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad11?.start();
+    });
+  }, [pad11]);
+
+  // 12
+  const handleSnare4Click = useCallback(() => {
+    pad12?.trigger(audio.ctx.currentTime);
+  }, [pad12, audio.ctx]);
+
+  // 13
+  const handleKickClick = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad13?.start();
+    });
+  }, [pad13]);
+
+  // 14
+  const handleKick2Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad14?.start();
+    });
+  }, [pad14]);
+
+  // 15
+  const handleKick3Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad15?.start();
+    });
+  }, [pad15]);
+
+  // 16
+  const handleKick4Click = useCallback(() => {
+    Tone.loaded().then(() => {
+      pad16?.start();
+    });
+  }, [pad16]);
 
   return (
     <div className={styles.Pads}>
@@ -234,9 +269,6 @@ const Music: React.FC<Props> = () => {
       <Pad clickPad={handleKick2Click} />
       <Pad clickPad={handleKick3Click} />
       <Pad clickPad={handleKick4Click} />
-
-      {/* <Pad clickPad={handleCLClick} /> */}
-      {/* <button onClick={handleClockClick}>clock</button> */}
     </div>
   );
 };
