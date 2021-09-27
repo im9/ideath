@@ -1,0 +1,10 @@
+.Pads {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  max-width: 780px;
+
+  > button {
+    margin: 0.5rem;
+  }
+}

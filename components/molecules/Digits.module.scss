@@ -1,0 +1,265 @@
+$bg-color: #000;
+$digits-color: #fff;
+$d-width: 14px;
+$d-hight: 6px;
+$d-hight-half: $d-hight / 2;
+$extra-hight: -$d-hight;
+$gap: $d-hight / 2;
+$first-top: $gap + $d-hight;
+$second-top: $first-top + $d-width + $d-hight + $first-top;
+$third-top: $first-top + ($d-width * 2) + $d-hight + $first-top + $gap;
+$middle-top: $first-top + $d-width + ($first-top / 2);
+$d-left: -($gap + $d-hight);
+$d-right: $gap + $d-width;
+
+@mixin extra {
+  content: " ";
+  position: absolute;
+  display: block;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.display {
+  display: inline-block;
+  padding: 12px 6px 12px 18px;
+  border-radius: 20px;
+  background: #e0e0e0;
+  box-shadow: inset -5px 5px 10px #bebebe, inset 5px -5px 10px #ffffff;
+}
+
+.digits div {
+  position: relative;
+  width: 30px;
+  height: 60px;
+  display: inline-block;
+  margin: 0 0.7em;
+}
+
+.digits .d1 {
+  position: absolute;
+  display: block;
+  width: $d-width;
+  height: $d-hight;
+  background: $digits-color;
+}
+
+.digits .d1:before {
+  @include extra;
+  left: $extra-hight;
+  border-width: 0 $d-hight $d-hight 0;
+  border-color: transparent $digits-color transparent transparent;
+}
+
+.digits .d1:after {
+  @include extra;
+  right: $extra-hight;
+  border-width: $d-hight $d-hight 0 0;
+  border-color: $digits-color transparent transparent transparent;
+}
+
+.digits .d2 {
+  left: $d-left;
+  top: $first-top;
+  position: absolute;
+  display: block;
+  width: $d-hight;
+  height: $d-width;
+  background: $digits-color;
+}
+
+.digits .d2:before {
+  @include extra;
+  top: $extra-hight;
+  border-width: $d-hight 0 0 $d-hight;
+  border-color: transparent transparent transparent $digits-color;
+}
+
+.digits .d2:after {
+  @include extra;
+  bottom: $extra-hight;
+  border-width: $d-hight $d-hight 0 0;
+  border-color: $digits-color transparent transparent transparent;
+}
+
+.digits .d3 {
+  left: $d-right;
+  top: $first-top;
+  position: absolute;
+  display: block;
+  width: $d-hight;
+  height: $d-width;
+  background: $digits-color;
+}
+
+.digits .d3:before {
+  @include extra;
+  top: $extra-hight;
+  border-width: 0 0 $d-hight $d-hight;
+  border-color: transparent transparent $digits-color transparent;
+}
+
+.digits .d3:after {
+  @include extra;
+  bottom: $extra-hight;
+  border-width: 0 $d-hight $d-hight 0;
+  border-color: transparent $digits-color transparent transparent;
+}
+
+.digits .d4 {
+  left: $d-left;
+  top: $second-top;
+  position: absolute;
+  display: block;
+  width: $d-hight;
+  height: $d-width;
+  background: $digits-color;
+}
+
+.digits .d4:before {
+  @include extra;
+  top: $extra-hight;
+  border-width: $d-hight 0 0 $d-hight;
+  border-color: transparent transparent transparent $digits-color;
+}
+
+.digits .d4:after {
+  @include extra;
+  bottom: $extra-hight;
+  border-width: $d-hight $d-hight 0 0;
+  border-color: $digits-color transparent transparent transparent;
+}
+
+.digits .d5 {
+  left: $d-right;
+  top: $second-top;
+  position: absolute;
+  display: block;
+  width: $d-hight;
+  height: $d-width;
+  background: $digits-color;
+}
+
+.digits .d5:before {
+  @include extra;
+  top: $extra-hight;
+  border-width: 0 0 $d-hight $d-hight;
+  border-color: transparent transparent $digits-color transparent;
+}
+
+.digits .d5:after {
+  @include extra;
+  bottom: $extra-hight;
+  border-width: 0 $d-hight $d-hight 0;
+  border-color: transparent $digits-color transparent transparent;
+}
+
+.digits .d6 {
+  position: absolute;
+  display: block;
+  top: $middle-top;
+  width: $d-width;
+  height: $d-hight;
+  background: $digits-color;
+}
+
+.digits .d6:before {
+  @include extra;
+  left: $extra-hight;
+  border-width: $d-hight-half $d-hight $d-hight-half 0;
+  border-color: transparent $digits-color transparent transparent;
+}
+
+.digits .d6:after {
+  @include extra;
+  right: $extra-hight;
+  border-width: $d-hight-half 0 $d-hight-half $d-hight;
+  border-color: transparent transparent transparent $digits-color;
+}
+
+.digits .d7 {
+  position: absolute;
+  display: block;
+  top: $third-top;
+  width: $d-width;
+  height: $d-hight;
+  background: $digits-color;
+}
+
+.digits .d7:before {
+  @include extra;
+  left: $extra-hight;
+  border-width: 0 0 $d-hight $d-hight;
+  border-color: transparent transparent $digits-color transparent;
+}
+
+.digits .d7:after {
+  @include extra;
+  right: $extra-hight;
+  border-width: $d-hight 0 0 $d-hight;
+  border-color: transparent transparent transparent $digits-color;
+}
+
+/* 0 */
+.digits div.zero .d6 {
+  visibility: hidden;
+}
+
+/* 1 */
+.digits div.one .d1,
+.digits div.one .d2,
+.digits div.one .d4,
+.digits div.one .d6,
+.digits div.one .d7 {
+  visibility: hidden;
+}
+
+/* 2 */
+.digits div.two .d2,
+.digits div.two .d5 {
+  visibility: hidden;
+}
+
+/* 3 */
+.digits div.three .d2,
+.digits div.three .d4 {
+  visibility: hidden;
+}
+
+/* 4 */
+.digits div.four .d1,
+.digits div.four .d4,
+.digits div.four .d7 {
+  visibility: hidden;
+}
+
+/* 5 */
+.digits div.five .d3,
+.digits div.five .d4 {
+  visibility: hidden;
+}
+
+/* 6 */
+.digits div.six .d1,
+.digits div.six .d3 {
+  visibility: hidden;
+}
+
+/* 7 */
+.digits div.seven .d2,
+.digits div.seven .d4,
+.digits div.seven .d6,
+.digits div.seven .d7 {
+  visibility: hidden;
+}
+
+/* 8 */
+.digits div.eight {
+}
+
+/* 9 */
+.digits div.nine .d4,
+.digits div.nine .d7 {
+  visibility: hidden;
+}

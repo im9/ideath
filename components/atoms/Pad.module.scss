@@ -1,0 +1,32 @@
+$azure: azure;
+$aqua: aqua;
+$dodgerblue: dodgerblue;
+$blue: blue;
+
+.Pad {
+  position: relative;
+  display: block;
+  text-shadow: 0 0 10px $azure, 0 0 20px $aqua, 0 0 40px $dodgerblue,
+    0 0 80px $blue;
+  box-shadow: 0 0 10px $azure, 0 0 20px $aqua, 0 0 40px $dodgerblue,
+    0 0 80px $blue;
+  will-change: filter, color;
+  background-color: transparent;
+  border: none;
+  border-radius: 14px;
+  width: 10rem;
+  height: 10rem;
+  font-size: 2rem;
+  cursor: pointer;
+  background: #e0e0e0;
+  box-shadow: -12px 12px 24px #d3d3d3, 12px -12px 24px #ededed;
+
+  &:hover {
+    border: solid 0.2rem azure;
+  }
+
+  @media screen and (max-width: 480px) {
+    width: 4rem;
+    height: 4rem;
+  }
+}

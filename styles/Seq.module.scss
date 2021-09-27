@@ -1,0 +1,59 @@
+.container {
+  min-height: 100vh;
+  padding: 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.main {
+  padding: 5rem 0;
+  margin: auto;
+  // flex: 1;
+  // display: flex;
+  // flex-direction: column;
+  // justify-content: center;
+  // align-items: center;
+}
+
+.Settings {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+
+  &Bpm {
+    display: grid;
+    margin: 0 1rem;
+  }
+}
+
+.Controls {
+  display: flex;
+  margin: 2rem 0;
+}
+
+.Pads {
+  display: flex;
+
+  &Wrapper {
+    margin-top: 1rem;
+  }
+}
+
+.Pad {
+  padding: 2rem;
+  margin: 0.5rem;
+  background: #e0e0e0;
+  box-shadow: -5px 5px 10px #bebebe, 5px -5px 10px #ffffff;
+  cursor: pointer;
+
+  &--pushed {
+    box-shadow: inset -5px 5px 10px #bebebe, inset 5px -5px 10px #ffffff;
+  }
+
+  &--current {
+    background: #fff;
+  }
+}

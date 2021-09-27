@@ -1,0 +1,22 @@
+.CircleButton {
+  padding: 6px;
+  border: none;
+  border-radius: 100%;
+  width: 40px;
+  height: 40px;
+  margin: 5px;
+  border-radius: 50%;
+  background: linear-gradient(225deg, #cacaca, #f0f0f0);
+  // box-shadow: -12px 12px 24px #d3d3d3, 12px -12px 24px #ededed;
+  box-shadow: -5px 5px 10px #bebebe, 5px -5px 10px #ededed;
+  color: #636661;
+  cursor: pointer;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:hover {
+    box-shadow: -5px 5px 10px #bebebe, 5px -5px 10px #eee;
+  }
+}
