@@ -7,7 +7,7 @@ import PlayButton from "@/components/atoms/PlayButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import SquareButton from "@/components/atoms/SquareButton";
 import Digits from "@/components/molecules/Digits";
-import { getDefaultMatrix, getTempo } from "@/utils";
+import { getDefaultMatrix, getTempo, getTonePlayer } from "@/utils";
 import styles from "@/styles/Seq.module.scss";
 
 const TRACK_LENGTH = 5;
@@ -30,37 +30,31 @@ const Seq: NextPage = () => {
   // kick を初期化
   const kick = useMemo(() => {
     if (!process.browser) return;
-    const kick = new Tone.Player("/samples/808bd/BD0000.WAV").toDestination();
-    const distortion = new Tone.Distortion(0.4).toDestination();
-    return kick.connect(distortion);
+    return getTonePlayer("/samples/808bd/BD0000.WAV");
   }, []);
 
   // hihat を初期化
   const hihat = useMemo(() => {
     if (!process.browser) return;
-    const hihat = new Tone.Player("/samples/808/CH.WAV").toDestination();
-    const hihatDistortion = new Tone.Distortion(0.4).toDestination();
-    return hihat.connect(hihatDistortion);
+    return getTonePlayer("/samples/808/CH.WAV");
   }, []);
 
   // snare を初期化
   const snare = useMemo(() => {
     if (!process.browser) return;
-    const snare = new Tone.Player("/samples/808sd/SD5025.WAV").toDestination();
-    const snareDistortion = new Tone.Distortion(0.4).toDestination();
-    return snare.connect(snareDistortion);
+    return getTonePlayer("/samples/808sd/SD5025.WAV");
   }, []);
 
   // clap を初期化
   const clap = useMemo(() => {
     if (!process.browser) return;
-    return new Tone.Player("/samples/808/CP.WAV").toDestination();
+    return getTonePlayer("/samples/808/CP.WAV");
   }, []);
 
   // cowbell を初期化
   const cowbell = useMemo(() => {
     if (!process.browser) return;
-    return new Tone.Player("/samples/808/CB.WAV").toDestination();
+    return getTonePlayer("/samples/808/CB.WAV");
   }, []);
 
   /**

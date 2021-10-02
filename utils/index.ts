@@ -1,3 +1,5 @@
+import * as Tone from "tone";
+
 /**
  * 行列を初期化する
  * @param col 行
@@ -21,4 +23,26 @@ export const getDefaultMatrix = (
 export const getTempo = (bpm: number = 120): number => {
   // 一分間 / bpm * ms
   return (60 / bpm) * 250;
+};
+
+/**
+ * サンプル音のオブジェクトを生成する
+ * @param path
+ * @param d
+ * @param r
+ * @returns Tone.Player
+ */
+export const getTonePlayer = (
+  path: string = "",
+  d: number = 0.1,
+  r: number = 0.1
+) => {
+  if (!path) return;
+
+  const player = new Tone.Player(path).toDestination();
+  const distortion = new Tone.Distortion(d).toDestination();
+  const reverb = new Tone.Reverb(r).toDestination();
+  player.connect(distortion);
+  player.connect(reverb);
+  return player;
 };

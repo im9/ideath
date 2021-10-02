@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
-import styles from "./CircleButton.module.scss";
+// import styles from "./CircleButton.module.scss";
+import { circleButtonCls } from "./CircleButton.css";
 
 type Props = {
   label: String;
@@ -12,7 +13,7 @@ const CircleButton: React.FC<Props> = ({ label, clickButton }) => {
   }, [clickButton]);
 
   return (
-    <button className={styles.CircleButton} onClick={handleButtonClick}>
+    <button className={circleButtonCls} onClick={handleButtonClick}>
       {label}
     </button>
   );

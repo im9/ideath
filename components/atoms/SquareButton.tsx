@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import styles from "./SquareButton.module.scss";
+import { SquareButtonCls } from "./SquareButton.css";
 
 type Props = {
   label: String;
@@ -12,7 +12,7 @@ const SquareButton: React.FC<Props> = ({ label, clickButton }) => {
   }, [clickButton]);
 
   return (
-    <button className={styles.SquareButton} onClick={handleButtonClick}>
+    <button className={SquareButtonCls} onClick={handleButtonClick}>
       {label}
     </button>
   );
