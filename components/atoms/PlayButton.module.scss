@@ -16,11 +16,12 @@
   letter-spacing: 4px;
   overflow: hidden;
   cursor: pointer;
+  border-radius: 4px;
 
   &:hover {
     // background: #03e9f4;
     color: #ccc;
-    box-shadow: -5px 5px 10px #bebebe, 5px -5px 10px #eee;
+    box-shadow: -5px 5px 12px #bebebe, 5px -5px 12px #eee;
     // box-shadow: 0 0 1px #03e9f4, 0 0 6px #03e9f4, 0 0 12px #03e9f4,
     //   0 0 20px #03e9f4;
     // -webkit-box-reflect: below 1px linear-gradient(transparent, #0005);

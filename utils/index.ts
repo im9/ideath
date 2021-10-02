@@ -9,7 +9,7 @@ import * as Tone from "tone";
 export const getDefaultMatrix = (
   col: number,
   row: number,
-  defaultValue = 0
+  defaultValue: any = 0
 ): number[][] => {
   if (!col || !row) return [];
   return [...Array(col)].map(() => Array(row).fill(defaultValue));
@@ -28,21 +28,21 @@ export const getTempo = (bpm: number = 120): number => {
 /**
  * サンプル音のオブジェクトを生成する
  * @param path
- * @param d
- * @param r
+ * @param d ディストーションのパラメータ
+ * @param r リバーブのパラメータ
  * @returns Tone.Player
  */
 export const getTonePlayer = (
   path: string = "",
-  d: number = 0.1,
-  r: number = 0.1
+  d: number | null = 0,
+  r: number | null = 0
 ) => {
   if (!path) return;
 
   const player = new Tone.Player(path).toDestination();
-  const distortion = new Tone.Distortion(d).toDestination();
-  const reverb = new Tone.Reverb(r).toDestination();
-  player.connect(distortion);
-  player.connect(reverb);
+  const distortion = d ? new Tone.Distortion(d).toDestination() : null;
+  const reverb = r ? new Tone.Reverb(r).toDestination() : null;
+  if (distortion) player.connect(distortion);
+  if (reverb) player.connect(reverb);
   return player;
 };

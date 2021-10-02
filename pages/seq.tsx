@@ -10,10 +10,21 @@ import Digits from "@/components/molecules/Digits";
 import { getDefaultMatrix, getTempo, getTonePlayer } from "@/utils";
 import styles from "@/styles/Seq.module.scss";
 
-const TRACK_LENGTH = 5;
+const TRACK_LENGTH = 6;
 const STEP_LENGTH = 16;
 const DEFAULT_BPM = 120;
+const DEFAULT_SAMPLES = [
+  { path: "/samples/808bd/BD0000.WAV", d: null, r: null }, // bass drum
+  { path: "/samples/808sd/SD5025.WAV", d: null, r: null }, // snare
+  { path: "/samples/808/CH.WAV", d: null, r: null }, // close hihat
+  { path: "/samples/808oh/OH00.WAV", d: null, r: null }, // open hihat
+  { path: "/samples/808/CP.WAV", d: null, r: null }, // clap
+  { path: "/samples/808/CB.WAV", d: null, r: null }, // cowbell
+];
 
+/**
+ * リズムマシン
+ */
 const Seq: NextPage = () => {
   const [play, setPlay] = useState(false);
   const [matrix, setMatrix] = useState(
@@ -27,34 +38,9 @@ const Seq: NextPage = () => {
   const matrixRef = useRef(matrix);
   const tempoRef = useRef(getTempo(bpm));
 
-  // kick を初期化
-  const kick = useMemo(() => {
-    if (!process.browser) return;
-    return getTonePlayer("/samples/808bd/BD0000.WAV");
-  }, []);
-
-  // hihat を初期化
-  const hihat = useMemo(() => {
-    if (!process.browser) return;
-    return getTonePlayer("/samples/808/CH.WAV");
-  }, []);
-
-  // snare を初期化
-  const snare = useMemo(() => {
-    if (!process.browser) return;
-    return getTonePlayer("/samples/808sd/SD5025.WAV");
-  }, []);
-
-  // clap を初期化
-  const clap = useMemo(() => {
-    if (!process.browser) return;
-    return getTonePlayer("/samples/808/CP.WAV");
-  }, []);
-
-  // cowbell を初期化
-  const cowbell = useMemo(() => {
-    if (!process.browser) return;
-    return getTonePlayer("/samples/808/CB.WAV");
+  const samples: any = useMemo(() => {
+    if (!process.browser) return { start: () => {} };
+    return DEFAULT_SAMPLES.map(({ path, d, r }) => getTonePlayer(path, d, r));
   }, []);
 
   /**
@@ -151,43 +137,37 @@ const Seq: NextPage = () => {
     }, tempoRef.current);
   }, []);
 
+  /**
+   * BPM をもとにテンポを設定する
+   */
   useEffect(() => {
     tempoRef.current = getTempo(bpm);
 
     Tone.Transport.start();
+
+    // FIXME: Tone のシーケンサーを利用する場合は設定する
     // Tone.Transport.bpm.rampTo(bpm, 5);
   }, [bpm]);
 
+  /**
+   * 参照用の行列の状態を設定する
+   */
   useEffect(() => {
     matrixRef.current = matrix;
   }, [matrix]);
 
+  /**
+   * 各トラックで押下されているステップの音を再生する
+   */
   useEffect(() => {
     stepRef.current = step;
 
-    /**
-     * 各トラックで押下されているステップの音を再生する
-     */
-    if (matrixRef.current[0][stepRef.current]) {
-      Tone.loaded().then(() => kick?.start());
-    }
-
-    if (matrixRef.current[1][stepRef.current]) {
-      Tone.loaded().then(() => hihat?.start());
-    }
-
-    if (matrixRef.current[2][stepRef.current]) {
-      Tone.loaded().then(() => snare?.start());
-    }
-
-    if (matrixRef.current[3][stepRef.current]) {
-      Tone.loaded().then(() => clap?.start());
-    }
-
-    if (matrixRef.current[4][stepRef.current]) {
-      Tone.loaded().then(() => cowbell?.start());
-    }
-  }, [play, step, kick, hihat, snare, clap, cowbell]);
+    matrixRef.current.map((col: number[], index: number) => {
+      if (col[stepRef.current] && samples[index] && Tone.loaded()) {
+        samples[index].start();
+      }
+    });
+  }, [play, step, samples]);
 
   /**
    * 各パッドを描画する

@@ -4,6 +4,9 @@ import Head from "next/head";
 import Pads from "@/components/Pads";
 import styles from "@/styles/Home.module.scss";
 
+/**
+ * パッド
+ */
 const Home: NextPage = () => {
   return (
     <div className={styles.container}>
