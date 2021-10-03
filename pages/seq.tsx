@@ -6,6 +6,7 @@ import * as Tone from "tone";
 import PlayButton from "@/components/atoms/PlayButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import SquareButton from "@/components/atoms/SquareButton";
+import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
 import { getDefaultMatrix, getTempo, getTonePlayer } from "@/utils";
 import styles from "@/styles/Seq.module.scss";
@@ -21,12 +22,31 @@ const DEFAULT_SAMPLES = [
   { path: "/samples/808/CP.WAV", d: null, r: null }, // clap
   { path: "/samples/808/CB.WAV", d: null, r: null }, // cowbell
 ];
+const TRACK_LABELS = [
+  "KICK",
+  "SNARE",
+  "CLOSE HIHAT",
+  "OPEN HIHAT",
+  "CLAP",
+  "COWBELL",
+  "MASTER",
+];
+// TODO: 実装
+const MODE = {
+  DEFAULT: 1,
+  MIDI: 2,
+};
 
 /**
  * リズムマシン
  */
 const Seq: NextPage = () => {
+  // セッティング系
   const [play, setPlay] = useState(false);
+  const [mode, setMode] = useState(MODE.DEFAULT);
+  const [selectedTrack, setSelectedTrack] = useState(TRACK_LABELS.length - 1);
+
+  // リズムマシン系
   const [matrix, setMatrix] = useState(
     getDefaultMatrix(TRACK_LENGTH, STEP_LENGTH)
   );
@@ -38,6 +58,7 @@ const Seq: NextPage = () => {
   const matrixRef = useRef(matrix);
   const tempoRef = useRef(getTempo(bpm));
 
+  // 各トラックのサンプルを初期化
   const samples: any = useMemo(() => {
     if (!process.browser) return { start: () => {} };
     return DEFAULT_SAMPLES.map(({ path, d, r }) => getTonePlayer(path, d, r));
@@ -73,6 +94,20 @@ const Seq: NextPage = () => {
     },
     [matrix]
   );
+
+  /**
+   * TODO: ファンクションボタンのクリックをハンドルする
+   */
+  const handleFuncBtnClick = useCallback(() => {
+    setMode(() => (mode === MODE.DEFAULT ? MODE.MIDI : MODE.DEFAULT));
+  }, [mode]);
+
+  /**
+   * トラック選択ボタンのクリックをハンドルする
+   */
+  const handleTrackBtnClick = useCallback((value) => {
+    setSelectedTrack(value);
+  }, []);
 
   /**
    * リセットボタンのクリックをハンドルする
@@ -170,24 +205,60 @@ const Seq: NextPage = () => {
   }, [play, step, samples]);
 
   /**
+   * ディスプレイを描画する
+   */
+  const display = useMemo(() => {
+    const trackNum = selectedTrack ? selectedTrack + 1 : 1;
+    const current = TRACK_LABELS[trackNum - 1];
+    const name = trackNum ? DEFAULT_SAMPLES[trackNum - 1]?.path : "";
+    return (
+      <dl>
+        <dt>{trackNum}</dt>
+        <dd>
+          <div>{current}</div>
+          <div>{name}</div>
+        </dd>
+      </dl>
+    );
+  }, [selectedTrack]);
+
+  /**
+   * 各トラックの選択ボタンを描画する
+   */
+  const trackBtns = matrix.concat(Array([])).map((_, row) => {
+    const label = row !== 6 ? String(row + 1) : "M";
+    return (
+      <CircleButton
+        key={row}
+        label={label}
+        active={selectedTrack === row}
+        clickButton={() => {
+          handleTrackBtnClick(row);
+        }}
+      />
+    );
+  });
+
+  /**
    * 各パッドを描画する
    */
   const pads = matrix.map((track, row) => {
     const pad = track.map((_, col) => {
-      let isPushed = Number(matrix[row][col]);
-      let isCurrent = col === step;
+      const isPushed = !!matrix[row][col];
+      const isCurrent = col === step && play;
+      const isActive = selectedTrack === row;
       return (
-        <div
+        <StepPad
           key={`${row}${col}${isPushed}`}
-          className={`
-            ${styles.Pad}
-            ${isPushed ? styles["Pad--pushed"] : ""}
-            ${isCurrent ? styles["Pad--current"] : ""}
-          `}
-          onClick={() => {
+          pushed={isPushed}
+          current={isCurrent}
+          active={isActive}
+          row={row}
+          col={col}
+          clickButton={() => {
             handlePadClick(row, col);
           }}
-        ></div>
+        ></StepPad>
       );
     });
 
@@ -206,7 +277,11 @@ const Seq: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className={styles.main}>
+        <h1>Seq</h1>
         <div className={styles.Settings}>
+          <div className={styles.SettingsTrack}>
+            <div className={styles.SettingsTrackDisplay}>{display}</div>
+          </div>
           <div className={styles.SettingsBpm}>
             <CircleButton
               label="＋"
@@ -220,8 +295,13 @@ const Seq: NextPage = () => {
             <Digits bpm={bpm} />
           </div>
         </div>
+        <div className={styles.SettingsTrackButtonArea}>{trackBtns}</div>
         <div className={styles.Controls}>
           <PlayButton pushed={play} clickButton={handlePlayBtnClick} />
+          <div className={styles.Func}>
+            {/* TODO: モード切り替えの実装 */}
+            {/* <SquareButton label="FUNC" clickButton={handleFuncBtnClick} /> */}
+          </div>
           <div>
             <SquareButton label="RESET" clickButton={handleResetBtnClick} />
           </div>

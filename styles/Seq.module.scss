@@ -2,12 +2,10 @@
 
 .container {
   min-height: 100vh;
-  padding: 0 0.5rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 100vh;
 
   @include variables.mq(sm) {
     margin: 0 1rem;
@@ -15,29 +13,85 @@
 }
 
 .main {
-  padding: 5rem 0;
   margin: auto;
-  // flex: 1;
-  // display: flex;
-  // flex-direction: column;
-  // justify-content: center;
-  // align-items: center;
+  padding: 1rem 2rem;
+  border-radius: 20px;
+  background: linear-gradient(225deg, #f0f0f0, #cacaca);
+  box-shadow: -20px 20px 40px #d3d3d3, 20px -20px 40px #ededed;
+
+  > h1 {
+    color: #636661;
+    font-weight: 300;
+  }
 }
 
 .Settings {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
+
+  &Track {
+    margin-right: 20px;
+    flex: 1;
+
+    &Display {
+      color: #636661;
+      border-radius: 20px;
+      background: #e0e0e0;
+      box-shadow: inset -5px 5px 10px #bebebe,
+        inset 5px -5px 10px variables.$white;
+      height: 110px;
+
+      > dl {
+        display: inline-flex;
+
+        > dt {
+          margin-left: 1rem;
+          width: 20px;
+        }
+
+        > dd {
+          margin: 0;
+
+          > div:first-of-type {
+            display: inline;
+            background: #fff;
+            font-weight: bold;
+            padding: 0 8px;
+            border-radius: 8px;
+          }
+
+          > div:not(:first-of-type) {
+            font-size: 0.8rem;
+          }
+        }
+      }
+    }
+
+    &ButtonArea {
+      margin-top: 0.5rem;
+    }
+  }
 
   &Bpm {
     display: grid;
-    margin: 0 1rem;
+    margin: 0 0.8rem 0 2rem;
   }
 }
 
 .Controls {
   display: flex;
-  margin: 2rem 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1rem;
+
+  > div {
+    margin: 1rem;
+  }
+
+  .Func {
+    flex: auto;
+  }
 }
 
 .Pads {
@@ -45,23 +99,6 @@
 
   &Wrapper {
     margin-top: 1rem;
-  }
-}
-
-.Pad {
-  padding: 2rem;
-  margin: 0.5rem;
-  background: #e0e0e0;
-  box-shadow: -5px 5px 16px #bebebe, 5px -5px 16px variables.$white;
-  cursor: pointer;
-  border-radius: 8px;
-
-  &--pushed {
-    box-shadow: inset -5px 5px 16px #bebebe,
-      inset 5px -5px 16px variables.$white;
-  }
-
-  &--current {
-    background: variables.$white;
+    display: inline-block;
   }
 }

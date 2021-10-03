@@ -30,6 +30,7 @@ $d-right: $gap + $d-width;
   border-radius: 20px;
   background: #e0e0e0;
   box-shadow: inset -5px 5px 10px #bebebe, inset 5px -5px 10px variables.$white;
+  margin: 0.5rem 0;
 }
 
 .digits div {

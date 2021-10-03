@@ -1,5 +1,12 @@
 import React, { useCallback } from "react";
-import styles from "./PlayButton.module.scss";
+import {
+  PlayButtonCls,
+  PlayButtonPlayCls,
+  PlayButtonPlayTopBorderCls,
+  PlayButtonPlayLeftBorderCls,
+  PlayButtonPlayRightBorderCls,
+  PlayButtonPlayBottomBorderCls,
+} from "./PlayButton.css";
 
 type Props = {
   pushed?: boolean;
@@ -13,15 +20,13 @@ const PlayButton: React.FC<Props> = ({ pushed = false, clickButton }) => {
 
   return (
     <div
-      className={`${styles.PlayButton} ${
-        pushed ? styles["PlayButton--play"] : ""
-      }`}
+      className={`${PlayButtonCls} ${pushed ? PlayButtonPlayCls : ""}`}
       onClick={handleButtonClick}
     >
-      <span></span>
-      <span></span>
-      <span></span>
-      <span></span>
+      <span className={pushed ? PlayButtonPlayTopBorderCls : ""}></span>
+      <span className={pushed ? PlayButtonPlayRightBorderCls : ""}></span>
+      <span className={pushed ? PlayButtonPlayBottomBorderCls : ""}></span>
+      <span className={pushed ? PlayButtonPlayLeftBorderCls : ""}></span>
       <div>{!pushed ? "PLAY" : "STOP"}</div>
     </div>
   );

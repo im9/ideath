@@ -1,19 +1,27 @@
 import React, { useCallback } from "react";
-// import styles from "./CircleButton.module.scss";
-import { circleButtonCls } from "./CircleButton.css";
+import { circleButtonCls, circleButtonActiveCls } from "./CircleButton.css";
 
 type Props = {
   label: String;
+  active?: boolean;
   clickButton: Function;
 };
 
-const CircleButton: React.FC<Props> = ({ label, clickButton }) => {
+const CircleButton: React.FC<Props> = ({
+  label,
+  active = false,
+  clickButton,
+}) => {
   const handleButtonClick = useCallback(() => {
     clickButton();
   }, [clickButton]);
+  const activeCls = active ? circleButtonActiveCls : "";
 
   return (
-    <button className={circleButtonCls} onClick={handleButtonClick}>
+    <button
+      className={`${circleButtonCls} ${activeCls}`}
+      onClick={handleButtonClick}
+    >
       {label}
     </button>
   );

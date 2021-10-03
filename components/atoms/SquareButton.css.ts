@@ -5,7 +5,7 @@ export const SquareButtonCls = style({
   boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #fff",
   color: "#636661",
   border: "none",
-  borderRadius: "16px",
+  borderRadius: "4px",
   width: "118px",
   height: "68px",
   margin: "0.5rem auto",

@@ -19,3 +19,7 @@ export const circleButtonCls = style({
     boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #eee",
   },
 });
+
+export const circleButtonActiveCls = style({
+  background: "#fff",
+});

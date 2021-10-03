@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import styles from "./Pad.module.scss";
+import { padCls } from "./Pad.css";
 
 type Props = {
   label?: String;
@@ -12,7 +12,7 @@ const Pad: React.FC<Props> = ({ label, clickPad }) => {
   }, [clickPad]);
 
   return (
-    <button className={styles.Pad} onClick={handlePadClick}>
+    <button className={padCls} onClick={handlePadClick}>
       <span>{label}</span>
     </button>
   );
