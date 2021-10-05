@@ -8,6 +8,9 @@ const nextConfig = {
   sassOptions: {
     includePaths: [path.join(__dirname, "styles")],
   },
+  experimental: {
+    optimizeFonts: true,
+  },
 };
 
 module.exports = withVanillaExtract(nextConfig);

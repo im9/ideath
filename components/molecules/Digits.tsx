@@ -3,14 +3,15 @@ import styles from "./Digits.module.scss";
 
 type Props = {
   bpm?: String | Number;
-  on?: boolean;
+  min?: Number;
+  max?: Number;
 };
 
-const Digits: React.FC<Props> = ({ bpm = 0 }) => {
-  if (bpm > 300 || bpm < 20) return <></>;
+const Digits: React.FC<Props> = ({ bpm = 0, min = 20, max = 300 }) => {
+  if (bpm > max || bpm < min) return <></>;
 
   const digits = String(bpm)
-    .padStart(3, "0")
+    .padStart(String(max).length, "0")
     .split("")
     .map((value, index) => {
       let style;

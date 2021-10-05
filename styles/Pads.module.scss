@@ -1,0 +1,25 @@
+.container {
+  min-height: 100vh;
+  padding: 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  border-radius: 20px;
+  background: linear-gradient(225deg, #f0f0f0, #cacaca);
+  box-shadow: -20px 20px 40px #d3d3d3, 20px -20px 40px #ededed;
+}
+
+.main {
+  margin: auto;
+  padding: 1rem 2rem;
+  border-radius: 20px;
+  background: linear-gradient(225deg, #f0f0f0, #cacaca);
+  box-shadow: -20px 20px 40px #d3d3d3, 20px -20px 40px #ededed;
+
+  > h1 {
+    color: #636661;
+    font-weight: 300;
+  }
+}

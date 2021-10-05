@@ -1,8 +1,8 @@
 import type { NextPage } from "next";
 import Head from "next/head";
 // import Image from "next/image";
-import Pads from "@/components/Pads";
-import styles from "@/styles/Home.module.scss";
+import Pads from "@/components/organismus/Pads";
+import styles from "@/styles/Pads.module.scss";
 
 /**
  * パッド
@@ -18,6 +18,7 @@ const Home: NextPage = () => {
       </Head>
 
       <main className={styles.main}>
+        <h1>Pads</h1>
         <div>
           <Pads />
         </div>

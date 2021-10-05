@@ -6,36 +6,19 @@ import * as Tone from "tone";
 import PlayButton from "@/components/atoms/PlayButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import SquareButton from "@/components/atoms/SquareButton";
+import Knob from "@/components/atoms/Knob";
 import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
 import { getDefaultMatrix, getTempo, getTonePlayer } from "@/utils";
+import {
+  MODE,
+  TRACK_LENGTH,
+  STEP_LENGTH,
+  DEFAULT_BPM,
+  DEFAULT_SEQ_SAMPLES,
+  TRACK_LABELS,
+} from "@/constants/seq";
 import styles from "@/styles/Seq.module.scss";
-
-const TRACK_LENGTH = 6;
-const STEP_LENGTH = 16;
-const DEFAULT_BPM = 120;
-const DEFAULT_SAMPLES = [
-  { path: "/samples/808bd/BD0000.WAV", d: null, r: null }, // bass drum
-  { path: "/samples/808sd/SD5025.WAV", d: null, r: null }, // snare
-  { path: "/samples/808/CH.WAV", d: null, r: null }, // close hihat
-  { path: "/samples/808oh/OH00.WAV", d: null, r: null }, // open hihat
-  { path: "/samples/808/CP.WAV", d: null, r: null }, // clap
-  { path: "/samples/808/CB.WAV", d: null, r: null }, // cowbell
-];
-const TRACK_LABELS = [
-  "KICK",
-  "SNARE",
-  "CLOSE HIHAT",
-  "OPEN HIHAT",
-  "CLAP",
-  "COWBELL",
-  "MASTER",
-];
-// TODO: 実装
-const MODE = {
-  DEFAULT: 1,
-  MIDI: 2,
-};
 
 /**
  * リズムマシン
@@ -61,7 +44,9 @@ const Seq: NextPage = () => {
   // 各トラックのサンプルを初期化
   const samples: any = useMemo(() => {
     if (!process.browser) return { start: () => {} };
-    return DEFAULT_SAMPLES.map(({ path, d, r }) => getTonePlayer(path, d, r));
+    return DEFAULT_SEQ_SAMPLES.map(({ path, d, r }) =>
+      getTonePlayer(path, d, r)
+    );
   }, []);
 
   /**
@@ -108,6 +93,22 @@ const Seq: NextPage = () => {
   const handleTrackBtnClick = useCallback((value) => {
     setSelectedTrack(value);
   }, []);
+
+  /**
+   * 選択中のトラックのリバーブを設定する
+   */
+  const handleTrackReverbKnobCtl = useCallback(() => {
+    if (samples[selectedTrack] && Tone.loaded()) {
+      console.log(DEFAULT_SEQ_SAMPLES[selectedTrack], samples[selectedTrack]);
+      const { path, r, d } = DEFAULT_SEQ_SAMPLES[selectedTrack];
+      samples[selectedTrack] = getTonePlayer(path, d, 1);
+    }
+    // matrixRef.current.map((col: number[], index: number) => {
+    //   if (col[stepRef.current] && samples[index] && Tone.loaded()) {
+    //     samples[index].start();
+    //   }
+    // });
+  }, [samples, selectedTrack]);
 
   /**
    * リセットボタンのクリックをハンドルする
@@ -210,7 +211,7 @@ const Seq: NextPage = () => {
   const display = useMemo(() => {
     const trackNum = selectedTrack ? selectedTrack + 1 : 1;
     const current = TRACK_LABELS[trackNum - 1];
-    const name = trackNum ? DEFAULT_SAMPLES[trackNum - 1]?.path : "";
+    const name = trackNum ? DEFAULT_SEQ_SAMPLES[trackNum - 1]?.path : "";
     return (
       <dl>
         <dt>{trackNum}</dt>
@@ -301,6 +302,8 @@ const Seq: NextPage = () => {
           <div className={styles.Func}>
             {/* TODO: モード切り替えの実装 */}
             {/* <SquareButton label="FUNC" clickButton={handleFuncBtnClick} /> */}
+            <button onClick={handleTrackReverbKnobCtl}>aa</button>
+            <Knob onClick={handleTrackReverbKnobCtl} />
           </div>
           <div>
             <SquareButton label="RESET" clickButton={handleResetBtnClick} />
