@@ -8,14 +8,11 @@ type Props = {
 
 const Knob: React.FC<Props> = ({ value, onClick }) => {
   return (
-    <input
-      type="range"
+    <button
+      type="button"
       className={knobCls}
-      onClick={() => {
-        onClick();
-      }}
-      data-diameter={value}
-    />
+      onClick={() => onClick()}
+    ></button>
   );
 };
 

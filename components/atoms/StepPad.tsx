@@ -12,7 +12,7 @@ type Props = {
   active?: boolean;
   row: number;
   col: number;
-  clickButton: Function;
+  onClick: Function;
 };
 
 const StepPad: React.FC<Props> = ({
@@ -21,7 +21,7 @@ const StepPad: React.FC<Props> = ({
   active,
   row,
   col,
-  clickButton,
+  onClick,
 }) => {
   return (
     <div
@@ -32,7 +32,7 @@ const StepPad: React.FC<Props> = ({
       ${active ? StepPadActiveCls : ""}
     `}
       onClick={() => {
-        clickButton(row, col);
+        onClick(row, col);
       }}
     ></div>
   );

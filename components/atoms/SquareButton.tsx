@@ -3,13 +3,13 @@ import { SquareButtonCls } from "./SquareButton.css";
 
 type Props = {
   label: String;
-  clickButton: Function;
+  onClick: Function;
 };
 
-const SquareButton: React.FC<Props> = ({ label, clickButton }) => {
+const SquareButton: React.FC<Props> = ({ label, onClick }) => {
   const handleButtonClick = useCallback(() => {
-    clickButton();
-  }, [clickButton]);
+    onClick();
+  }, [onClick]);
 
   return (
     <button className={SquareButtonCls} onClick={handleButtonClick}>

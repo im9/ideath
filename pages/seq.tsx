@@ -18,7 +18,22 @@ import {
   DEFAULT_SEQ_SAMPLES,
   TRACK_LABELS,
 } from "@/constants/seq";
-import styles from "@/styles/Seq.module.scss";
+import {
+  containerCls,
+  mainCls,
+  titleCls,
+  controlsCls,
+  controlsFuncCls,
+  settingsCls,
+  settingsTrackCls,
+  settingsBpmCls,
+  settingsTrackDisplayCls,
+  settingsTrackDisplayDlCls,
+  settingsTrackDisplayDlDdCls,
+  settingsTrackButtonAreaCls,
+  padsCls,
+  padsWrapperCls,
+} from "./seq.css";
 
 /**
  * リズムマシン
@@ -199,8 +214,8 @@ const Seq: NextPage = () => {
     stepRef.current = step;
 
     matrixRef.current.map((col: number[], index: number) => {
-      if (col[stepRef.current] && samples[index] && Tone.loaded()) {
-        samples[index].start();
+      if (col[stepRef.current] && samples[index]) {
+        Tone.loaded().then(() => samples[index]?.start());
       }
     });
   }, [play, step, samples]);
@@ -213,9 +228,9 @@ const Seq: NextPage = () => {
     const current = TRACK_LABELS[trackNum - 1];
     const name = trackNum ? DEFAULT_SEQ_SAMPLES[trackNum - 1]?.path : "";
     return (
-      <dl>
+      <dl className={settingsTrackDisplayDlCls}>
         <dt>{trackNum}</dt>
-        <dd>
+        <dd className={settingsTrackDisplayDlDdCls}>
           <div>{current}</div>
           <div>{name}</div>
         </dd>
@@ -233,7 +248,7 @@ const Seq: NextPage = () => {
         key={row}
         label={label}
         active={selectedTrack === row}
-        clickButton={() => {
+        onClick={() => {
           handleTrackBtnClick(row);
         }}
       />
@@ -256,7 +271,7 @@ const Seq: NextPage = () => {
           active={isActive}
           row={row}
           col={col}
-          clickButton={() => {
+          onClick={() => {
             handlePadClick(row, col);
           }}
         ></StepPad>
@@ -264,52 +279,51 @@ const Seq: NextPage = () => {
     });
 
     return (
-      <div key={row} className={styles.Pads}>
+      <div key={row} className={padsCls}>
         {pad}
       </div>
     );
   });
 
   return (
-    <div className={styles.container}>
+    <div className={containerCls}>
       <Head>
         <title>Seq</title>
         <meta name="description" content="seq" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <main className={styles.main}>
-        <h1>Seq</h1>
-        <div className={styles.Settings}>
-          <div className={styles.SettingsTrack}>
-            <div className={styles.SettingsTrackDisplay}>{display}</div>
+      <main className={mainCls}>
+        <h1 className={titleCls}>Seq</h1>
+        <div className={settingsCls}>
+          <div className={settingsTrackCls}>
+            <div className={settingsTrackDisplayCls}>{display}</div>
           </div>
-          <div className={styles.SettingsBpm}>
+          <div className={settingsBpmCls}>
             <CircleButton
               label="＋"
-              clickButton={() => {
+              onClick={() => {
                 handleBpmBtnClick(true);
               }}
             />
-            <CircleButton label="−" clickButton={handleBpmBtnClick} />
+            <CircleButton label="−" onClick={handleBpmBtnClick} />
           </div>
           <div>
             <Digits bpm={bpm} />
           </div>
         </div>
-        <div className={styles.SettingsTrackButtonArea}>{trackBtns}</div>
-        <div className={styles.Controls}>
-          <PlayButton pushed={play} clickButton={handlePlayBtnClick} />
-          <div className={styles.Func}>
+        <div className={settingsTrackButtonAreaCls}>{trackBtns}</div>
+        <div className={controlsCls}>
+          <PlayButton pushed={play} onClick={handlePlayBtnClick} />
+          <div className={controlsFuncCls}>
             {/* TODO: モード切り替えの実装 */}
-            {/* <SquareButton label="FUNC" clickButton={handleFuncBtnClick} /> */}
-            <button onClick={handleTrackReverbKnobCtl}>aa</button>
+            {/* <SquareButton label="FUNC" onClick={handleFuncBtnClick} /> */}
             <Knob onClick={handleTrackReverbKnobCtl} />
           </div>
           <div>
-            <SquareButton label="RESET" clickButton={handleResetBtnClick} />
+            <SquareButton label="RESET" onClick={handleResetBtnClick} />
           </div>
         </div>
-        <div className={styles.PadsWrapper}>{pads}</div>
+        <div className={padsWrapperCls}>{pads}</div>
       </main>
     </div>
   );

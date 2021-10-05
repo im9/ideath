@@ -3,13 +3,13 @@ import { padCls } from "./Pad.css";
 
 type Props = {
   label?: String;
-  clickPad: Function;
+  onClick: Function;
 };
 
-const Pad: React.FC<Props> = ({ label, clickPad }) => {
+const Pad: React.FC<Props> = ({ label, onClick }) => {
   const handlePadClick = useCallback(() => {
-    clickPad();
-  }, [clickPad]);
+    onClick();
+  }, [onClick]);
 
   return (
     <button className={padCls} onClick={handlePadClick}>

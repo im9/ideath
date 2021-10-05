@@ -6,6 +6,7 @@ const withVanillaExtract = createVanillaExtractPlugin();
 const nextConfig = {
   reactStrictMode: true,
   sassOptions: {
+    // FIXME: 廃止予定
     includePaths: [path.join(__dirname, "styles")],
   },
   experimental: {

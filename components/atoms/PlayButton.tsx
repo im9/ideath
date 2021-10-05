@@ -10,13 +10,13 @@ import {
 
 type Props = {
   pushed?: boolean;
-  clickButton: Function;
+  onClick: Function;
 };
 
-const PlayButton: React.FC<Props> = ({ pushed = false, clickButton }) => {
+const PlayButton: React.FC<Props> = ({ pushed = false, onClick }) => {
   const handleButtonClick = useCallback(() => {
-    clickButton(!pushed);
-  }, [clickButton, pushed]);
+    onClick(!pushed);
+  }, [onClick, pushed]);
 
   return (
     <div

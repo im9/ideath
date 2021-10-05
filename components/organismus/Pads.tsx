@@ -22,7 +22,7 @@ const Pads: React.FC<Props> = () => {
     return (
       <div key={index} className={padCls}>
         <Pad
-          clickPad={() => {
+          onClick={() => {
             samples[index]?.start();
           }}
         />

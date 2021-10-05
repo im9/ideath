@@ -1,5 +1,15 @@
 import React from "react";
-import styles from "./Digits.module.scss";
+import {
+  displayCls,
+  digitsCls,
+  d1Cls,
+  d2Cls,
+  d3Cls,
+  d4Cls,
+  d5Cls,
+  d6Cls,
+  d7Cls,
+} from "./Digits.css";
 
 type Props = {
   bpm?: String | Number;
@@ -14,54 +24,111 @@ const Digits: React.FC<Props> = ({ bpm = 0, min = 20, max = 300 }) => {
     .padStart(String(max).length, "0")
     .split("")
     .map((value, index) => {
-      let style;
       switch (value) {
         case "1":
-          style = styles.one;
-          break;
+          return (
+            <div key={index}>
+              <span className={d3Cls}></span>
+              <span className={d5Cls}></span>
+            </div>
+          );
         case "2":
-          style = styles.two;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d4Cls}></span>
+              <span className={d6Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
         case "3":
-          style = styles.three;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
         case "4":
-          style = styles.four;
-          break;
+          return (
+            <div key={index}>
+              <span className={d2Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+            </div>
+          );
         case "5":
-          style = styles.five;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d2Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
         case "6":
-          style = styles.six;
-          break;
+          return (
+            <div key={index}>
+              <span className={d2Cls}></span>
+              <span className={d4Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
         case "7":
-          style = styles.seven;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d5Cls}></span>
+            </div>
+          );
         case "8":
-          style = styles.eight;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d2Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d4Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
         case "9":
-          style = styles.nine;
-          break;
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d2Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d6Cls}></span>
+            </div>
+          );
         default:
-          style = styles.zero;
+          // 0
+          return (
+            <div key={index}>
+              <span className={d1Cls}></span>
+              <span className={d2Cls}></span>
+              <span className={d3Cls}></span>
+              <span className={d4Cls}></span>
+              <span className={d5Cls}></span>
+              <span className={d7Cls}></span>
+            </div>
+          );
       }
-      return (
-        <div key={index} className={style}>
-          <span className={styles.d1}></span>
-          <span className={styles.d2}></span>
-          <span className={styles.d3}></span>
-          <span className={styles.d4}></span>
-          <span className={styles.d5}></span>
-          <span className={styles.d6}></span>
-          <span className={styles.d7}></span>
-        </div>
-      );
     });
 
   return (
-    <div className={styles.display}>
-      <div className={styles.digits}>{digits}</div>
+    <div className={displayCls}>
+      <div className={digitsCls}>{digits}</div>
     </div>
   );
 };
