@@ -1,9 +1,10 @@
 import { style } from "@vanilla-extract/css";
 
 export const SquareButtonCls = style({
-  background: "#e0e0e0",
-  boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #fff",
-  color: "#636661",
+  background: "var(--color-grayLight)",
+  boxShadow:
+    "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-white)",
+  color: "var(--color-gray)",
   border: "none",
   borderRadius: "4px",
   width: "118px",
@@ -23,6 +24,7 @@ export const SquareButtonCls = style({
   },
   ":hover": {
     color: "#ccc",
-    boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #eee",
+    boxShadow:
+      "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-grayLight2)",
   },
 });

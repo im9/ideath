@@ -1,7 +1,7 @@
 import type { NextPage } from "next";
 import Head from "next/head";
 import Pads from "@/components/organismus/Pads";
-import { containerCls, mainCls, titleCls } from "./index.css";
+import { containerCls, mainCls, titleCls } from "@/styles/index.css";
 
 /**
  * パッド

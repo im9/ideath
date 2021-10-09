@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import {
   PlayButtonCls,
-  PlayButtonPlayCls,
+  PlayButtonActiveCls,
   PlayButtonPlayTopBorderCls,
   PlayButtonPlayLeftBorderCls,
   PlayButtonPlayRightBorderCls,
@@ -20,7 +20,7 @@ const PlayButton: React.FC<Props> = ({ pushed = false, onClick }) => {
 
   return (
     <div
-      className={`${PlayButtonCls} ${pushed ? PlayButtonPlayCls : ""}`}
+      className={`${PlayButtonCls} ${pushed ? PlayButtonActiveCls : ""}`}
       onClick={handleButtonClick}
     >
       <span className={pushed ? PlayButtonPlayTopBorderCls : ""}></span>

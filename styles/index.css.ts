@@ -9,19 +9,21 @@ export const containerCls = style({
   alignItems: "center",
   height: "100vh",
   borderRadius: "20px",
-  background: "linear-gradient(225deg, #f0f0f0, #cacaca)",
-  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px #ededed",
+  background:
+    "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
+  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
 });
 
 export const mainCls = style({
   margin: "auto",
   padding: "1rem 2rem",
   borderRadius: "20px",
-  background: "linear-gradient(225deg, #f0f0f0, #cacaca)",
-  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px #ededed",
+  background:
+    "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
+  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
 });
 
 export const titleCls = style({
-  color: "#636661",
+  color: "var(--color-gray)",
   fontWeight: 300,
 });

@@ -1,6 +1,6 @@
 import { style, globalStyle } from "@vanilla-extract/css";
 
-const digitsColor = "#fff";
+const digitsColor = "var(--color-white)";
 
 const dWidth = 14;
 const dHight = 6;
@@ -16,11 +16,21 @@ const dRight = gap + dWidth;
 
 export const displayCls = style({
   display: "inline-block",
-  padding: "12px 6px 12px 18px",
+  padding: "6px 6px 12px 18px",
   borderRadius: "20px",
-  background: "#e0e0e0",
-  boxShadow: `inset -5px 5px 10px #bebebe, inset 5px -5px 10px ${digitsColor}`,
+  background: "var(--color-grayLight)",
+  boxShadow: `inset -5px 5px 10px var(--color-gray2), inset 5px -5px 10px ${digitsColor}`,
   margin: "0.5rem 0",
+});
+
+export const displayLabelCls = style({
+  display: "inline-block",
+  fontSize: "0.5rem",
+  color: "var(--color-gray)",
+  marginBottom: "0.2rem",
+  background: "var(--color-white)",
+  padding: "0 8px",
+  borderRadius: "8px",
 });
 
 export const digitsCls = style({});

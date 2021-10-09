@@ -24,12 +24,13 @@ const animate4 = keyframes({
 export const PlayButtonCls = style({
   width: "118px",
   height: "68px",
-  background: "#e0e0e0",
-  boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #fff",
+  background: "var(--color-grayLight)",
+  boxShadow:
+    "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-white)",
   position: "relative",
   display: "inline-block",
   padding: "25px 30px",
-  color: "#636661",
+  color: "var(--color-gray)",
   textDecoration: "none",
   textTransform: "uppercase",
   transition: "0.5s",
@@ -39,15 +40,17 @@ export const PlayButtonCls = style({
   borderRadius: "4px",
   ":hover": {
     color: "#ccc",
-    boxShadow: "-5px 5px 12px #bebebe, 5px -5px 12px #eee",
+    boxShadow:
+      "-5px 5px 12px var(--color-gray2), 5px -5px 12px var(--color-grayLight2)",
   },
 });
 
 export const PlayButtonPushedCls = style({
-  boxShadow: "inset -5px 5px 10px #bebebe, inset 5px -5px 10px #fff",
+  boxShadow:
+    "inset -5px 5px 10px var(--color-gray2), inset 5px -5px 10px var(--color-white)",
 });
 
-export const PlayButtonPlayCls = style({
+export const PlayButtonActiveCls = style({
   color: "#03e9f4",
   background: "#f8f8ff",
   ":hover": {

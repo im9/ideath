@@ -1,6 +1,13 @@
 import type { NextPage } from "next";
 import Head from "next/head";
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import {
+  useRef,
+  useState,
+  useContext,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import * as Tone from "tone";
 
 import PlayButton from "@/components/atoms/PlayButton";
@@ -9,9 +16,9 @@ import SquareButton from "@/components/atoms/SquareButton";
 import Knob from "@/components/atoms/Knob";
 import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
-import { getDefaultMatrix, getTempo, getTonePlayer } from "@/utils";
+import { Context } from "@/contexts/state";
+import { getDefaultMatrix, getTempo, getTonePlayer, percent } from "@/utils";
 import {
-  MODE,
   TRACK_LENGTH,
   STEP_LENGTH,
   DEFAULT_BPM,
@@ -23,66 +30,75 @@ import {
   mainCls,
   titleCls,
   controlsCls,
-  controlsFuncCls,
   settingsCls,
   settingsTrackCls,
   settingsBpmCls,
+  settingsAreaCls,
   settingsTrackDisplayCls,
-  settingsTrackDisplayDlCls,
-  settingsTrackDisplayDlDdCls,
+  settingsTrackDisplayEffectAreaCls,
   settingsTrackButtonAreaCls,
+  settingsTrackKnobAreaCls,
   padsCls,
   padsWrapperCls,
-} from "./seq.css";
+} from "@/styles/seq.css";
 
 /**
  * リズムマシン
  */
 const Seq: NextPage = () => {
+  // context
+  const {
+    state: { master, tracks },
+    dispatch,
+  }: any = useContext(Context);
+
   // セッティング系
-  const [play, setPlay] = useState(false);
-  const [mode, setMode] = useState(MODE.DEFAULT);
   const [selectedTrack, setSelectedTrack] = useState(TRACK_LABELS.length - 1);
+  // FIXME: 各トラックの楽器を選択可能にする
+  const [selectedSamples, setSelectedSamples] = useState(DEFAULT_SEQ_SAMPLES);
 
   // リズムマシン系
   const [matrix, setMatrix] = useState(
     getDefaultMatrix(TRACK_LENGTH, STEP_LENGTH)
   );
-  const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [processing, setProcessing] = useState(false);
   const [step, setStep] = useState(0);
   const stepRef = useRef(0);
   const intervalRef: any = useRef(null);
   const matrixRef = useRef(matrix);
-  const tempoRef = useRef(getTempo(bpm));
+  const tempoRef = useRef(getTempo(master.bpm));
 
   // 各トラックのサンプルを初期化
   const samples: any = useMemo(() => {
     if (!process.browser) return { start: () => {} };
-    return DEFAULT_SEQ_SAMPLES.map(({ path, d, r }) =>
-      getTonePlayer(path, d, r)
-    );
-  }, []);
+    return selectedSamples.map(({ path, d, r }) => getTonePlayer(path, d, r));
+  }, [selectedSamples]);
 
   /**
    * 再生／停止ボタンのクリックイベントをハンドルする
    */
-  const handlePlayBtnClick = useCallback(async (isStart) => {
-    setPlay(isStart);
+  const handlePlayBtnClick = useCallback(
+    async (isStart) => {
+      dispatch({
+        type: "SET_PLAY",
+        payload: isStart,
+      });
 
-    // Audio Context 開始
-    await Tone.start();
+      // Audio Context 開始
+      await Tone.start();
 
-    if (isStart) {
-      // 再生ボタンが押下されたらSTEPを更新する
-      intervalRef.current = setInterval(() => {
-        setStep((step) => (step < STEP_LENGTH - 1 ? ++step : 0));
-      }, tempoRef.current);
-    } else {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
+      if (isStart) {
+        // 再生ボタンが押下されたらSTEPを更新する
+        intervalRef.current = setInterval(() => {
+          setStep((step) => (step < STEP_LENGTH - 1 ? ++step : 0));
+        }, tempoRef.current);
+      } else {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    },
+    [dispatch]
+  );
 
   /**
    * 各パッドのクリックイベントをハンドルする
@@ -96,13 +112,6 @@ const Seq: NextPage = () => {
   );
 
   /**
-   * TODO: ファンクションボタンのクリックをハンドルする
-   */
-  const handleFuncBtnClick = useCallback(() => {
-    setMode(() => (mode === MODE.DEFAULT ? MODE.MIDI : MODE.DEFAULT));
-  }, [mode]);
-
-  /**
    * トラック選択ボタンのクリックをハンドルする
    */
   const handleTrackBtnClick = useCallback((value) => {
@@ -110,20 +119,67 @@ const Seq: NextPage = () => {
   }, []);
 
   /**
-   * 選択中のトラックのリバーブを設定する
+   * マスターヴォリュームの直を更新する
    */
-  const handleTrackReverbKnobCtl = useCallback(() => {
+  const handleMasterVolumeKnobCtl = useCallback(
+    (value) => {
+      dispatch({
+        type: "SET_VOLUME",
+        payload: value,
+      });
+    },
+    [dispatch]
+  );
+
+  /**
+   * 選択中のトラックのディストーションの直を更新する
+   */
+  const handleTrackDistortionKnobCtl = useCallback(
+    (value) => {
+      if (samples[selectedTrack] && Tone.loaded()) {
+        setSelectedSamples(() => {
+          selectedSamples[selectedTrack].d = value;
+          return selectedSamples;
+        });
+        dispatch({
+          type: "UPDATE_TRACK_EFFECTS",
+          payload: selectedSamples,
+        });
+        // TODO debounce
+      }
+    },
+    [samples, selectedTrack, dispatch, selectedSamples]
+  );
+
+  /**
+   * 選択中のトラックのリバーブの直を更新する
+   */
+  const handleTrackReverbKnobCtl = useCallback(
+    (value) => {
+      if (samples[selectedTrack] && Tone.loaded()) {
+        setSelectedSamples(() => {
+          selectedSamples[selectedTrack].r = value;
+          return selectedSamples;
+        });
+        dispatch({
+          type: "UPDATE_TRACK_EFFECTS",
+          payload: selectedSamples,
+        });
+        // TODO debounce
+      }
+    },
+    [samples, selectedTrack, dispatch, selectedSamples]
+  );
+
+  /**
+   * 選択中のトラックのエフェクトを設定する
+   */
+  const handleTrackEffectKnobCtl = useCallback(() => {
     if (samples[selectedTrack] && Tone.loaded()) {
-      console.log(DEFAULT_SEQ_SAMPLES[selectedTrack], samples[selectedTrack]);
-      const { path, r, d } = DEFAULT_SEQ_SAMPLES[selectedTrack];
-      samples[selectedTrack] = getTonePlayer(path, d, 1);
+      const { path, d, r } = selectedSamples[selectedTrack];
+      samples[selectedTrack] = getTonePlayer(path, d, r);
     }
-    // matrixRef.current.map((col: number[], index: number) => {
-    //   if (col[stepRef.current] && samples[index] && Tone.loaded()) {
-    //     samples[index].start();
-    //   }
-    // });
-  }, [samples, selectedTrack]);
+  }, [samples, selectedSamples, selectedTrack]);
 
   /**
    * リセットボタンのクリックをハンドルする
@@ -138,11 +194,17 @@ const Seq: NextPage = () => {
     matrixRef.current = matrix;
 
     // BPM を初期化
-    setBpm(DEFAULT_BPM);
-    tempoRef.current = getTempo(bpm);
+    dispatch({
+      type: "SET_BPM",
+      payload: DEFAULT_BPM,
+    });
+    tempoRef.current = getTempo(master.bpm);
 
     // タイマーを初期化
-    setPlay(false);
+    dispatch({
+      type: "SET_PLAY",
+      payload: false,
+    });
     clearInterval(intervalRef.current);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,15 +215,13 @@ const Seq: NextPage = () => {
    */
   const handleBpmBtnClick = useCallback(
     (add = false) => {
-      setBpm((bpm) => {
-        if (add && bpm < 300) {
-          return ++bpm;
-        } else if (!add && bpm > 20) {
-          return --bpm;
-        }
-        return bpm;
-      });
-      if (play && !processing) {
+      if (add) {
+        dispatch({ type: "INCREMENT_BPM" });
+      } else {
+        dispatch({ type: "DECREMENT_BPM" });
+      }
+
+      if (master.play && !processing) {
         // 連打対策
         setProcessing(true);
 
@@ -174,7 +234,7 @@ const Seq: NextPage = () => {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [play, processing]
+    [master, processing]
   );
 
   /**
@@ -192,13 +252,13 @@ const Seq: NextPage = () => {
    * BPM をもとにテンポを設定する
    */
   useEffect(() => {
-    tempoRef.current = getTempo(bpm);
+    tempoRef.current = getTempo(master.bpm);
 
     Tone.Transport.start();
 
     // FIXME: Tone のシーケンサーを利用する場合は設定する
     // Tone.Transport.bpm.rampTo(bpm, 5);
-  }, [bpm]);
+  }, [master.bpm]);
 
   /**
    * 参照用の行列の状態を設定する
@@ -218,25 +278,43 @@ const Seq: NextPage = () => {
         Tone.loaded().then(() => samples[index]?.start());
       }
     });
-  }, [play, step, samples]);
+  }, [master.play, step, samples]);
 
   /**
    * ディスプレイを描画する
    */
-  const display = useMemo(() => {
-    const trackNum = selectedTrack ? selectedTrack + 1 : 1;
-    const current = TRACK_LABELS[trackNum - 1];
-    const name = trackNum ? DEFAULT_SEQ_SAMPLES[trackNum - 1]?.path : "";
-    return (
-      <dl className={settingsTrackDisplayDlCls}>
-        <dt>{trackNum}</dt>
-        <dd className={settingsTrackDisplayDlDdCls}>
-          <div>{current}</div>
-          <div>{name}</div>
-        </dd>
-      </dl>
-    );
-  }, [selectedTrack]);
+  const trackNum = useMemo(
+    () => (selectedTrack ? selectedTrack + 1 : 1),
+    [selectedTrack]
+  );
+  const current = useMemo(() => TRACK_LABELS[trackNum - 1], [trackNum]);
+  const name = useMemo(
+    () => selectedSamples[trackNum - 1]?.path || "",
+    [selectedSamples, trackNum]
+  );
+  const display = !name ? (
+    <dl>
+      <dt>0</dt>
+      <dd>
+        <div>Master</div>
+        <div className={settingsTrackDisplayEffectAreaCls}>
+          <div>Volume: {percent(master.volume)}</div>
+        </div>
+      </dd>
+    </dl>
+  ) : (
+    <dl>
+      <dt>{trackNum}</dt>
+      <dd>
+        <div>{current}</div>
+        <div>{name}</div>
+        <div className={settingsTrackDisplayEffectAreaCls}>
+          <div>Distortion: {percent(tracks[trackNum - 1]?.d)}</div>
+          <div>Reverb: {percent(tracks[trackNum - 1]?.r)}</div>
+        </div>
+      </dd>
+    </dl>
+  );
 
   /**
    * 各トラックの選択ボタンを描画する
@@ -261,7 +339,7 @@ const Seq: NextPage = () => {
   const pads = matrix.map((track, row) => {
     const pad = track.map((_, col) => {
       const isPushed = !!matrix[row][col];
-      const isCurrent = col === step && play;
+      const isCurrent = col === step && master.play;
       const isActive = selectedTrack === row;
       return (
         <StepPad
@@ -284,6 +362,31 @@ const Seq: NextPage = () => {
       </div>
     );
   });
+
+  const knobs = samples[selectedTrack] ? (
+    <>
+      <Knob
+        label="Distortion"
+        value={tracks.effects[selectedTrack]?.d}
+        onUpdate={handleTrackDistortionKnobCtl}
+        onCommit={handleTrackEffectKnobCtl}
+      />
+      <Knob
+        label="Reverb"
+        value={tracks.effects[selectedTrack]?.r}
+        onUpdate={handleTrackReverbKnobCtl}
+        onCommit={handleTrackEffectKnobCtl}
+      />
+    </>
+  ) : (
+    <>
+      <Knob
+        label="Volume"
+        value={master.volume}
+        onUpdate={handleMasterVolumeKnobCtl}
+      />
+    </>
+  );
 
   return (
     <div className={containerCls}>
@@ -308,17 +411,18 @@ const Seq: NextPage = () => {
             <CircleButton label="−" onClick={handleBpmBtnClick} />
           </div>
           <div>
-            <Digits bpm={bpm} />
+            <Digits label={"BPM"} bpm={master.bpm} />
           </div>
         </div>
-        <div className={settingsTrackButtonAreaCls}>{trackBtns}</div>
-        <div className={controlsCls}>
-          <PlayButton pushed={play} onClick={handlePlayBtnClick} />
-          <div className={controlsFuncCls}>
-            {/* TODO: モード切り替えの実装 */}
-            {/* <SquareButton label="FUNC" onClick={handleFuncBtnClick} /> */}
-            <Knob onClick={handleTrackReverbKnobCtl} />
+        <div className={settingsAreaCls}>
+          <div className={settingsTrackButtonAreaCls}>
+            <div>Track</div>
+            <div>{trackBtns}</div>
           </div>
+          <div className={settingsTrackKnobAreaCls}>{knobs}</div>
+        </div>
+        <div className={controlsCls}>
+          <PlayButton pushed={master.play} onClick={handlePlayBtnClick} />
           <div>
             <SquareButton label="RESET" onClick={handleResetBtnClick} />
           </div>

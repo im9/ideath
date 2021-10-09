@@ -1,10 +1,11 @@
 import { style } from "@vanilla-extract/css";
 
 export const circleButtonCls = style({
-  backgroundColor: "red",
-  background: "linear-gradient(225deg, #cacaca, #f0f0f0)",
-  boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #ededed",
-  color: "#636661",
+  background:
+    "linear-gradient(225deg, var(--color-gray3), var(--color-grayLight3))",
+  boxShadow:
+    "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-grayLight2)",
+  color: "var(--color-gray)",
   padding: "6px",
   border: "none",
   borderRadius: "100%",
@@ -16,10 +17,11 @@ export const circleButtonCls = style({
     outline: "none",
   },
   ":hover": {
-    boxShadow: "-5px 5px 10px #bebebe, 5px -5px 10px #eee",
+    boxShadow:
+      "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-grayLight2)",
   },
 });
 
 export const circleButtonActiveCls = style({
-  background: "#fff",
+  background: "var(--color-white)",
 });

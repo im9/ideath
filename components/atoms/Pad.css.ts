@@ -9,7 +9,7 @@ export const padCls = style({
   position: "relative",
   display: "block",
   textShadow: `0 0 10px ${azure}, 0 0 20px ${aqua}, 0 0 40px ${dodgerblue}, 0 0 80px ${blue}`,
-  boxShadow: "-12px 12px 24px #d3d3d3, 12px -12px 24px #ededed",
+  boxShadow: "-12px 12px 24px #d3d3d3, 12px -12px 24px var(--color-grayLight2)",
   willChange: "filter, color",
   backgroundColor: "transparent",
   border: "none",
@@ -18,7 +18,7 @@ export const padCls = style({
   height: "10rem",
   fontSize: "2rem",
   cursor: "pointer",
-  background: "#e0e0e0",
+  background: "var(--color-grayLight)",
   ":hover": {
     border: "solid 0.2rem azure",
   },

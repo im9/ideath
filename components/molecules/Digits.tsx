@@ -1,6 +1,7 @@
 import React from "react";
 import {
   displayCls,
+  displayLabelCls,
   digitsCls,
   d1Cls,
   d2Cls,
@@ -12,12 +13,18 @@ import {
 } from "./Digits.css";
 
 type Props = {
+  label?: String;
   bpm?: String | Number;
   min?: Number;
   max?: Number;
 };
 
-const Digits: React.FC<Props> = ({ bpm = 0, min = 20, max = 300 }) => {
+const Digits: React.FC<Props> = ({
+  label = "",
+  bpm = 0,
+  min = 20,
+  max = 300,
+}) => {
   if (bpm > max || bpm < min) return <></>;
 
   const digits = String(bpm)
@@ -128,6 +135,7 @@ const Digits: React.FC<Props> = ({ bpm = 0, min = 20, max = 300 }) => {
 
   return (
     <div className={displayCls}>
+      <div className={displayLabelCls}>{label}</div>
       <div className={digitsCls}>{digits}</div>
     </div>
   );

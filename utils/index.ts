@@ -46,3 +46,42 @@ export const getTonePlayer = (
   if (reverb) player.connect(reverb);
   return player;
 };
+
+/**
+ * 任意の桁で四捨五入する
+ * @param {number} value 四捨五入する数値
+ * @param {number} base どの桁で四捨五入するか（10 => 10の位、0.1 => 小数第１位）
+ * @return {number} 四捨五入した値
+ */
+export const round = (value: number, base: number) => {
+  return Math.round(value * base) / base;
+};
+
+/**
+ * 任意の桁で切り上げる
+ * @param {number} value 切り上げる数値
+ * @param {number} base どの桁で切り上げするか（10 => 10の位、0.1 => 小数第１位）
+ * @return {number} 切り上げした値
+ */
+export const ceil = (value: number, base: number) => {
+  return Math.ceil(value * base) / base;
+};
+
+/**
+ * 任意の桁で切り捨てる
+ * @param {number} value 切り捨てる数値
+ * @param {number} base どの桁で切り捨てするか（10 => 10の位、0.1 => 小数第１位）
+ * @return {number} 切り捨てした値
+ */
+export const floor = (value: number, base: number) => {
+  return Math.floor(value * base) / base;
+};
+
+/**
+ * 百分率表示する
+ * @param {number} value 浮動小数点の直
+ * @return {String} 百分率の文字列
+ */
+export const percent = (value: number | undefined) => {
+  return `${value ? value * 100 : 0}%`;
+};
