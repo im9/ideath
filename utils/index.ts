@@ -30,20 +30,24 @@ export const getTempo = (bpm: number = 120): number => {
  * @param path
  * @param d ディストーションのパラメータ
  * @param r リバーブのパラメータ
+ * @param v ヴォリュームのパラメータ
  * @returns Tone.Player
  */
 export const getTonePlayer = (
   path: string = "",
   d: number | null = 0,
-  r: number | null = 0
+  r: number | null = 0,
+  v: number | null = -40
 ) => {
   if (!path) return;
 
   const player = new Tone.Player(path).toDestination();
   const distortion = d ? new Tone.Distortion(d).toDestination() : null;
   const reverb = r ? new Tone.Reverb(r).toDestination() : null;
+  const volume = v ? new Tone.Volume(v).toDestination() : null;
   if (distortion) player.connect(distortion);
   if (reverb) player.connect(reverb);
+  if (volume) player.connect(volume);
   return player;
 };
 
@@ -79,7 +83,7 @@ export const floor = (value: number, base: number) => {
 
 /**
  * 百分率表示する
- * @param {number} value 浮動小数点の直
+ * @param {number} value 浮動小数点の
  * @return {String} 百分率の文字列
  */
 export const percent = (value: number | undefined) => {

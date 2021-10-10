@@ -30,20 +30,20 @@ const Knob: React.FC<Props> = ({ label, value, onUpdate, onCommit }) => {
 
   const onMouseDown = useCallback(() => {
     // FIXME: タッチデバイスの考慮
-    const onMouseMove = (event: MouseEvent) => {
+    const onMouseMove = (e: MouseEvent) => {
       const el = elementRef.current;
       const bounds = el.parentNode.getBoundingClientRect();
       const dialCenterX = bounds.left + el.offsetWidth / 2;
       const dialCenterY = bounds.top + el.offsetHeight / 2;
       const radian = Math.atan2(
-        event.clientY - dialCenterY,
-        event.clientX - dialCenterX
+        e.clientY - dialCenterY,
+        e.clientX - dialCenterX
       );
       let updateDegree = radian * (180 / Math.PI);
       if (el && -180 <= updateDegree && updateDegree <= 0) {
         el.style.transform = `rotate(${updateDegree}deg) scale(-1, -1)`;
         setPosition(position);
-        // 180度を100%として目盛の直を算出する
+        // 180度を100%として目盛の値を算出する
         const updateValue = round((floor(updateDegree, 10) + 180) / 180, 10);
         onUpdate(updateValue);
       }

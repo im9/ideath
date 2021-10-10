@@ -16,8 +16,8 @@ export const DEFAULT_PADS_SAMPLES = [
   { path: "/samples/808/CP.WAV", d: null, r: null }, // clap
   { path: "/samples/808/CB.WAV", d: null, r: null }, // cowbell
 
-  { path: "/samples/techno/000_0.WAV", d: null, r: null },
-  { path: "/samples/techno/001_1.WAV", d: null, r: null },
-  { path: "/samples/techno/002_3.WAV", d: null, r: null },
-  { path: "/samples/techno/003_4.WAV", d: null, r: null },
+  { path: "/samples/techno/000_0.wav", d: null, r: null },
+  { path: "/samples/techno/001_1.wav", d: null, r: null },
+  { path: "/samples/techno/002_3.wav", d: null, r: null },
+  { path: "/samples/techno/003_4.wav", d: null, r: null },
 ];

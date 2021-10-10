@@ -11,7 +11,7 @@ import {
 // initial state
 const initialState = {
   master: {
-    volume: 1,
+    volume: 0,
     bpm: DEFAULT_BPM,
     play: false,
   },

@@ -71,7 +71,9 @@ const Seq: NextPage = () => {
   // 各トラックのサンプルを初期化
   const samples: any = useMemo(() => {
     if (!process.browser) return { start: () => {} };
-    return selectedSamples.map(({ path, d, r }) => getTonePlayer(path, d, r));
+    return selectedSamples.map(({ path, d, r, v }) =>
+      getTonePlayer(path, d, r, v)
+    );
   }, [selectedSamples]);
 
   /**
@@ -119,20 +121,25 @@ const Seq: NextPage = () => {
   }, []);
 
   /**
-   * マスターヴォリュームの直を更新する
+   * マスターヴォリュームの値を更新する
    */
   const handleMasterVolumeKnobCtl = useCallback(
     (value) => {
+      selectedSamples.forEach((sample, index) => {
+        const { path, d, r } = sample;
+        samples[index] = getTonePlayer(path, d, r, value * 10);
+      });
+
       dispatch({
         type: "SET_VOLUME",
         payload: value,
       });
     },
-    [dispatch]
+    [dispatch, samples, selectedSamples]
   );
 
   /**
-   * 選択中のトラックのディストーションの直を更新する
+   * 選択中のトラックのディストーションの値を更新する
    */
   const handleTrackDistortionKnobCtl = useCallback(
     (value) => {
@@ -152,7 +159,7 @@ const Seq: NextPage = () => {
   );
 
   /**
-   * 選択中のトラックのリバーブの直を更新する
+   * 選択中のトラックのリバーブの値を更新する
    */
   const handleTrackReverbKnobCtl = useCallback(
     (value) => {
@@ -176,8 +183,8 @@ const Seq: NextPage = () => {
    */
   const handleTrackEffectKnobCtl = useCallback(() => {
     if (samples[selectedTrack] && Tone.loaded()) {
-      const { path, d, r } = selectedSamples[selectedTrack];
-      samples[selectedTrack] = getTonePlayer(path, d, r);
+      const { path, d, r, v } = selectedSamples[selectedTrack];
+      samples[selectedTrack] = getTonePlayer(path, d, r, v);
     }
   }, [samples, selectedSamples, selectedTrack]);
 
@@ -215,11 +222,7 @@ const Seq: NextPage = () => {
    */
   const handleBpmBtnClick = useCallback(
     (add = false) => {
-      if (add) {
-        dispatch({ type: "INCREMENT_BPM" });
-      } else {
-        dispatch({ type: "DECREMENT_BPM" });
-      }
+      dispatch({ type: add ? "INCREMENT_BPM" : "DECREMENT_BPM" });
 
       if (master.play && !processing) {
         // 連打対策
