@@ -13,7 +13,6 @@ export const SquareButtonCls = style({
   cursor: "pointer",
   position: "relative",
   display: "inline-block",
-  padding: "25px 30px",
   textDecoration: "none",
   textTransform: "uppercase",
   transition: "0.5s",
@@ -27,4 +26,8 @@ export const SquareButtonCls = style({
     boxShadow:
       "-5px 5px 10px var(--color-gray2), 5px -5px 10px var(--color-grayLight2)",
   },
+});
+
+export const SquareButtonSmallCls = style({
+  height: "34px",
 });

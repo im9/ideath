@@ -121,3 +121,22 @@ export const settingsTrackKnobAreaCls = style({
 globalStyle(`${settingsTrackKnobAreaCls} > div`, {
   margin: "0 0.5rem",
 });
+
+export const modalStyleCls = style({
+  color: "var(--color-gray)",
+  fontWeight: 300,
+  backgroundColor: "var(--color-grayLight)",
+  padding: "16px 40px 32px",
+  borderRadius: "1rem",
+  textAlign: "center",
+  lineHeight: 1,
+});
+
+globalStyle(`${modalStyleCls} > p`, {
+  margin: "2rem",
+});
+
+globalStyle(`${modalStyleCls} > footer`, {
+  display: "flex",
+  justifyContent: "space-evenly",
+});

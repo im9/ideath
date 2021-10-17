@@ -17,6 +17,7 @@ import Knob from "@/components/atoms/Knob";
 import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
 import { Context } from "@/contexts/state";
+import { useModal } from "hooks/usePanel";
 import { getDefaultMatrix, getTempo, getTonePlayer, percent } from "@/utils";
 import {
   TRACK_LENGTH,
@@ -40,6 +41,7 @@ import {
   settingsTrackKnobAreaCls,
   padsCls,
   padsWrapperCls,
+  modalStyleCls,
 } from "@/styles/seq.css";
 
 /**
@@ -67,6 +69,10 @@ const Seq: NextPage = () => {
   const intervalRef: any = useRef(null);
   const matrixRef = useRef(matrix);
   const tempoRef = useRef(getTempo(master.bpm));
+
+  const [Modal, openModal, closeModal, isOpenModal] = useModal("root", {
+    preventScroll: true,
+  });
 
   // 各トラックのサンプルを初期化
   const samples: any = useMemo(() => {
@@ -192,6 +198,16 @@ const Seq: NextPage = () => {
    * リセットボタンのクリックをハンドルする
    */
   const handleResetBtnClick = useCallback(() => {
+    if (isOpenModal) return;
+    openModal();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * リセットボタンのクリックをハンドルする
+   */
+  const handleResetOKBtnClick = useCallback(() => {
     // ステップを初期化
     setStep(0);
     stepRef.current = 0;
@@ -213,6 +229,9 @@ const Seq: NextPage = () => {
       payload: false,
     });
     clearInterval(intervalRef.current);
+
+    // モーダルを閉じる
+    closeModal();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -337,6 +356,24 @@ const Seq: NextPage = () => {
   });
 
   /**
+   * リセット確認モーダルを描画する
+   */
+  const resetModal = process.browser ? (
+    <Modal>
+      <div className={modalStyleCls}>
+        <h1>RESET PATTERN</h1>
+        <p>Are you sure you want to reset pattern?</p>
+        <footer>
+          <SquareButton label="CANCEL" small onClick={closeModal} />
+          <SquareButton label="OK" small onClick={handleResetOKBtnClick} />
+        </footer>
+      </div>
+    </Modal>
+  ) : (
+    <></>
+  );
+
+  /**
    * 各パッドを描画する
    */
   const pads = matrix.map((track, row) => {
@@ -392,47 +429,50 @@ const Seq: NextPage = () => {
   );
 
   return (
-    <div className={containerCls}>
-      <Head>
-        <title>Seq</title>
-        <meta name="description" content="seq" />
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
-      <main className={mainCls}>
-        <h1 className={titleCls}>Seq</h1>
-        <div className={settingsCls}>
-          <div className={settingsTrackCls}>
-            <div className={settingsTrackDisplayCls}>{display}</div>
+    <>
+      <div className={containerCls} id="root">
+        <Head>
+          <title>Seq</title>
+          <meta name="description" content="seq" />
+          <link rel="icon" href="/favicon.ico" />
+        </Head>
+        <main className={mainCls}>
+          <h1 className={titleCls}>Seq</h1>
+          <div className={settingsCls}>
+            <div className={settingsTrackCls}>
+              <div className={settingsTrackDisplayCls}>{display}</div>
+            </div>
+            <div className={settingsBpmCls}>
+              <CircleButton
+                label="＋"
+                onClick={() => {
+                  handleBpmBtnClick(true);
+                }}
+              />
+              <CircleButton label="−" onClick={handleBpmBtnClick} />
+            </div>
+            <div>
+              <Digits label={"BPM"} bpm={master.bpm} />
+            </div>
           </div>
-          <div className={settingsBpmCls}>
-            <CircleButton
-              label="＋"
-              onClick={() => {
-                handleBpmBtnClick(true);
-              }}
-            />
-            <CircleButton label="−" onClick={handleBpmBtnClick} />
+          <div className={settingsAreaCls}>
+            <div className={settingsTrackButtonAreaCls}>
+              <div>Track</div>
+              <div>{trackBtns}</div>
+            </div>
+            <div className={settingsTrackKnobAreaCls}>{knobs}</div>
           </div>
-          <div>
-            <Digits label={"BPM"} bpm={master.bpm} />
+          <div className={controlsCls}>
+            <PlayButton pushed={master.play} onClick={handlePlayBtnClick} />
+            <div>
+              <SquareButton label="RESET" onClick={handleResetBtnClick} />
+            </div>
           </div>
-        </div>
-        <div className={settingsAreaCls}>
-          <div className={settingsTrackButtonAreaCls}>
-            <div>Track</div>
-            <div>{trackBtns}</div>
-          </div>
-          <div className={settingsTrackKnobAreaCls}>{knobs}</div>
-        </div>
-        <div className={controlsCls}>
-          <PlayButton pushed={master.play} onClick={handlePlayBtnClick} />
-          <div>
-            <SquareButton label="RESET" onClick={handleResetBtnClick} />
-          </div>
-        </div>
-        <div className={padsWrapperCls}>{pads}</div>
-      </main>
-    </div>
+          <div className={padsWrapperCls}>{pads}</div>
+        </main>
+      </div>
+      {resetModal}
+    </>
   );
 };
 

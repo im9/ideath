@@ -542,6 +542,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/react-dom@npm:^17.0.9":
+  version: 17.0.9
+  resolution: "@types/react-dom@npm:17.0.9"
+  dependencies:
+    "@types/react": "*"
+  checksum: b7e898e1a22643a371f58e801a3d1d8cf13a82d77063c24be73e840ef8d877ca1d04adc5db168d0dac3167dc050a26b1d70efc5fe8566a7f46a3c488a8322989
+  languageName: node
+  linkType: hard
+
+"@types/react@npm:*":
+  version: 17.0.30
+  resolution: "@types/react@npm:17.0.30"
+  dependencies:
+    "@types/prop-types": "*"
+    "@types/scheduler": "*"
+    csstype: ^3.0.2
+  checksum: e3aaac1b8fda6e3622b75db0bd7d8dc412c2f2b77a00afdd32cae8c71fb0b1ca6926ab1fbe1c536dd51d96c0ba372738993837a8df1637637aaab7b86e421b7f
+  languageName: node
+  linkType: hard
+
 "@types/react@npm:17.0.19":
   version: 17.0.19
   resolution: "@types/react@npm:17.0.19"
@@ -1740,6 +1760,13 @@ __metadata:
   dependencies:
     path-type: ^4.0.0
   checksum: fa05e18324510d7283f55862f3161c6759a3f2f8dbce491a2fc14c8324c498286c54282c1f0e933cb930da8419b30679389499b919122952a4f8592362ef4615
+  languageName: node
+  linkType: hard
+
+"disable-scroll@npm:^0.6.0":
+  version: 0.6.0
+  resolution: "disable-scroll@npm:0.6.0"
+  checksum: ae3c6484f21fdaf63199ba5dae7e7e2c258484499a776c469d1a7934852be37be154b9fc7551124702ec436a943faca60a685b4570ebd8b7c8976f05ce765a0e
   languageName: node
   linkType: hard
 
@@ -3539,10 +3566,12 @@ __metadata:
   resolution: "next-regl@workspace:."
   dependencies:
     "@types/react": 17.0.19
+    "@types/react-dom": ^17.0.9
     "@vanilla-extract/babel-plugin": ^1.1.1
     "@vanilla-extract/css": ^1.6.1
     "@vanilla-extract/next-plugin": ^1.0.0
     "@vanilla-extract/webpack-plugin": ^2.1.0
+    disable-scroll: ^0.6.0
     eslint: 7.32.0
     eslint-config-next: 11.1.0
     next: 11.1.0
