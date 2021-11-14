@@ -1,9 +1,9 @@
 import type { NextPage } from "next";
 import Head from "next/head";
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Qwerty from "@/components/organismus/Qwerty";
-import { containerCls, mainCls, titleCls } from "@/styles/org.css";
 import { DEFAULT_QWERTY_VALUES } from "@/constants/org";
+import { containerCls, mainCls, titleCls } from "@/styles/org.css";
 
 /**
  * トラッカー
@@ -13,7 +13,7 @@ const Org: NextPage = () => {
   const [qwerty, setQwerty] = useState(DEFAULT_QWERTY_VALUES);
 
   // If pressed key is our target key then set to true
-  function downHandler({ key }: any) {
+  const downHandler = ({ key }: any) => {
     if (key) {
       setQwerty(() => {
         return {
@@ -22,7 +22,7 @@ const Org: NextPage = () => {
         };
       });
     }
-  }
+  };
   // If released key is our target key then set to false
   const upHandler = ({ key }: any) => {
     if (key) {

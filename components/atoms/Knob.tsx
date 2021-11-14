@@ -28,8 +28,43 @@ const Knob: React.FC<Props> = ({ label, value, onUpdate, onCommit }) => {
     }
   }, [value]);
 
+  // FIXME: 共通化する
+  const handleTouchStart = useCallback(
+    (e: any) => {
+      const onTouchMove = (e: any) => {
+        const touch = e.changedTouches[0];
+        const el = elementRef.current;
+        const bounds = el.parentNode.getBoundingClientRect();
+        const dialCenterX = bounds.left + el.offsetWidth / 2;
+        const dialCenterY = bounds.top + el.offsetHeight / 2;
+        const radian = Math.atan2(
+          touch.clientY - dialCenterY,
+          touch.clientX - dialCenterX
+        );
+        let updateDegree = radian * (180 / Math.PI);
+        if (el && -180 <= updateDegree && updateDegree <= 0) {
+          el.style.transform = `rotate(${updateDegree}deg) scale(-1, -1)`;
+          setPosition(position);
+          // 180度を100%として目盛の値を算出する
+          const updateValue = round((floor(updateDegree, 10) + 180) / 180, 10);
+          onUpdate(updateValue);
+        }
+        if (!dragging) setDragging(true);
+      };
+      const onTouchEnd = () => {
+        if (onCommit) onCommit();
+        document.removeEventListener("touchmove", onTouchMove);
+        document.removeEventListener("touchup", onTouchEnd);
+        setDragging(false);
+      };
+      document.addEventListener("touchmove", onTouchMove);
+      document.addEventListener("touchup", onTouchEnd);
+    },
+    [dragging, onCommit, onUpdate, position]
+  );
+
+  // FIXME: 共通化する
   const onMouseDown = useCallback(() => {
-    // FIXME: タッチデバイスの考慮
     const onMouseMove = (e: MouseEvent) => {
       const el = elementRef.current;
       const bounds = el.parentNode.getBoundingClientRect();
@@ -68,7 +103,12 @@ const Knob: React.FC<Props> = ({ label, value, onUpdate, onCommit }) => {
     <div>
       <span className={knobLabelCls}>{label}</span>
       <div className={knobWrapperCls}>
-        <button ref={elementRef} className={knobCls} onMouseDown={onMouseDown}>
+        <button
+          ref={elementRef}
+          className={knobCls}
+          onMouseDown={onMouseDown}
+          onTouchStart={handleTouchStart}
+        >
           <span draggable={false} className={knobPointerStateCls} />
         </button>
       </div>
