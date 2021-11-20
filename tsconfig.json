@@ -31,8 +31,8 @@
   "include": [
     "next-env.d.ts",
     "**/*.ts",
-    "**/*.tsx"
-, "__tests__/utils/index.test.jsx", "__tests__/utils/index.test.jsx"  ],
+    "**/*.tsx",
+  ],
   "exclude": [
     "node_modules"
   ]

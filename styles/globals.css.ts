@@ -37,7 +37,7 @@ export const vars = createGlobalThemeContract({
 // #7fd8e4
 createGlobalTheme(":root", vars, {
   color: {
-    white: "#fff",
+    white: "#ffffff",
     gray: "#636661",
     gray2: "#bebebe",
     gray3: "#cacaca",
