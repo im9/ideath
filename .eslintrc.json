@@ -1,6 +1,12 @@
 {
-  "extends": ["next/core-web-vitals"],
-  "plugins": ["testing-library"],
+  "extends": [
+    "next/core-web-vitals",
+    "plugin:cypress/recommended"
+  ],
+  "plugins": [
+    "testing-library",
+    "cypress"
+  ],
   "overrides": [
     // Only uses Testing Library lint rules in test files
     {
