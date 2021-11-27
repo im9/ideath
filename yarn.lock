@@ -4386,7 +4386,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/babel-plugin@npm:^1.1.1":
+"@vanilla-extract/babel-plugin@npm:^1.1.2":
   version: 1.1.2
   resolution: "@vanilla-extract/babel-plugin@npm:1.1.2"
   dependencies:
@@ -4414,7 +4414,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/css@npm:^1.6.2, @vanilla-extract/css@npm:^1.6.3":
+"@vanilla-extract/css@npm:^1.6.2":
   version: 1.6.3
   resolution: "@vanilla-extract/css@npm:1.6.3"
   dependencies:
@@ -4428,6 +4428,23 @@ __metadata:
     deepmerge: ^4.2.2
     outdent: ^0.8.0
   checksum: a435cecc90dc177316f502d9d1fc2873a95b06c1de231f6b4deaf4be444d0d8b8e13a970f8987500dd0b6c297b23e9d68c0f89cd059e9640274526df930acd83
+  languageName: node
+  linkType: hard
+
+"@vanilla-extract/css@npm:^1.6.4":
+  version: 1.6.4
+  resolution: "@vanilla-extract/css@npm:1.6.4"
+  dependencies:
+    "@emotion/hash": ^0.8.0
+    "@vanilla-extract/private": ^1.0.2
+    chalk: ^4.1.1
+    css-what: ^5.0.1
+    cssesc: ^3.0.0
+    csstype: ^3.0.7
+    deep-object-diff: ^1.1.0
+    deepmerge: ^4.2.2
+    outdent: ^0.8.0
+  checksum: 06945ebe78df10a189f07c357d8fcdc7128dccb03345615f5dbfb1bc37d13e95af1bdf2a6d28e457c7f7eb4659e3a146e8f859b989645e3ebba2cca7380ec4dc
   languageName: node
   linkType: hard
 
@@ -4481,6 +4498,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@vanilla-extract/private@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "@vanilla-extract/private@npm:1.0.2"
+  checksum: 6774a076f9416a50391ade63a0ad5881cdea5d63e80720c7381b2929ee5725df4ea3745444cde3a3b3e5d55e69c35b63ddcf708c5a21ad571640371899789add
+  languageName: node
+  linkType: hard
+
 "@vanilla-extract/webpack-plugin@npm:^2.0.0":
   version: 2.1.0
   resolution: "@vanilla-extract/webpack-plugin@npm:2.1.0"
@@ -4497,9 +4521,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/webpack-plugin@npm:^2.1.1":
-  version: 2.1.1
-  resolution: "@vanilla-extract/webpack-plugin@npm:2.1.1"
+"@vanilla-extract/webpack-plugin@npm:^2.1.2":
+  version: 2.1.2
+  resolution: "@vanilla-extract/webpack-plugin@npm:2.1.2"
   dependencies:
     "@vanilla-extract/integration": ^1.3.0
     chalk: ^4.1.1
@@ -4508,7 +4532,7 @@ __metadata:
     virtual-resource-loader: ^1.0.0
   peerDependencies:
     webpack: ^4.30.0 || ^5.20.2
-  checksum: 2f942faa8b4eda2ae2f64d1e1e52c31379f195e06912c4d5ea370d2133d7e68c45ed547f87761b8369881f162dfff00ea9ebe35d82a3047fc0caecf6cf91d752
+  checksum: 97fc83527589323d840b6a86cdc1ac6a8fc090e89bad06b39f474cfb181859b1007fbe8cb21bf4b801379fc2100f1168cadbb486bd5226c14702f6db9ef76938
   languageName: node
   linkType: hard
 
@@ -13015,10 +13039,10 @@ fsevents@^1.2.7:
     "@types/jest": ^27.0.3
     "@types/react": 17.0.19
     "@types/react-dom": ^17.0.9
-    "@vanilla-extract/babel-plugin": ^1.1.1
-    "@vanilla-extract/css": ^1.6.3
+    "@vanilla-extract/babel-plugin": ^1.1.2
+    "@vanilla-extract/css": ^1.6.4
     "@vanilla-extract/next-plugin": ^1.0.1
-    "@vanilla-extract/webpack-plugin": ^2.1.1
+    "@vanilla-extract/webpack-plugin": ^2.1.2
     babel-jest: ^27.3.1
     babel-loader: ^8.2.3
     babel-plugin-inline-react-svg: ^2.0.1
@@ -13044,7 +13068,7 @@ fsevents@^1.2.7:
     tone: ^14.7.77
     ts-jest: ^27.0.7
     tunajs: ^1.0.15
-    typescript: 4.3.5
+    typescript: 4.5.2
     use-interval: ^1.3.0
   languageName: unknown
   linkType: soft
@@ -17340,23 +17364,23 @@ resolve@^2.0.0-next.3:
   languageName: node
   linkType: hard
 
-typescript@4.3.5:
-  version: 4.3.5
-  resolution: "typescript@npm:4.3.5"
+typescript@4.5.2:
+  version: 4.5.2
+  resolution: "typescript@npm:4.5.2"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: bab033b5e2b0790dd35b77fd005df976ef80b8d84fd2c6e63cc31808151875beae9216e5a315fe7068e8499905c3c354248fe83272cdfc13b7705635f0c66c97
+  checksum: 74f9ce65d532bdf5d0214b3f60cf37992180023388c87a11ee6f838a803067ef0b63c600fa501b0deb07f989257dce1e244c9635ed79feca40bbccf6e0aa1ebc
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@4.3.5#~builtin<compat/typescript>":
-  version: 4.3.5
-  resolution: "typescript@patch:typescript@npm%3A4.3.5#~builtin<compat/typescript>::version=4.3.5&hash=d8b4e7"
+"typescript@patch:typescript@4.5.2#~builtin<compat/typescript>":
+  version: 4.5.2
+  resolution: "typescript@patch:typescript@npm%3A4.5.2#~builtin<compat/typescript>::version=4.5.2&hash=d8b4e7"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: bc2c4fdf0f1557fdafe4ef74848c72ebd9c8c60829568248f869121aea2bb20e16649a252431d0acb185ec118143be22bed73d08f64379557810d82756afedde
+  checksum: 02cf0f190f0cb6d216558d8db9c3a968feeab4965c340a351e5e6e84a42a3946e5e200a9538b6e427af9d17e4f713254dd0707d5fd6f238ce93f0aee1986ab57
   languageName: node
   linkType: hard
 
