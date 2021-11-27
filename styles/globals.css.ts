@@ -5,11 +5,19 @@ import {
 } from "@vanilla-extract/css";
 
 globalStyle("html, body", {
+  width: "100%",
+  height: "100%",
+  minHeight: "100%",
   padding: "0",
   margin: "0",
   fontFamily:
     "Orbitron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
   backgroundColor: "var(--color-grayLight)",
+});
+
+globalStyle("#__next", {
+  width: "100%",
+  height: "100%",
 });
 
 globalStyle("a", {

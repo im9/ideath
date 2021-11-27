@@ -1,12 +1,26 @@
 import type { NextPage } from "next";
 import Head from "next/head";
-import Pads from "@/components/organismus/Pads";
-import { containerCls, mainCls, titleCls } from "@/styles/index.css";
+import { useRouter } from "next/router";
+import React, { useCallback } from "react";
+import SquareButton from "@/components/atoms/SquareButton";
+import {
+  containerCls,
+  mainCls,
+  titleCls,
+  heroImage,
+  heroText,
+  btnAreaCls,
+} from "@/styles/index.css";
 
 /**
  * パッド
  */
 const Home: NextPage = () => {
+  const router = useRouter();
+  const handleStartBtnClick = useCallback(() => {
+    router.push("/seq");
+  }, [router]);
+
   return (
     <div className={containerCls}>
       <Head>
@@ -15,11 +29,18 @@ const Home: NextPage = () => {
         <meta name="viewport" content="initial-scale=1.0, width=device-width" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-
       <main className={mainCls}>
-        <h1 className={titleCls}>Pads</h1>
-        <div>
-          <Pads />
+        <div className={heroImage}>
+          <div className={heroText}>
+            <h1 className={titleCls}>
+              iDeath
+              <br />
+              is cloud music gear
+            </h1>
+          </div>
+          <div className={btnAreaCls}>
+            <SquareButton label="Start" onClick={handleStartBtnClick} />
+          </div>
         </div>
       </main>
     </div>
