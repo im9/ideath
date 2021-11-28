@@ -1,4 +1,4 @@
-import { style } from "@vanilla-extract/css";
+import { style, globalStyle } from "@vanilla-extract/css";
 
 export const containerCls = style({
   height: "100%",
@@ -51,16 +51,48 @@ export const heroText = style({
 });
 
 export const btnAreaCls = style({
-  textAlign: "center",
   position: "absolute",
-  top: "70%",
-  left: "50%",
-  width: "100%",
-  transform: "translate(-50%, -70%)",
+  top: "0",
+  right: "20px",
   "@media": {
     "screen and (max-width: 480px)": {
-      top: "90%",
-      transform: "translate(-50%, -90%)",
+      right: "10px",
     },
   },
+});
+
+// FIXME: TextButton コンポーネントとして切り出す
+export const loginBtnCls = style({
+  background: "none",
+  color: "var(--color-white)",
+  border: "none",
+  margin: "0.5rem auto",
+  cursor: "pointer",
+  position: "relative",
+  fontSize: "1.2rem",
+  display: "flex",
+  alignItems: "center",
+  textDecoration: "none",
+  textTransform: "uppercase",
+  transition: "0.2s",
+  letterSpacing: "4px",
+  overflow: "hidden",
+  fill: "var(--color-white)",
+  ":focus": {
+    outline: "none",
+  },
+  ":hover": {
+    color: "var(--color-gray)",
+    fill: "var(--color-gray)",
+  },
+  "@media": {
+    "screen and (max-width: 480px)": {
+      fontSize: "1rem",
+    },
+  },
+});
+
+globalStyle(`${loginBtnCls} > i`, {
+  display: "flex",
+  alignItems: "center",
 });

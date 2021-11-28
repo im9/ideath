@@ -2,7 +2,7 @@ import type { NextPage } from "next";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import React, { useCallback } from "react";
-import SquareButton from "@/components/atoms/SquareButton";
+import Icons from "@/components/atoms/Icons";
 import {
   containerCls,
   mainCls,
@@ -10,14 +10,15 @@ import {
   heroImage,
   heroText,
   btnAreaCls,
+  loginBtnCls,
 } from "@/styles/index.css";
 
 /**
- * パッド
+ * TOP
  */
 const Home: NextPage = () => {
   const router = useRouter();
-  const handleStartBtnClick = useCallback(() => {
+  const handleLoginBtnClick = useCallback(() => {
     router.push("/seq");
   }, [router]);
 
@@ -39,7 +40,10 @@ const Home: NextPage = () => {
             </h1>
           </div>
           <div className={btnAreaCls}>
-            <SquareButton label="Start" onClick={handleStartBtnClick} />
+            <button className={loginBtnCls} onClick={handleLoginBtnClick}>
+              Login
+              <Icons name="Login" />
+            </button>
           </div>
         </div>
       </main>
