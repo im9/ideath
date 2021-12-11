@@ -26,23 +26,7 @@ import {
   DEFAULT_SEQ_SAMPLES,
   TRACK_LABELS,
 } from "@/constants/seq";
-import {
-  containerCls,
-  mainCls,
-  titleCls,
-  controlsCls,
-  settingsCls,
-  settingsTrackCls,
-  settingsBpmCls,
-  settingsAreaCls,
-  settingsTrackDisplayCls,
-  settingsTrackDisplayEffectAreaCls,
-  settingsTrackButtonAreaCls,
-  settingsTrackKnobAreaCls,
-  padsCls,
-  padsWrapperCls,
-  modalStyleCls,
-} from "@/styles/seq.css";
+import * as styles from "@/styles/seq.css";
 
 /**
  * リズムマシン
@@ -319,7 +303,7 @@ const Seq: NextPage = () => {
       <dt>0</dt>
       <dd>
         <div>Master</div>
-        <div className={settingsTrackDisplayEffectAreaCls}>
+        <div className={styles.settingsTrackDisplayEffectAreaCls}>
           <div>Volume: {percent(master.volume)}</div>
         </div>
       </dd>
@@ -330,7 +314,7 @@ const Seq: NextPage = () => {
       <dd>
         <div>{current}</div>
         <div>{name}</div>
-        <div className={settingsTrackDisplayEffectAreaCls}>
+        <div className={styles.settingsTrackDisplayEffectAreaCls}>
           <div>Distortion: {percent(tracks[trackNum - 1]?.d)}</div>
           <div>Reverb: {percent(tracks[trackNum - 1]?.r)}</div>
         </div>
@@ -360,7 +344,7 @@ const Seq: NextPage = () => {
    */
   const resetModal = process.browser ? (
     <Modal>
-      <div className={modalStyleCls}>
+      <div className={styles.modalStyleCls}>
         <h1>RESET PATTERN</h1>
         <p>Are you sure you want to reset pattern?</p>
         <footer>
@@ -397,7 +381,7 @@ const Seq: NextPage = () => {
     });
 
     return (
-      <div key={row} className={padsCls}>
+      <div key={row} className={styles.padsCls}>
         {pad}
       </div>
     );
@@ -430,19 +414,19 @@ const Seq: NextPage = () => {
 
   return (
     <>
-      <div className={containerCls} id="root">
+      <div className={styles.containerCls} id="root">
         <Head>
           <title>Seq</title>
           <meta name="description" content="seq" />
           <link rel="icon" href="/favicon.ico" />
         </Head>
-        <main className={mainCls}>
-          <h1 className={titleCls}>Seq</h1>
-          <div className={settingsCls}>
-            <div className={settingsTrackCls}>
-              <div className={settingsTrackDisplayCls}>{display}</div>
+        <main className={styles.mainCls}>
+          <h1 className={styles.titleCls}>Seq</h1>
+          <div className={styles.settingsCls}>
+            <div className={styles.settingsTrackCls}>
+              <div className={styles.settingsTrackDisplayCls}>{display}</div>
             </div>
-            <div className={settingsBpmCls}>
+            <div className={styles.settingsBpmCls}>
               <CircleButton
                 label="＋"
                 onClick={() => {
@@ -455,20 +439,20 @@ const Seq: NextPage = () => {
               <Digits label={"BPM"} bpm={master.bpm} />
             </div>
           </div>
-          <div className={settingsAreaCls}>
-            <div className={settingsTrackButtonAreaCls}>
+          <div className={styles.settingsAreaCls}>
+            <div className={styles.settingsTrackButtonAreaCls}>
               <div>Track</div>
               <div>{trackBtns}</div>
             </div>
-            <div className={settingsTrackKnobAreaCls}>{knobs}</div>
+            <div className={styles.settingsTrackKnobAreaCls}>{knobs}</div>
           </div>
-          <div className={controlsCls}>
+          <div className={styles.controlsCls}>
             <PlayButton pushed={master.play} onClick={handlePlayBtnClick} />
             <div>
               <SquareButton label="RESET" onClick={handleResetBtnClick} />
             </div>
           </div>
-          <div className={padsWrapperCls}>{pads}</div>
+          <div className={styles.padsWrapperCls}>{pads}</div>
         </main>
       </div>
       {resetModal}

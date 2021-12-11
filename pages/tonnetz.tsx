@@ -16,6 +16,13 @@ const Org: NextPage = () => {
   // If pressed key is our target key then set to true
   const downHandler = ({ key }: any) => {
     if (key) {
+      // Audio Context 開始
+      Tone.start();
+      const synth = new Tone.PolySynth(Tone.FMSynth, {
+        detune: 5,
+      }).toDestination();
+      synth.triggerAttackRelease(["C4", "E4", "A4"], 1);
+
       setQwerty(() => {
         return {
           ...qwerty,

@@ -69,7 +69,6 @@ export const loginBtnCls = style({
   margin: "0.5rem auto",
   cursor: "pointer",
   position: "relative",
-  fontSize: "1.2rem",
   display: "flex",
   alignItems: "center",
   textDecoration: "none",
@@ -84,11 +83,6 @@ export const loginBtnCls = style({
   ":hover": {
     color: "var(--color-gray)",
     fill: "var(--color-gray)",
-  },
-  "@media": {
-    "screen and (max-width: 480px)": {
-      fontSize: "1rem",
-    },
   },
 });
 
