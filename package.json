@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "disable-scroll": "^0.6.0",
-    "next": "^12.0.4",
+    "inline-worker": "^1.1.0",
+    "next": "^12.0.7",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "recoil": "^0.5.2",
@@ -44,7 +45,7 @@
     "@types/react-dom": "^17.0.9",
     "@vanilla-extract/babel-plugin": "^1.1.2",
     "@vanilla-extract/css": "^1.6.4",
-    "@vanilla-extract/next-plugin": "^1.0.1",
+    "@vanilla-extract/next-plugin": "^2.0.1",
     "@vanilla-extract/webpack-plugin": "^2.1.2",
     "babel-jest": "^27.3.1",
     "babel-loader": "^8.2.3",
