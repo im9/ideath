@@ -1,113 +1,59 @@
 import type { NextPage } from "next";
+import dynamic from "next/dynamic";
 import Head from "next/head";
 import { useState, useEffect, useCallback } from "react";
-import Recorder from "@/utils/recorder";
+import * as Tone from "tone";
+
+const AuidioVisualSSR = dynamic(
+  () => import("@/components/organismus/AuidioVisual"),
+  {
+    ssr: false,
+  }
+);
+
 import * as styles from "@/styles/rec.css";
 
 /**
  * サンプラー
  */
 const Rec: NextPage = () => {
-  const [recorder, setRecorder] = useState(new Recorder());
+  const [recorder, setRecorder] = useState<any>(null);
+  const [mic, setMic] = useState<any>(null);
+  const [player, setPlayer] = useState<any>({});
+  const [blobUrl, setBlobUrl] = useState<string>("");
+  const [isRecording, setIsRecording] = useState<boolean>(false);
 
-  const startUserMedia = useCallback((stream) => {
-    if (!process.browser) return;
+  const startRecording = useCallback(() => {
+    Tone.context.resume();
 
-    const audioContext = window.AudioContext || window.webkitAudioContext;
-    const input = audioContext.createMediaStreamSource(stream);
-    audioContext.resume();
-    // __log('Media stream created.');
-
-    setRecorder(new Recorder(input));
-    // __log('Recorder initialised.');
+    setMic(new Tone.UserMedia());
+    setRecorder(new Tone.Recorder());
   }, []);
 
-  const startRecording = useCallback((button) => {
-    console.log(button, recorder);
-    recorder && recorder.record();
-    // button.disabled = true;
-    // button.nextElementSibling.disabled = false;
-    // __log('Recording...');
-  }, []);
+  const handlePlayBtn = useCallback(() => {
+    player?.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorder, player]);
 
-  const createDownloadLink = useCallback(() => {
-    recorder &&
-      recorder.exportWAV((blob: any) => {
-        var url = URL.createObjectURL(blob);
-        var li = document.createElement("li");
-        var au = document.createElement("audio");
-        var hf = document.createElement("a");
+  const stopRecording = useCallback(async () => {
+    const data = await recorder?.stop();
+    const blobUrl = URL.createObjectURL(data);
+    const player = new Tone.Player(blobUrl).toDestination();
+    setPlayer(player);
+    setBlobUrl(blobUrl);
 
-        au.controls = true;
-        au.src = url;
-        hf.href = url;
-        hf.download = new Date().toISOString() + ".wav";
-        hf.innerHTML = hf.download;
-        // li.appendChild(au);
-        // li.appendChild(hf);
-        // recordingslist.appendChild(li);
-      });
+    setIsRecording(false);
   }, [recorder]);
 
-  const stopRecording = useCallback(
-    (button) => {
-      recorder && recorder.stop();
-      button.disabled = true;
-      button.previousElementSibling.disabled = false;
-      // __log('Stopped recording.');
-
-      // create WAV download link using audio data blob
-      createDownloadLink();
-
-      recorder?.clear();
-    },
-    [createDownloadLink, recorder]
-  );
-
   useEffect(() => {
-    // try {
-    //   // webkit shim
-    //   window.AudioContext = window.AudioContext || window.webkitAudioContext;
-    //   if (navigator.mediaDevices === undefined) {
-    //     navigator.mediaDevices = {};
-    //   }
-    //   if (navigator.mediaDevices.getUserMedia === undefined) {
-    //     navigator.mediaDevices.getUserMedia = function (constraints) {
-    //       // First get ahold of the legacy getUserMedia, if present
-    //       let getUserMedia =
-    //         navigator.getUserMedia ||
-    //         navigator.webkitGetUserMedia ||
-    //         navigator.mozGetUserMedia;
-    //       // Some browsers just don't implement it - return a rejected promise with an error
-    //       // to keep a consistent interface
-    //       if (!getUserMedia) {
-    //         return Promise.reject(
-    //           new Error("getUserMedia is not implemented in this browser")
-    //         );
-    //       }
-    //       // Otherwise, wrap the call to the old navigator.getUserMedia with a Promise
-    //       return new Promise(function (resolve, reject) {
-    //         getUserMedia.call(navigator, constraints, resolve, reject);
-    //       });
-    //     };
-    //   }
-    //   window.URL = window.URL || window.webkitURL;
-    //   audio_context = new AudioContext();
-    //   // __log('Audio context set up.');
-    //   // __log('navigator.mediaDevices ' + (navigator.mediaDevices.length != 0 ? 'available.' : 'not present!'));
-    // } catch (e) {
-    //   alert("No web audio support in this browser!");
-    // }
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        console.log(stream);
-        startUserMedia(stream);
-      })
-      .catch((e) => {
-        // __log('No live audio input: ' + e);
-      });
-  });
+    if (recorder) {
+      mic?.connect(recorder);
+      mic?.open();
+
+      recorder?.start();
+      setIsRecording(true);
+    }
+  }, [mic, recorder]);
 
   return (
     <div className={styles.containerCls}>
@@ -121,16 +67,18 @@ const Rec: NextPage = () => {
       <main className={styles.mainCls}>
         <h1 className={styles.titleCls}>Rec</h1>
         <div>
-          <button onClick={startRecording}>record</button>
-          <button onClick={stopRecording} disabled>
+          <button onClick={startRecording} disabled={isRecording}>
+            record
+          </button>
+          <button onClick={stopRecording} disabled={!isRecording}>
             stop
+          </button>
+          <button onClick={handlePlayBtn} disabled={!blobUrl}>
+            Play
           </button>
         </div>
         <div>
-          <h2>Recordings</h2>
-          <ul id="recordingslist"></ul>
-          <h2>Log</h2>
-          <pre id="log"></pre>
+          <AuidioVisualSSR url={blobUrl} />
         </div>
       </main>
     </div>

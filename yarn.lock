@@ -3869,6 +3869,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/debounce@npm:*":
+  version: 3.0.0
+  resolution: "@types/debounce@npm:3.0.0"
+  checksum: af99f44f8ce90388aa5a909066c64b4ddc5efdff72bccf7dcef1fe8a04f03d03a7a42cc1f42ff14620c66923f92600ccfeb768bd77ad250f12a6ebca116ca719
+  languageName: node
+  linkType: hard
+
 "@types/glob-base@npm:^0.3.0":
   version: 0.3.0
   resolution: "@types/glob-base@npm:0.3.0"
@@ -3901,6 +3908,13 @@ __metadata:
   dependencies:
     "@types/unist": "*"
   checksum: fff47998f4c11e21a7454b58673f70478740ecdafd95aaf50b70a3daa7da9cdc57315545bf9c039613732c40b7b0e9e49d11d03fe9a4304721cdc3b29a88141e
+  languageName: node
+  linkType: hard
+
+"@types/howler@npm:*":
+  version: 2.2.4
+  resolution: "@types/howler@npm:2.2.4"
+  checksum: e8b013e434334f59ab37a6a8ece4b46a4d05a94b789b1b0e104078aecd4060ebc5ab3e163676088258de4fd870d6aa561e7faca7178a3a93415dc80c04422d04
   languageName: node
   linkType: hard
 
@@ -4099,6 +4113,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/react-howler@npm:^3.7.3":
+  version: 3.7.3
+  resolution: "@types/react-howler@npm:3.7.3"
+  dependencies:
+    "@types/howler": "*"
+    "@types/react": "*"
+  checksum: 39bf31e159323e92ad01b87fc6ba7137d49ca85983ef61497b0568159edea25b512b8fd46dd8dd002b265fe8965f4584a20b4c3d2bd01ef2ca59270770efdee9
+  languageName: node
+  linkType: hard
+
 "@types/react-syntax-highlighter@npm:11.0.5":
   version: 11.0.5
   resolution: "@types/react-syntax-highlighter@npm:11.0.5"
@@ -4194,6 +4218,15 @@ __metadata:
   version: 2.0.6
   resolution: "@types/unist@npm:2.0.6"
   checksum: 25cb860ff10dde48b54622d58b23e66214211a61c84c0f15f88d38b61aa1b53d4d46e42b557924a93178c501c166aa37e28d7f6d994aba13d24685326272d5db
+  languageName: node
+  linkType: hard
+
+"@types/wavesurfer.js@npm:^5.2.2":
+  version: 5.2.2
+  resolution: "@types/wavesurfer.js@npm:5.2.2"
+  dependencies:
+    "@types/debounce": "*"
+  checksum: b83a319ff5817fc20ab46baf31c927e04ca7652c501f90653d0e66dba34f6558cef52c2e78460ab01b0f1ff6e13c77f596a7b4a91d2d22810ecca34185e48fd0
   languageName: node
   linkType: hard
 
@@ -10111,6 +10144,13 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
+"howler@npm:^2.2.0":
+  version: 2.2.3
+  resolution: "howler@npm:2.2.3"
+  checksum: c04ce19411f4d86f8508d411a93aea943f128c2686b3df3c61383fd4ed8f5551232c4389aba3a8d4c8b0eeb34ae51df5a9c3ccd9ba48583ac53e9bf9fcbd1ecf
+  languageName: node
+  linkType: hard
+
 "html-encoding-sniffer@npm:^2.0.1":
   version: 2.0.1
   resolution: "html-encoding-sniffer@npm:2.0.1"
@@ -10325,6 +10365,8 @@ fsevents@^1.2.7:
     "@types/jest": ^27.0.3
     "@types/react": 17.0.19
     "@types/react-dom": ^17.0.9
+    "@types/react-howler": ^3.7.3
+    "@types/wavesurfer.js": ^5.2.2
     "@vanilla-extract/babel-plugin": ^1.1.2
     "@vanilla-extract/css": ^1.6.4
     "@vanilla-extract/next-plugin": ^2.0.1
@@ -10347,6 +10389,7 @@ fsevents@^1.2.7:
     prettier: ^2.4.1
     react: ^17.0.2
     react-dom: ^17.0.2
+    react-howler: ^5.2.0
     react-test-renderer: ^17.0.2
     recoil: ^0.5.2
     regl: ^2.1.0
@@ -10357,6 +10400,7 @@ fsevents@^1.2.7:
     tunajs: ^1.0.15
     typescript: 4.5.2
     use-interval: ^1.3.0
+    wavesurfer.js: ^5.2.0
   languageName: unknown
   linkType: soft
 
@@ -14549,6 +14593,17 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
+"prop-types@npm:^15.5.6":
+  version: 15.8.0
+  resolution: "prop-types@npm:15.8.0"
+  dependencies:
+    loose-envify: ^1.4.0
+    object-assign: ^4.1.1
+    react-is: ^16.13.1
+  checksum: d8d51cf55d70cab207dd1e80df2dc093b8288a4519598a28d25d32d6e02319b2fd66712caa979040451656185f7393341185b0b081158520557aa4cbdcaa4b3a
+  languageName: node
+  linkType: hard
+
 "property-information@npm:^5.0.0, property-information@npm:^5.3.0":
   version: 5.6.0
   resolution: "property-information@npm:5.6.0"
@@ -14925,6 +14980,16 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
+"react-howler@npm:^5.2.0":
+  version: 5.2.0
+  resolution: "react-howler@npm:5.2.0"
+  dependencies:
+    howler: ^2.2.0
+    prop-types: ^15.5.6
+  checksum: 7d67f45495274368e953e230b4cb713348687d1bcc8a3a4a917de3b60f6603c2933ab996de6350f6e9de72fb98297975c870ac1711e145f0b5028d21dee18a57
+  languageName: node
+  linkType: hard
+
 "react-inspector@npm:^5.1.0":
   version: 5.1.1
   resolution: "react-inspector@npm:5.1.1"
@@ -14945,7 +15010,7 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
-"react-is@npm:^16.7.0, react-is@npm:^16.8.1":
+"react-is@npm:^16.13.1, react-is@npm:^16.7.0, react-is@npm:^16.8.1":
   version: 16.13.1
   resolution: "react-is@npm:16.13.1"
   checksum: f7a19ac3496de32ca9ae12aa030f00f14a3d45374f1ceca0af707c831b2a6098ef0d6bdae51bd437b0a306d7f01d4677fcc8de7c0d331eb47ad0f46130e53c5f
@@ -18049,6 +18114,13 @@ typescript@4.5.2:
     watchpack-chokidar2:
       optional: true
   checksum: 8b7cb8c8df8f4dd0e8ac47693c0141c4f020a4b031411247d600eca31522fde6f1f9a3a6f6518b46e71f7971b0ed5734c08c60d7fdd2530e7262776286f69236
+  languageName: node
+  linkType: hard
+
+"wavesurfer.js@npm:^5.2.0":
+  version: 5.2.0
+  resolution: "wavesurfer.js@npm:5.2.0"
+  checksum: 544bcd8e256058f3e1b1572ced6cf8b852e6625df5ea035b92e8703a78dd659018788ad456010cc4e608d6a7057406a44fd408b9b9258a5baa0d74a30580daaf
   languageName: node
   linkType: hard
 
