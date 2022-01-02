@@ -7,9 +7,9 @@ import { render, screen } from "@testing-library/react";
 import Home from "../../pages/index";
 
 describe("Home", () => {
-  it("renders a heading", () => {
+  it("renders a Seq", () => {
     render(<Home />);
 
-    expect(screen.getByRole("heading")).toBeTruthy();
+    expect(screen.getByText("Seq")).toBeInTheDocument();
   });
 });

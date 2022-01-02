@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useRef, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
 
@@ -7,18 +7,20 @@ type Props = {
 };
 
 const AuidioVisual: React.FC<Props> = ({ url }) => {
+  const [isInit, setIsInit] = useState<boolean>(false);
   const waveformRef = useRef<any>(null);
 
-  useEffect(() => {}, []);
-
   useEffect(() => {
-    if (url) {
-      waveformRef.current = WaveSurfer.create({
-        container: waveformRef.current,
-      });
-      console.log(url);
-      waveformRef.current.load(url);
+    if (url && !isInit) {
+      if (!isInit) {
+        waveformRef.current = WaveSurfer.create({
+          container: waveformRef.current,
+        });
+        setIsInit(true);
+      }
+      waveformRef?.current?.load(url);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
   return <div ref={waveformRef}></div>;

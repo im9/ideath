@@ -2,16 +2,12 @@ import { style, globalStyle } from "@vanilla-extract/css";
 
 export const containerCls = style({
   height: "100%",
-  background:
-    "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
-  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
+  overflow: "hidden",
+  backgroundColor: "var(--color-grayLight)",
 });
 
 export const mainCls = style({
   height: "100%",
-  background:
-    "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
-  boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
 });
 
 export const titleCls = style({
@@ -26,34 +22,30 @@ export const titleCls = style({
 });
 
 export const heroImage = style({
-  backgroundImage:
-    'linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url("/hero.jpg")',
   width: "100%",
-  height: "100%",
-  backgroundPosition: "center",
-  backgroundRepeat: "no-repeat",
-  backgroundSize: "cover",
   position: "relative",
-  backgroundAttachment: "fixed",
-  filter: "grayscale(.7)",
+  margin: "10% auto",
 });
 
 export const heroText = style({
   textAlign: "center",
-  position: "absolute",
-  top: "50%",
-  left: "50%",
-  width: "100%",
-  transform: "translate(-50%, -50%)",
-  color: "var(--color-white)",
-  textShadow:
-    "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
+  color: "var(--color-black)",
+});
+
+globalStyle(`${heroText} > h1`, {
+  fontWeight: 300,
+  "@media": {
+    "screen and (max-width: 480px)": {
+      fontSize: "1rem",
+      margin: "4.5rem auto",
+    },
+  },
 });
 
 export const btnAreaCls = style({
   position: "absolute",
-  top: "0",
-  right: "20px",
+  top: "10px",
+  left: "20px",
   "@media": {
     "screen and (max-width: 480px)": {
       right: "10px",
@@ -62,9 +54,9 @@ export const btnAreaCls = style({
 });
 
 // FIXME: TextButton コンポーネントとして切り出す
-export const loginBtnCls = style({
+export const logoCls = style({
   background: "none",
-  color: "var(--color-white)",
+  color: "var(--color-black)",
   border: "none",
   margin: "0.5rem auto",
   cursor: "pointer",
@@ -76,7 +68,7 @@ export const loginBtnCls = style({
   transition: "0.2s",
   letterSpacing: "4px",
   overflow: "hidden",
-  fill: "var(--color-white)",
+  fill: "var(--color-black)",
   ":focus": {
     outline: "none",
   },
@@ -86,7 +78,29 @@ export const loginBtnCls = style({
   },
 });
 
-globalStyle(`${loginBtnCls} > i`, {
+globalStyle(`${logoCls} > i`, {
   display: "flex",
   alignItems: "center",
+});
+
+export const seqArea = style({
+  position: "relative",
+  width: "100%",
+  height: 150,
+});
+
+export const gearsSection = style({
+  display: "flex",
+  color: "var(--color-black)",
+  fontWeight: 300,
+  flexWrap: "wrap",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      fontSize: ".8rem",
+    },
+  },
+});
+
+export const gearsSectionDetail = style({
+  margin: "20px",
 });

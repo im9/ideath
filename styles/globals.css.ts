@@ -12,7 +12,7 @@ globalStyle("html, body", {
   margin: "0",
   fontFamily:
     "Orbitron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
-  backgroundColor: "var(--color-grayLight)",
+  backgroundColor: "var(--color-white)",
   fontSize: "14px",
 });
 

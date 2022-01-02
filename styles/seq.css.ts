@@ -6,6 +6,7 @@ export const containerCls = style({
   flexDirection: "column",
   justifyContent: "center",
   alignItems: "center",
+  backgroundColor: "var(--color-grayLight)",
 });
 
 export const mainCls = style({

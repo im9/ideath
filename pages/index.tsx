@@ -1,7 +1,9 @@
 import type { NextPage } from "next";
 import Head from "next/head";
 import { useRouter } from "next/router";
+import Image from "next/image";
 import React, { useCallback } from "react";
+import SquareButton from "@/components/atoms/SquareButton";
 import Icons from "@/components/atoms/Icons";
 import * as styles from "@/styles/index.css";
 
@@ -10,7 +12,11 @@ import * as styles from "@/styles/index.css";
  */
 const Home: NextPage = () => {
   const router = useRouter();
-  const handleLoginBtnClick = useCallback(() => {
+  const handleLogoClick = useCallback(() => {
+    router.push("/");
+  }, [router]);
+
+  const handleSelectSeqClick = useCallback(() => {
     router.push("/seq");
   }, [router]);
 
@@ -23,24 +29,54 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className={styles.mainCls}>
+        <div className={styles.btnAreaCls}>
+          <button className={styles.logoCls} onClick={handleLogoClick}>
+            iDeath
+          </button>
+        </div>
         <div className={styles.heroImage}>
           <div className={styles.heroText}>
-            <h1 className={styles.titleCls}>
-              iDeath
-              <br />
-              is cloud music gear
-            </h1>
-          </div>
-          <div className={styles.btnAreaCls}>
-            <button
-              className={styles.loginBtnCls}
-              onClick={handleLoginBtnClick}
-            >
-              Enter
-              <Icons name="Login" />
-            </button>
+            <h1>Please select the gear you want to use.</h1>
           </div>
         </div>
+        <section>
+          <div className={styles.gearsSection}>
+            <Image
+              src="/images/top/seq.png"
+              width={720}
+              height={420}
+              objectFit="contain"
+              alt="seq"
+            />
+            <div className={styles.gearsSectionDetail}>
+              <h2>Seq</h2>
+              <dl>
+                <dt>Features</dt>
+                <dd>
+                  <li>6 track sampler</li>
+                  <li>16 step sequencer</li>
+                </dd>
+                <dt>Sounds</dt>
+                <dd>
+                  <li>presets drum samles</li>
+                  <li>16 step sequencer</li>
+                </dd>
+                <dt>Effects</dt>
+                <dd>
+                  <li>Reverb</li>
+                  <li>Distortion</li>
+                </dd>
+              </dl>
+              <div>
+                <SquareButton
+                  label="SELECT"
+                  small
+                  onClick={handleSelectSeqClick}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
   );
