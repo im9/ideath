@@ -94,6 +94,7 @@ export const gearsSection = style({
   color: "var(--color-black)",
   fontWeight: 300,
   flexWrap: "wrap",
+  justifyContent: "center",
   "@media": {
     "screen and (max-width: 480px)": {
       fontSize: ".8rem",
