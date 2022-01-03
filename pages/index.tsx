@@ -1,10 +1,12 @@
 import type { NextPage } from "next";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import Image from "next/image";
 import React, { useCallback } from "react";
 import MainLayout from "@/components/layouts/MainLayout";
 import SquareButton from "@/components/atoms/SquareButton";
+import MotionImage from "@/components/atoms/MotionImage";
+import MotionText from "@/components/atoms/MotionText";
+import { motion } from "framer-motion";
 import * as styles from "@/styles/index.css";
 
 /**
@@ -17,6 +19,10 @@ const Home: NextPage = () => {
     router.push("/seq");
   }, [router]);
 
+  const placeholderText = [
+    { type: "heading1", text: "Please select the gear you want to use." },
+  ];
+
   return (
     <div className={styles.containerCls}>
       <Head>
@@ -28,12 +34,25 @@ const Home: NextPage = () => {
       <MainLayout>
         <div className={styles.heroImage}>
           <div className={styles.heroText}>
-            <h1>Please select the gear you want to use.</h1>
+            <motion.div
+              className="App"
+              initial="hidden"
+              animate="visible"
+              variants={{
+                visible: {
+                  transition: {
+                    staggerChildren: 0.025,
+                  },
+                },
+              }}
+            >
+              <MotionText {...placeholderText[0]} />
+            </motion.div>
           </div>
         </div>
         <section>
           <div className={styles.gearsSection}>
-            <Image
+            <MotionImage
               src="/images/top/seq.png"
               width={720}
               height={420}

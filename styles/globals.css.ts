@@ -33,6 +33,7 @@ globalStyle("*", {
 export const vars = createGlobalThemeContract({
   color: {
     white: "color-white",
+    black: "color-black",
     gray: "color-gray",
     gray2: "color-gray2",
     gray3: "color-gray3",
@@ -47,6 +48,7 @@ export const vars = createGlobalThemeContract({
 createGlobalTheme(":root", vars, {
   color: {
     white: "#ffffff",
+    black: "#333333",
     gray: "#636661",
     gray2: "#bebebe",
     gray3: "#cacaca",
