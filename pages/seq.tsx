@@ -9,7 +9,7 @@ import {
   useMemo,
 } from "react";
 import * as Tone from "tone";
-
+import MainLayout from "@/components/layouts/MainLayout";
 import PlayButton from "@/components/atoms/PlayButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import SquareButton from "@/components/atoms/SquareButton";
@@ -420,7 +420,7 @@ const Seq: NextPage = () => {
           <meta name="description" content="seq" />
           <link rel="icon" href="/favicon.ico" />
         </Head>
-        <main className={styles.mainCls}>
+        <MainLayout className={styles.mainFrameCls}>
           <h1 className={styles.titleCls}>Seq</h1>
           <div className={styles.settingsCls}>
             <div className={styles.settingsTrackCls}>
@@ -453,7 +453,7 @@ const Seq: NextPage = () => {
             </div>
           </div>
           <div className={styles.padsWrapperCls}>{pads}</div>
-        </main>
+        </MainLayout>
       </div>
       {resetModal}
     </>

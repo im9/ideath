@@ -2,12 +2,7 @@ import { style, globalStyle } from "@vanilla-extract/css";
 
 export const containerCls = style({
   height: "100%",
-  overflow: "hidden",
   backgroundColor: "var(--color-grayLight)",
-});
-
-export const mainCls = style({
-  height: "100%",
 });
 
 export const titleCls = style({
@@ -24,12 +19,14 @@ export const titleCls = style({
 export const heroImage = style({
   width: "100%",
   position: "relative",
-  margin: "10% auto",
+  padding: "10% 0",
+  backgroundColor: "var(--color-grayLight)",
 });
 
 export const heroText = style({
   textAlign: "center",
   color: "var(--color-black)",
+  backgroundColor: "var(--color-grayLight)",
 });
 
 globalStyle(`${heroText} > h1`, {
@@ -40,47 +37,6 @@ globalStyle(`${heroText} > h1`, {
       margin: "4.5rem auto",
     },
   },
-});
-
-export const btnAreaCls = style({
-  position: "absolute",
-  top: "10px",
-  left: "20px",
-  "@media": {
-    "screen and (max-width: 480px)": {
-      right: "10px",
-    },
-  },
-});
-
-// FIXME: TextButton コンポーネントとして切り出す
-export const logoCls = style({
-  background: "none",
-  color: "var(--color-black)",
-  border: "none",
-  margin: "0.5rem auto",
-  cursor: "pointer",
-  position: "relative",
-  display: "flex",
-  alignItems: "center",
-  textDecoration: "none",
-  textTransform: "uppercase",
-  transition: "0.2s",
-  letterSpacing: "4px",
-  overflow: "hidden",
-  fill: "var(--color-black)",
-  ":focus": {
-    outline: "none",
-  },
-  ":hover": {
-    color: "var(--color-gray)",
-    fill: "var(--color-gray)",
-  },
-});
-
-globalStyle(`${logoCls} > i`, {
-  display: "flex",
-  alignItems: "center",
 });
 
 export const seqArea = style({
@@ -103,5 +59,18 @@ export const gearsSection = style({
 });
 
 export const gearsSectionDetail = style({
-  margin: "20px",
+  margin: "0",
+});
+
+globalStyle(`${gearsSectionDetail} > dl > dd`, {
+  margin: "0 20px",
+});
+
+export const gearsSectionDetailList = style({
+  padding: "20px 0",
+  margin: "0",
+});
+
+globalStyle(`${gearsSectionDetailList} > li`, {
+  margin: "0",
 });

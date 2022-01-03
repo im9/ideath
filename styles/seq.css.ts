@@ -9,7 +9,7 @@ export const containerCls = style({
   backgroundColor: "var(--color-grayLight)",
 });
 
-export const mainCls = style({
+export const mainFrameCls = style({
   margin: "auto",
   padding: "1rem 2rem",
   borderRadius: "20px",

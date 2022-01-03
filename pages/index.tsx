@@ -3,8 +3,8 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import React, { useCallback } from "react";
+import MainLayout from "@/components/layouts/MainLayout";
 import SquareButton from "@/components/atoms/SquareButton";
-import Icons from "@/components/atoms/Icons";
 import * as styles from "@/styles/index.css";
 
 /**
@@ -12,9 +12,6 @@ import * as styles from "@/styles/index.css";
  */
 const Home: NextPage = () => {
   const router = useRouter();
-  const handleLogoClick = useCallback(() => {
-    router.push("/");
-  }, [router]);
 
   const handleSelectSeqClick = useCallback(() => {
     router.push("/seq");
@@ -28,12 +25,7 @@ const Home: NextPage = () => {
         <meta name="viewport" content="initial-scale=1.0, width=device-width" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      <main className={styles.mainCls}>
-        <div className={styles.btnAreaCls}>
-          <button className={styles.logoCls} onClick={handleLogoClick}>
-            iDeath
-          </button>
-        </div>
+      <MainLayout>
         <div className={styles.heroImage}>
           <div className={styles.heroText}>
             <h1>Please select the gear you want to use.</h1>
@@ -53,18 +45,23 @@ const Home: NextPage = () => {
               <dl>
                 <dt>Features</dt>
                 <dd>
-                  <li>6 track sampler</li>
-                  <li>16 step sequencer</li>
+                  <ul className={styles.gearsSectionDetailList}>
+                    <li>6 track sampler</li>
+                    <li>16 step sequencer</li>
+                  </ul>
                 </dd>
                 <dt>Sounds</dt>
                 <dd>
-                  <li>presets drum samles</li>
-                  <li>16 step sequencer</li>
+                  <ul className={styles.gearsSectionDetailList}>
+                    <li>presets drum samles</li>
+                  </ul>
                 </dd>
                 <dt>Effects</dt>
                 <dd>
-                  <li>Reverb</li>
-                  <li>Distortion</li>
+                  <ul className={styles.gearsSectionDetailList}>
+                    <li>Reverb</li>
+                    <li>Distortion</li>
+                  </ul>
                 </dd>
               </dl>
               <div>
@@ -77,7 +74,7 @@ const Home: NextPage = () => {
             </div>
           </div>
         </section>
-      </main>
+      </MainLayout>
     </div>
   );
 };
