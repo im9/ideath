@@ -1,4 +1,7 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+## Description
+ideath is a web autio api based instrument.
+
+[demo](https://ideath.vercel.app/)
 
 ## Getting Started
 
