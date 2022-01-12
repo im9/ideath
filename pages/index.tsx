@@ -83,7 +83,7 @@ const Home: NextPage = () => {
                   </ul>
                 </dd>
               </dl>
-              <div>
+              <div className={styles.btnArea}>
                 <SquareButton
                   label="SELECT"
                   small

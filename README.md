@@ -1,5 +1,5 @@
 ## Description
-ideath is a web autio api based instrument.
+ideath is a web audio api based instrument.
 
 [demo](https://ideath.vercel.app/)
 

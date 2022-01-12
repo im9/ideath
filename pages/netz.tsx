@@ -7,9 +7,9 @@ import { DEFAULT_QWERTY_VALUES } from "@/constants/org";
 import * as styles from "@/styles/org.css";
 
 /**
- * トラッカー
+ * Tonnetz
  */
-const Org: NextPage = () => {
+const Netz: NextPage = () => {
   // state
   const [qwerty, setQwerty] = useState(DEFAULT_QWERTY_VALUES);
 
@@ -75,4 +75,4 @@ const Org: NextPage = () => {
   );
 };
 
-export default Org;
+export default Netz;

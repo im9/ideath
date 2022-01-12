@@ -1,19 +1,8 @@
 import { style, globalStyle } from "@vanilla-extract/css";
 
 export const containerCls = style({
-  height: "100%",
+  minHeight: "100vh",
   backgroundColor: "var(--color-grayLight)",
-});
-
-export const titleCls = style({
-  color: "var(--color-white)",
-  fontSize: "4rem",
-  fontWeight: 300,
-  "@media": {
-    "screen and (max-width: 480px)": {
-      fontSize: "3rem",
-    },
-  },
 });
 
 export const heroImage = style({
@@ -31,6 +20,7 @@ export const heroText = style({
 
 globalStyle(`${heroText} > h1`, {
   fontWeight: 300,
+  margin: "20px",
   "@media": {
     "screen and (max-width: 480px)": {
       fontSize: "1rem",
@@ -73,4 +63,9 @@ export const gearsSectionDetailList = style({
 
 globalStyle(`${gearsSectionDetailList} > li`, {
   margin: "0",
+});
+
+export const btnArea = style({
+  textAlign: "center",
+  marginBottom: "20px",
 });
