@@ -5,10 +5,7 @@ ideath is a web autio api based instrument.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
+$ yarn
+$ yarn dev
 ```
