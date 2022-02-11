@@ -1,6 +1,12 @@
 import { style } from "@vanilla-extract/css";
 
 export const knobWrapperCls = style({
+  display: "inline-grid",
+  justifyItems: "center",
+  alignItems: "center",
+});
+
+export const knobInnerCls = style({
   background:
     "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
   boxShadow:
@@ -30,6 +36,7 @@ export const knobLabelCls = style({
   background: "var(--color-white)",
   padding: "0 8px",
   borderRadius: "8px",
+  zIndex: 1,
 });
 
 export const knobPointerCls = style({

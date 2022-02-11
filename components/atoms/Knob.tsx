@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { floor, round } from "@/utils";
 import {
   knobWrapperCls,
+  knobInnerCls,
   knobCls,
   knobLabelCls,
   knobPointerCls,
@@ -100,9 +101,9 @@ const Knob: React.FC<Props> = ({ label, value, onUpdate, onCommit }) => {
     : knobPointerCls;
 
   return (
-    <div>
+    <div className={knobWrapperCls}>
       <span className={knobLabelCls}>{label}</span>
-      <div className={knobWrapperCls}>
+      <div className={knobInnerCls}>
         <button
           ref={elementRef}
           className={knobCls}

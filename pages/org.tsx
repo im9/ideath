@@ -1,7 +1,6 @@
-import * as Tone from "tone";
 import type { NextPage } from "next";
 import Head from "next/head";
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Qwerty from "@/components/organismus/Qwerty";
 import { DEFAULT_QWERTY_VALUES } from "@/constants/org";
 import * as styles from "@/styles/org.css";

@@ -40,6 +40,7 @@ export const vars = createGlobalThemeContract({
     grayLight: "color-grayLight",
     grayLight2: "color-grayLight2",
     grayLight3: "color-grayLight3",
+    grayLight4: "color-grayLight4",
   },
 });
 
@@ -54,6 +55,7 @@ createGlobalTheme(":root", vars, {
     gray3: "#cacaca",
     grayLight: "#e0e0e0",
     grayLight2: "#ededed",
-    grayLight3: "f0f0f0", // 未
+    grayLight3: "f0f0f0",
+    grayLight4: "#c8d0e7",
   },
 });

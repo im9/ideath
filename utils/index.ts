@@ -87,5 +87,5 @@ export const floor = (value: number, base: number) => {
  * @return {String} 百分率の文字列
  */
 export const percent = (value: number | undefined) => {
-  return `${value ? value * 100 : 0}%`;
+  return `${Math.floor(value ? value * 100 : 0)}%`;
 };
