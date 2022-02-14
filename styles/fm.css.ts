@@ -12,7 +12,7 @@ export const containerCls = style({
 export const mainFrameCls = style({
   margin: "auto",
   padding: "1rem 2rem",
-  width: "90vw",
+  // width: "90vw",
   borderRadius: "20px",
   background:
     "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
@@ -41,6 +41,7 @@ export const notesOptionArea = style({
   display: "flex",
   margin: "2rem 1rem",
   justifyContent: "space-between",
+  gap: "8rem",
 });
 
 export const note = style({
