@@ -19,6 +19,10 @@ const Home: NextPage = () => {
     router.push("/seq");
   }, [router]);
 
+  const handleSelectFMClick = useCallback(() => {
+    router.push("/fm");
+  }, [router]);
+
   const placeholderText = [
     { type: "heading1", text: "Please select the gear you want to use." },
   ];
@@ -88,6 +92,45 @@ const Home: NextPage = () => {
                   label="SELECT"
                   small
                   onClick={handleSelectSeqClick}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+        <section>
+          <div className={styles.gearsSection}>
+            <MotionImage
+              src="/images/top/fm.png"
+              width={720}
+              height={420}
+              objectFit="contain"
+              alt="seq"
+            />
+            <div className={styles.gearsSectionDetail}>
+              <h2>FM</h2>
+              <dl>
+                <dt>Features</dt>
+                <dd>
+                  <ul className={styles.gearsSectionDetailList}>
+                    <li>1 voice FM Synthesizer</li>
+                    <li>24 keys</li>
+                    <li>16 step sequencer</li>
+                  </ul>
+                </dd>
+                <dt>Effects</dt>
+                <dd>
+                  <ul className={styles.gearsSectionDetailList}>
+                    <li>Reverb</li>
+                    <li>Delay</li>
+                    <li>Distortion</li>
+                  </ul>
+                </dd>
+              </dl>
+              <div className={styles.btnArea}>
+                <SquareButton
+                  label="SELECT"
+                  small
+                  onClick={handleSelectFMClick}
                 />
               </div>
             </div>

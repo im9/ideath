@@ -37,10 +37,11 @@ export const seqArea = style({
 
 export const gearsSection = style({
   display: "flex",
-  color: "var(--color-black)",
-  fontWeight: 300,
   flexWrap: "wrap",
   justifyContent: "center",
+  marginBottom: "120px",
+  color: "var(--color-black)",
+  fontWeight: 300,
   "@media": {
     "screen and (max-width: 480px)": {
       fontSize: ".8rem",
