@@ -2,7 +2,15 @@ import {
   createGlobalThemeContract,
   createGlobalTheme,
   globalStyle,
+  globalFontFace,
 } from "@vanilla-extract/css";
+
+// sub font
+globalFontFace("Digital Numbers", {
+  fontStyle: "normal",
+  fontWeight: "normal",
+  src: "url('/fonts/DigitalNumbers-Regular.woff') format('woff')",
+});
 
 globalStyle("html, body", {
   width: "100%",
@@ -42,6 +50,9 @@ export const vars = createGlobalThemeContract({
     grayLight3: "color-grayLight3",
     grayLight4: "color-grayLight4",
   },
+  font: {
+    sub: "font-sub",
+  },
 });
 
 // FIXME: 定数化
@@ -57,5 +68,8 @@ createGlobalTheme(":root", vars, {
     grayLight2: "#ededed",
     grayLight3: "f0f0f0",
     grayLight4: "#c8d0e7",
+  },
+  font: {
+    sub: "Digital Numbers",
   },
 });

@@ -83,11 +83,13 @@ globalStyle(`${settingsTrackDisplayCls} > dl > dd > div:first-of-type`, {
 
 globalStyle(`${settingsTrackDisplayCls} > dl > dd > div:nth-of-type(2)`, {
   fontSize: " 0.8rem",
+  fontFamily: "var(--font-sub)",
 });
 
 export const settingsTrackDisplayEffectAreaCls = style({
   marginTop: ".8rem",
   fontSize: " 0.8rem",
+  fontFamily: "var(--font-sub)",
 });
 
 export const settingsBpmCls = style({

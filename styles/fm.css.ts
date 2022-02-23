@@ -95,6 +95,7 @@ globalStyle(`${controlsDisplayCls} > dl > dd > div:first-of-type`, {
 
 globalStyle(`${controlsDisplayCls} > dl > dd > div:nth-of-type(2)`, {
   fontSize: " 0.8rem",
+  fontFamily: "var(--font-sub)",
 });
 
 export const controlsDisplayParamAreaCls = style({
