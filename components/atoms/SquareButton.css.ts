@@ -31,3 +31,22 @@ export const SquareButtonCls = style({
 export const SquareButtonSmallCls = style({
   height: "34px",
 });
+
+export const SquareButtonPushedCls = style({
+  background: "var(--color-grayLight)",
+  boxShadow:
+    "inset -5px 5px 10px var(--color-grayLight4), inset 5px -5px 10px var(--color-white)",
+  color: "var(--color-grayLight4)",
+  border: "none",
+  borderRadius: "4px",
+  width: "118px",
+  margin: "0.5rem auto",
+  cursor: "pointer",
+  position: "relative",
+  display: "inline-block",
+  textDecoration: "none",
+  textTransform: "uppercase",
+  transition: "0.5s",
+  letterSpacing: "4px",
+  overflow: "hidden",
+});

@@ -9,7 +9,6 @@ import PlayButton from "@/components/atoms/PlayButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import SquareButton from "@/components/atoms/SquareButton";
 import Knob from "@/components/atoms/Knob";
-// import StepPad from "@/components/atoms/StepPad";
 import NoteLengthTabs from "@/components/organismus/NoteLengthTabs";
 import NoteOctaveTabs from "@/components/organismus/NoteOctaveTabs";
 import NoteKeys from "@/components/organismus/NoteKeys";
@@ -21,6 +20,53 @@ import {
 import { getDefaultMatrix, getTempo, percent } from "@/utils";
 import { TRACK_LENGTH, STEP_LENGTH } from "@/constants/fm";
 import * as styles from "@/styles/fm.css";
+
+import dynamic from "next/dynamic";
+// import p5Types from "p5";
+
+const Sketch = dynamic(import("react-p5"), { ssr: false });
+
+export const SketchComponent = ({ spectrumWave }: any) => {
+  let width = 960;
+  let heigth = 48;
+
+  const preload = () => {};
+
+  const setup = (p5: any, canvasParentRef: Element) => {
+    p5.createCanvas(width, heigth).parent(canvasParentRef);
+
+    p5.noStroke();
+    p5.frameRate(30);
+  };
+
+  const draw = (p5: any) => {
+    p5.background(225);
+    p5.stroke(255);
+
+    const buffer = spectrumWave?.getValue();
+    const len = buffer?.length;
+    if (buffer) {
+      for (let i = 0; i < len; i++) {
+        const x = p5.map(i, 0, len, 0, width);
+        const y = p5.map(buffer[i], -1, 1, 0, heigth);
+        p5.point(x, y);
+      }
+    }
+  };
+
+  const windowResized = (p5: any) => {
+    p5.resizeCanvas(p5.windowWidth / 1.1, heigth);
+  };
+
+  return (
+    <Sketch
+      preload={preload}
+      setup={setup}
+      draw={draw}
+      windowResized={windowResized}
+    />
+  );
+};
 
 /**
  * FM
@@ -44,6 +90,7 @@ const FM: NextPage = () => {
   const [isCommit, setIsCommit] = useState<boolean>(false);
   const [step, setStep] = useState(0);
   const [displayStep, setDistplayStep] = useState(0);
+  const [isDisplayAnalise, setIsDiplayAnalise] = useState(false);
 
   // リズムマシン系
   const [matrix, setMatrix] = useState(
@@ -53,6 +100,9 @@ const FM: NextPage = () => {
   const intervalRef: any = useRef(null);
   const matrixRef = useRef(matrix);
   const tempoRef = useRef(getTempo(master.bpm));
+
+  // スペクトラムアナライザ
+  const [spectrumWave, setSpectrumWave] = useState<any>(null);
 
   const [Modal, openModal, closeModal, isOpenModal] = useModal("root", {
     preventScroll: true,
@@ -106,7 +156,7 @@ const FM: NextPage = () => {
   }, []);
 
   /**
-   * リセットボタンのクリックをハンドルする
+   * リセットモーダルのOKボタンのクリックをハンドルする
    */
   const handleResetOKBtnClick = useCallback(() => {
     // ステップを初期化
@@ -128,6 +178,13 @@ const FM: NextPage = () => {
     closeModal();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * アナライザーボタンのクリックをトグルする
+   */
+  const handleAnaliseToggleBtn = useCallback(() => {
+    setIsDiplayAnalise((isDisplayAnalise) => !isDisplayAnalise);
   }, []);
 
   /**
@@ -219,28 +276,28 @@ const FM: NextPage = () => {
   );
 
   /**
-   * ディストーションの直を変更する
+   * ディストーションの値を変更する
    */
   const handleDistortionCtl = useCallback((value) => {
     setDistortion(value * 3);
   }, []);
 
   /**
-   * リバーブの直を変更する
+   * リバーブの値を変更する
    */
   const handleReverbKnobCtl = useCallback((value) => {
     setReverb(value * 3);
   }, []);
 
   /**
-   * ディレイの直を変更する
+   * ディレイのisDisあplayAnaliseを変更する
    */
   const handleDelayKnobCtl = useCallback((value) => {
     setDelay(value * 3);
   }, []);
 
   /**
-   * 音量の直を変更する
+   * 音量の値を変更する
    */
   const handleVolumeCtl = useCallback(
     (value) => {
@@ -255,7 +312,7 @@ const FM: NextPage = () => {
   );
 
   /**
-   * 周波数の直を変更する
+   * 周波数の値を変更する
    */
   const handleFrequencyKnobCtl = useCallback(
     (value) => {
@@ -270,7 +327,7 @@ const FM: NextPage = () => {
   );
 
   /**
-   * 変調の直を変更する
+   * 変調の値を変更する
    */
   const handleModulationKnobCtl = useCallback(
     (value) => {
@@ -359,27 +416,28 @@ const FM: NextPage = () => {
   );
 
   /**
-   * オプションの直の変更の確定をハンドルする
+   * オプションの値の変更の確定をハンドルする
    */
   const handleCommit = () => {
     setIsCommit(true);
   };
 
   /**
-   * 各パッドのクリックイベントをハンドルする
-   */
-  // const handlePadClick = useCallback(
-  //   (index, key) => {
-  //     matrix[index][key] = Number(!matrix[index][key]);
-  //     setMatrix(JSON.parse(JSON.stringify(matrix)));
-  //   },
-  //   [matrix]
-  // );
-
-  /**
    * ディスプレイを描画する
    */
-  const display = (
+  const display = isDisplayAnalise ? (
+    <div className={styles.controlsDisplayCls}>
+      <dl>
+        <dt></dt>
+        <dd>
+          <div>Analise</div>
+          <div className={styles.controlsDisplayParamAreaCls}>
+            <SketchComponent spectrumWave={spectrumWave} />
+          </div>
+        </dd>
+      </dl>
+    </div>
+  ) : (
     <div className={styles.controlsDisplayCls}>
       <dl>
         <dt></dt>
@@ -448,34 +506,6 @@ const FM: NextPage = () => {
   );
 
   /**
-   * 各パッドを描画する
-   */
-  // const pads = matrix.map((track, row) => {
-  //   const pad = track.map((_, col) => {
-  //     const isPushed = !!matrix[row][col];
-  //     const isCurrent = col === step && master.play;
-  //     return (
-  //       <StepPad
-  //         key={`${row}${col}${isPushed}`}
-  //         pushed={isPushed}
-  //         current={isCurrent}
-  //         row={row}
-  //         col={col}
-  //         onClick={() => {
-  //           handlePadClick(row, col);
-  //         }}
-  //       ></StepPad>
-  //     );
-  //   });
-
-  //   return (
-  //     <div key={row} className={styles.padsCls}>
-  //       {pad}
-  //     </div>
-  //   );
-  // });
-
-  /**
    * エフェクトの操作を適用する
    */
   useEffect(() => {
@@ -533,6 +563,10 @@ const FM: NextPage = () => {
             `${options.note}${options.octave}`,
             options.noteLen
           );
+
+          const wave = new Tone.Waveform();
+          Tone.Master.connect(wave);
+          setSpectrumWave(wave);
         });
       }
     });
@@ -552,6 +586,12 @@ const FM: NextPage = () => {
         </Head>
         <MainLayout className={styles.mainFrameCls}>
           <h1 className={styles.titleCls}>FM</h1>
+          <SquareButton
+            label="Analise"
+            small
+            pushed={isDisplayAnalise}
+            onClick={handleAnaliseToggleBtn}
+          />
           <div>{display}</div>
           <div>
             <div className={styles.stepBtnAreaLabel}>Step</div>

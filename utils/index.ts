@@ -84,8 +84,8 @@ export const floor = (value: number, base: number) => {
 /**
  * 百分率表示する
  * @param {number} value 浮動小数点の
- * @return {String} 百分率の文字列
+ * @return {number} 百分率の文字列
  */
 export const percent = (value: number | undefined) => {
-  return `${Math.floor(value ? value * 100 : 0)}%`;
+  return Math.floor(value ? value * 100 : 0);
 };

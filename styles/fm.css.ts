@@ -62,6 +62,7 @@ export const controlsCls = style({
 });
 
 export const controlsDisplayCls = style({
+  maxWidth: "1024px",
   color: "var(--color-gray)",
   borderRadius: "20px",
   background: "var(--color-grayLight)",

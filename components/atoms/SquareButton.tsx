@@ -1,24 +1,27 @@
 import React, { useCallback } from "react";
-import { SquareButtonCls, SquareButtonSmallCls } from "./SquareButton.css";
+import {
+  SquareButtonCls,
+  SquareButtonSmallCls,
+  SquareButtonPushedCls,
+} from "./SquareButton.css";
 
 type Props = {
   label: String;
   small?: Boolean;
+  pushed?: Boolean;
   onClick: Function;
 };
 
-const SquareButton: React.FC<Props> = ({ label, small, onClick }) => {
+const SquareButton: React.FC<Props> = ({ label, small, pushed, onClick }) => {
   const handleButtonClick = useCallback(() => {
     onClick();
   }, [onClick]);
 
+  const btnCls = pushed ? SquareButtonPushedCls : SquareButtonCls;
   const smallCls = small ? SquareButtonSmallCls : {};
 
   return (
-    <button
-      className={`${SquareButtonCls} ${smallCls}`}
-      onClick={handleButtonClick}
-    >
+    <button className={`${btnCls} ${smallCls}`} onClick={handleButtonClick}>
       {label}
     </button>
   );
