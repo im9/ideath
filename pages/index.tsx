@@ -6,6 +6,7 @@ import MainLayout from "@/components/layouts/MainLayout";
 import SquareButton from "@/components/atoms/SquareButton";
 import MotionImage from "@/components/atoms/MotionImage";
 import MotionText from "@/components/atoms/MotionText";
+import BaseFooter from "@/components/layouts/BaseFooter";
 import { motion } from "framer-motion";
 import * as styles from "@/styles/index.css";
 
@@ -137,6 +138,7 @@ const Home: NextPage = () => {
           </div>
         </section>
       </MainLayout>
+      <BaseFooter />
     </div>
   );
 };
