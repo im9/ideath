@@ -14,11 +14,27 @@ export const StepPadCls = style({
     "-5px 5px 16px var(--color-gray2), 5px -5px 16px var(--color-white)",
   cursor: "pointer",
   borderRadius: "8px",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      width: "16px",
+      height: "16px",
+      margin: "0.2rem",
+      borderRadius: "4px",
+      boxShadow:
+        "-2px 2px 8px var(--color-gray2), 2px -2px 8px var(--color-white)",
+    },
+  },
 });
 
 export const StepPadPushedCls = style({
   boxShadow:
     "inset -5px 5px 16px var(--color-gray2), inset 5px -5px 16px var(--color-white)",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      boxShadow:
+        "inset -2px 2px 8px var(--color-gray2), inset 2px -2px 8px var(--color-white)",
+    },
+  },
 });
 
 export const StepPadCurrentCls = style({

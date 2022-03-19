@@ -20,7 +20,7 @@
     "disable-scroll": "^0.6.0",
     "framer-motion": "^5.5.5",
     "inline-worker": "^1.1.0",
-    "next": "^12.0.7",
+    "next": "^12.1.0",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "react-howler": "^5.2.0",

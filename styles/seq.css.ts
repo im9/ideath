@@ -16,6 +16,11 @@ export const mainFrameCls = style({
   background:
     "linear-gradient(225deg, var(--color-grayLight3), var(--color-gray3))",
   boxShadow: "-20px 20px 40px #d3d3d3, 20px -20px 40px var(--color-grayLight2)",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      width: "100vw",
+    },
+  },
 });
 
 export const titleCls = style({
@@ -25,13 +30,24 @@ export const titleCls = style({
 
 export const settingsCls = style({
   display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "flex-end",
+  alignItems: "center",
+  justifyContent: "center",
+  flexWrap: "wrap",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      flexFlow: "wrap-reverse",
+    },
+  },
 });
 
 export const settingsTrackCls = style({
   marginRight: "20px",
   flex: 1,
+  "@media": {
+    "screen and (max-width: 480px)": {
+      marginRight: "0",
+    },
+  },
 });
 
 export const controlsCls = style({
@@ -48,6 +64,12 @@ export const padsCls = style({
 export const padsWrapperCls = style({
   marginTop: "1rem",
   display: "inline-block",
+  maxWidth: "100vw",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      maxWidth: "calc(100vw - 2.8rem)",
+    },
+  },
 });
 
 export const settingsTrackDisplayCls = style({
@@ -57,6 +79,11 @@ export const settingsTrackDisplayCls = style({
   boxShadow:
     "inset -5px 5px 10px var(--color-gray2), inset 5px -5px 10px var(--color-white)",
   height: "110px",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      minWidth: "calc(100vw - 6rem)",
+    },
+  },
 });
 
 globalStyle(`${settingsTrackDisplayCls} > dl`, {
@@ -94,7 +121,12 @@ export const settingsTrackDisplayEffectAreaCls = style({
 
 export const settingsBpmCls = style({
   display: "grid",
-  margin: "0 0.8rem 0 2rem",
+  margin: "0 .8rem 0 2rem",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      margin: "0 .5rem 0 .5rem",
+    },
+  },
 });
 
 export const settingsTrackButtonAreaCls = style({
@@ -113,8 +145,14 @@ globalStyle(`${settingsTrackButtonAreaCls} > div:first-of-type`, {
 
 export const settingsAreaCls = style({
   display: "flex",
-  width: "76%",
+  flexWrap: "wrap",
   justifyContent: "space-between",
+  width: "76%",
+  "@media": {
+    "screen and (max-width: 480px)": {
+      width: "calc(100vw - 2.8rem)",
+    },
+  },
 });
 
 export const settingsTrackKnobAreaCls = style({

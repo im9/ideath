@@ -1,53 +1,58 @@
+import * as Tone from "tone";
 import type { NextPage } from "next";
 import Head from "next/head";
-import { useState, useEffect } from "react";
-import Qwerty from "@/components/organismus/Qwerty";
-import { DEFAULT_QWERTY_VALUES } from "@/constants/org";
+import dynamic from "next/dynamic";
 import * as styles from "@/styles/org.css";
+
+const Sketch = dynamic(import("react-p5"), { ssr: false });
+
+export const SketchComponent = () => {
+  const preload = () => {};
+
+  const setup = (p5: any, canvasParentRef: Element) => {
+    p5.createCanvas(p5.windowWidth, p5.windowHeight).parent(canvasParentRef);
+    p5.noStroke();
+    p5.frameRate(30);
+  };
+
+  const draw = (p5: any) => {
+    p5.background(225);
+    p5.stroke(255);
+  };
+
+  const windowResized = (p5: any) => {
+    p5.resizeCanvas(p5.windowWidth, p5.windowHeight);
+  };
+
+  const touchStarted = (p5: any) => {
+    Tone.Transport.start();
+    Tone.Transport.bpm.value = 160;
+
+    const player = new Tone.Player({
+      url: "/samples/808/CB.WAV",
+      autostart: true,
+    }).toDestination();
+
+    const filter = new Tone.Filter(200, "lowpass").toDestination();
+
+    player.connect(filter);
+  };
+
+  return (
+    <Sketch
+      preload={preload}
+      setup={setup}
+      draw={draw}
+      windowResized={windowResized}
+      touchStarted={touchStarted}
+    />
+  );
+};
 
 /**
  * トラッカー
  */
 const Org: NextPage = () => {
-  // state
-  const [qwerty, setQwerty] = useState(DEFAULT_QWERTY_VALUES);
-
-  // If pressed key is our target key then set to true
-  const downHandler = ({ key }: any) => {
-    if (key) {
-      setQwerty(() => {
-        return {
-          ...qwerty,
-          [key]: true,
-        };
-      });
-    }
-  };
-  // If released key is our target key then set to false
-  const upHandler = ({ key }: any) => {
-    if (key) {
-      setQwerty(() => {
-        return {
-          ...qwerty,
-          [key]: false,
-        };
-      });
-    }
-  };
-
-  // Add event listeners
-  useEffect(() => {
-    window.addEventListener("keydown", downHandler);
-    window.addEventListener("keyup", upHandler);
-
-    // Remove event listeners on cleanup
-    return () => {
-      window.removeEventListener("keydown", downHandler);
-      window.removeEventListener("keyup", upHandler);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
     <div className={styles.containerCls}>
       <Head>
@@ -60,7 +65,7 @@ const Org: NextPage = () => {
       <main className={styles.mainCls}>
         <h1 className={styles.titleCls}>Org</h1>
         <div>
-          <Qwerty pushedList={qwerty} />
+          <SketchComponent />
         </div>
       </main>
     </div>
