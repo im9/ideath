@@ -18,6 +18,7 @@ import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
 import { Context } from "@/contexts/state";
 import { useModal } from "hooks/usePanel";
+import { useMQ } from "hooks/useMQ";
 import { getDefaultMatrix, getTempo, getTonePlayer, percent } from "@/utils";
 import {
   TRACK_LENGTH,
@@ -37,6 +38,8 @@ const Seq: NextPage = () => {
     state: { master, tracks },
     dispatch,
   }: any = useContext(Context);
+
+  const { isMobile } = useMQ();
 
   // セッティング系
   const [selectedTrack, setSelectedTrack] = useState(TRACK_LABELS.length - 1);
@@ -365,6 +368,11 @@ const Seq: NextPage = () => {
       const isPushed = !!matrix[row][col];
       const isCurrent = col === step && master.play;
       const isActive = selectedTrack === row;
+      const isMaster = TRACK_LABELS[selectedTrack] === "MASTER" && row === 0;
+      // モバイルの場合は選択中のトラックのみ描画する（マスターの場合は最初のトラックを描画する）
+      if (isMobile && !isActive && !isMaster) {
+        return "";
+      }
       return (
         <StepPad
           key={`${row}${col}${isPushed}`}

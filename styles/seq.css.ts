@@ -26,6 +26,12 @@ export const mainFrameCls = style({
 export const titleCls = style({
   color: "var(--color-gray)",
   fontWeight: 300,
+  "@media": {
+    "screen and (max-width: 480px)": {
+      position: "absolute",
+      top: "1rem",
+    },
+  },
 });
 
 export const settingsCls = style({
@@ -36,6 +42,7 @@ export const settingsCls = style({
   "@media": {
     "screen and (max-width: 480px)": {
       flexFlow: "wrap-reverse",
+      justifyContent: "flex-end",
     },
   },
 });
@@ -54,11 +61,13 @@ export const controlsCls = style({
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  marginTop: "1rem",
+  margin: "1rem",
 });
 
 export const padsCls = style({
   display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "center",
 });
 
 export const padsWrapperCls = style({
@@ -68,6 +77,7 @@ export const padsWrapperCls = style({
   "@media": {
     "screen and (max-width: 480px)": {
       maxWidth: "calc(100vw - 2.8rem)",
+      margin: "0",
     },
   },
 });
@@ -157,6 +167,7 @@ export const settingsAreaCls = style({
 
 export const settingsTrackKnobAreaCls = style({
   display: "inline-flex",
+  margin: "1rem 0",
 });
 
 globalStyle(`${settingsTrackKnobAreaCls} > div`, {
