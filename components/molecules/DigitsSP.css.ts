@@ -2,8 +2,8 @@ import { style, globalStyle } from "@vanilla-extract/css";
 
 const digitsColor = "var(--color-white)";
 
-let dWidth = 14;
-let dHight = 6;
+let dWidth = 7;
+let dHight = 3;
 const dHightHalf = dHight / 2;
 const extraHight = -dHight;
 const gap = dHight / 2;
@@ -16,7 +16,7 @@ const dRight = gap + dWidth;
 
 export const displayCls = style({
   display: "inline-block",
-  padding: "6px 6px 12px 18px",
+  padding: "6px 6px 12px 10px",
   borderRadius: "20px",
   background: "var(--color-grayLight)",
   boxShadow: `inset -5px 5px 10px var(--color-gray2), inset 5px -5px 10px ${digitsColor}`,
@@ -37,8 +37,8 @@ export const digitsCls = style({});
 
 globalStyle(`${digitsCls} > div`, {
   position: "relative",
-  width: "30px",
-  height: "60px",
+  width: "8px",
+  height: "30px",
   display: "inline-block",
   margin: "0 0.7em",
 });

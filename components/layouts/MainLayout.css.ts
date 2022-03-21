@@ -14,6 +14,11 @@ export const btnAreaCls = style({
   top: "10px",
   left: "20px",
   zIndex: 1,
+  "@media": {
+    "screen and (max-width: 480px)": {
+      top: "1rem",
+    },
+  },
 });
 
 // FIXME: TextButton コンポーネントとして切り出す

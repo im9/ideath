@@ -16,9 +16,11 @@ import SquareButton from "@/components/atoms/SquareButton";
 import Knob from "@/components/atoms/Knob";
 import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
+import DigitsSP from "@/components/molecules/DigitsSP";
 import { Context } from "@/contexts/state";
 import { useModal } from "hooks/usePanel";
 import { useMQ } from "hooks/useMQ";
+import { useClient } from "hooks/useClient";
 import { getDefaultMatrix, getTempo, getTonePlayer, percent } from "@/utils";
 import {
   TRACK_LENGTH,
@@ -40,6 +42,7 @@ const Seq: NextPage = () => {
   }: any = useContext(Context);
 
   const { isMobile } = useMQ();
+  const isClient = useClient();
 
   // セッティング系
   const [selectedTrack, setSelectedTrack] = useState(TRACK_LABELS.length - 1);
@@ -343,6 +346,15 @@ const Seq: NextPage = () => {
   });
 
   /**
+   * BPM ディスプレイを描画する
+   */
+  const BPMDisplay = isMobile ? (
+    <DigitsSP label={"BPM"} bpm={master.bpm} />
+  ) : (
+    <Digits label={"BPM"} bpm={master.bpm} />
+  );
+
+  /**
    * リセット確認モーダルを描画する
    */
   const resetModal = process.browser ? (
@@ -363,37 +375,39 @@ const Seq: NextPage = () => {
   /**
    * 各パッドを描画する
    */
-  const pads = matrix.map((track, row) => {
-    const pad = track.map((_, col) => {
-      const isPushed = !!matrix[row][col];
-      const isCurrent = col === step && master.play;
-      const isActive = selectedTrack === row;
-      const isMaster = TRACK_LABELS[selectedTrack] === "MASTER" && row === 0;
-      // モバイルの場合は選択中のトラックのみ描画する（マスターの場合は最初のトラックを描画する）
-      if (isMobile && !isActive && !isMaster) {
-        return "";
-      }
+  const pads =
+    isClient &&
+    matrix.map((track, row) => {
+      const pad = track.map((_, col) => {
+        const isPushed = !!matrix[row][col];
+        const isCurrent = col === step && master.play;
+        const isActive = selectedTrack === row;
+        const isMaster = TRACK_LABELS[selectedTrack] === "MASTER" && row === 0;
+        // モバイルの場合は選択中のトラックのみ描画する（マスターの場合は最初のトラックを描画する）
+        if (isMobile && !isActive && !isMaster) {
+          return "";
+        }
+        return (
+          <StepPad
+            key={`${row}${col}${isPushed}`}
+            pushed={isPushed}
+            current={isCurrent}
+            active={isActive}
+            row={row}
+            col={col}
+            onClick={() => {
+              handlePadClick(row, col);
+            }}
+          ></StepPad>
+        );
+      });
+
       return (
-        <StepPad
-          key={`${row}${col}${isPushed}`}
-          pushed={isPushed}
-          current={isCurrent}
-          active={isActive}
-          row={row}
-          col={col}
-          onClick={() => {
-            handlePadClick(row, col);
-          }}
-        ></StepPad>
+        <div key={row} className={styles.padsCls}>
+          {pad}
+        </div>
       );
     });
-
-    return (
-      <div key={row} className={styles.padsCls}>
-        {pad}
-      </div>
-    );
-  });
 
   const knobs = samples[selectedTrack] ? (
     <>
@@ -435,17 +449,26 @@ const Seq: NextPage = () => {
               <div className={styles.settingsTrackDisplayCls}>{display}</div>
             </div>
             <div className={styles.settingsBpmCls}>
-              <CircleButton
-                label="＋"
-                onClick={() => {
-                  handleBpmBtnClick(true);
-                }}
-              />
-              <CircleButton label="−" onClick={handleBpmBtnClick} />
+              {isClient ? (
+                <>
+                  <CircleButton
+                    label="＋"
+                    small={isMobile}
+                    onClick={() => {
+                      handleBpmBtnClick(true);
+                    }}
+                  />
+                  <CircleButton
+                    label="−"
+                    small={isMobile}
+                    onClick={handleBpmBtnClick}
+                  />
+                </>
+              ) : (
+                ""
+              )}
             </div>
-            <div>
-              <Digits label={"BPM"} bpm={master.bpm} />
-            </div>
+            <div>{isClient && BPMDisplay}</div>
           </div>
           <div className={styles.settingsAreaCls}>
             <div className={styles.settingsTrackButtonAreaCls}>

@@ -1,5 +1,5 @@
 import React from "react";
-import * as styles from "./Digits.css";
+import * as styles from "./DigitsSP.css";
 
 type Props = {
   label?: String;
@@ -8,6 +8,9 @@ type Props = {
   max?: Number;
 };
 
+/**
+ * FIXME: Digits と統合
+ */
 const Digits: React.FC<Props> = ({
   label = "",
   bpm = 0,

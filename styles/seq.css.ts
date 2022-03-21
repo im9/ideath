@@ -29,7 +29,7 @@ export const titleCls = style({
   "@media": {
     "screen and (max-width: 480px)": {
       position: "absolute",
-      top: "1rem",
+      top: "2.4rem",
     },
   },
 });
