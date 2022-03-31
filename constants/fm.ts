@@ -29,25 +29,3 @@ export const NOTES = [...Array(4)].map((_, i) => {
 export const NOTES_LENGTH = ["1n", "2n", "4n", "8n", "16n", "32n"];
 
 export const MODULATION_TYPES = ["sine", "triangle", "square", "sawtooth"];
-
-export const DEFAULT_PADS_STATES = [...Array(16)].map((_, i) => {
-  return {
-    volume: 1,
-    octave: 2,
-    octaveIndex: 2,
-    note: "",
-    noteLen: "16n",
-  };
-});
-
-export const DEFAULT_OPTIONS_STATES = {
-  frequency: 200,
-  harmonicity: 0.2,
-  modulationIndex: 3,
-  modulationEnvelope: {
-    attack: 0.1,
-    decay: 0.8,
-    sustain: 0.2,
-    release: 0.2,
-  },
-};
