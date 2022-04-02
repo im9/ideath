@@ -5105,23 +5105,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/css@npm:^1.5.0":
-  version: 1.6.1
-  resolution: "@vanilla-extract/css@npm:1.6.1"
-  dependencies:
-    "@emotion/hash": ^0.8.0
-    "@vanilla-extract/private": ^1.0.1
-    chalk: ^4.1.1
-    css-what: ^5.0.1
-    cssesc: ^3.0.0
-    csstype: ^3.0.7
-    dedent: ^0.7.0
-    deep-object-diff: ^1.1.0
-    deepmerge: ^4.2.2
-  checksum: b8883c36c767f73ceb846060e8e1e018fbe65ac1896718f455b984e0532a536a58e0aa383e4c3eb4dd58fbcca41ebbf4ff18b6186dee5bdfa7af016d1a6bbb87
-  languageName: node
-  linkType: hard
-
 "@vanilla-extract/css@npm:^1.6.2":
   version: 1.6.3
   resolution: "@vanilla-extract/css@npm:1.6.3"
@@ -5174,22 +5157,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/integration@npm:^1.3.0":
-  version: 1.4.1
-  resolution: "@vanilla-extract/integration@npm:1.4.1"
-  dependencies:
-    "@vanilla-extract/css": ^1.5.0
-    chalk: ^4.1.1
-    dedent: ^0.7.0
-    esbuild: ^0.11.16
-    eval: ^0.1.6
-    find-up: ^5.0.0
-    javascript-stringify: ^2.0.1
-    lodash: ^4.17.21
-  checksum: d36712231792b0338511a7f745cbde6ac32a1ec20d76c7829ee343a9523520c34ffdaf461f600af25d7692462adf01b448be8b817ab0b6358ac91c5164e5a238
-  languageName: node
-  linkType: hard
-
 "@vanilla-extract/integration@npm:^1.4.3":
   version: 1.4.3
   resolution: "@vanilla-extract/integration@npm:1.4.3"
@@ -5206,31 +5173,30 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/integration@npm:^2.0.1":
-  version: 2.0.1
-  resolution: "@vanilla-extract/integration@npm:2.0.1"
+"@vanilla-extract/integration@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "@vanilla-extract/integration@npm:3.0.1"
   dependencies:
     "@vanilla-extract/css": ^1.6.8
-    chalk: ^4.1.1
     esbuild: ^0.11.16
-    eval: ^0.1.6
+    eval: 0.1.6
     find-up: ^5.0.0
     javascript-stringify: ^2.0.1
     lodash: ^4.17.21
     outdent: ^0.8.0
-  checksum: f7b49435716083a1fb0b2b6ecb0316c989dbe5292f61c381f81dbcb3cf388fb1475501e53f0f4e352b18ae296a2d2f7541776bdf586c9c34844b714ad2dd56c8
+  checksum: 0cbce0e5a96c5e48414e5c16c2f78d3e3de8b6a911d8a706bc5f03c8fdfc0a7ca1261eb5b322b8cf9821a4a2f6d7fe4d58456bef1fd6e29670a7851be6bb73f8
   languageName: node
   linkType: hard
 
-"@vanilla-extract/next-plugin@npm:^2.0.1":
-  version: 2.0.1
-  resolution: "@vanilla-extract/next-plugin@npm:2.0.1"
+"@vanilla-extract/next-plugin@npm:^2.0.2":
+  version: 2.0.2
+  resolution: "@vanilla-extract/next-plugin@npm:2.0.2"
   dependencies:
-    "@vanilla-extract/webpack-plugin": ^2.1.5
+    "@vanilla-extract/webpack-plugin": ^2.1.7
     browserslist: ^4.19.1
   peerDependencies:
     next: ">=12.0.5"
-  checksum: b310ea7b7fefa1e27d1e74f4037a97bf52cc111bcc49962046fdbaea57692439b47d388f460022e735ef04ab531b50211bdd570de73d9ac6c5d3be45950d89cc
+  checksum: dcd09681d14750b4e8f269bd5a42f729cd05a22395c69d1b916309ed9a9b9ce304704ddd95e476959c5d601d5baa6053f7374d6dc9afa07b29513ddde715bbe9
   languageName: node
   linkType: hard
 
@@ -5255,33 +5221,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vanilla-extract/webpack-plugin@npm:^2.1.2":
-  version: 2.1.2
-  resolution: "@vanilla-extract/webpack-plugin@npm:2.1.2"
+"@vanilla-extract/webpack-plugin@npm:^2.1.7":
+  version: 2.1.7
+  resolution: "@vanilla-extract/webpack-plugin@npm:2.1.7"
   dependencies:
-    "@vanilla-extract/integration": ^1.3.0
+    "@vanilla-extract/integration": ^3.0.1
     chalk: ^4.1.1
     debug: ^4.3.1
     loader-utils: ^2.0.0
-    virtual-resource-loader: ^1.0.0
   peerDependencies:
     webpack: ^4.30.0 || ^5.20.2
-  checksum: 97fc83527589323d840b6a86cdc1ac6a8fc090e89bad06b39f474cfb181859b1007fbe8cb21bf4b801379fc2100f1168cadbb486bd5226c14702f6db9ef76938
-  languageName: node
-  linkType: hard
-
-"@vanilla-extract/webpack-plugin@npm:^2.1.5":
-  version: 2.1.5
-  resolution: "@vanilla-extract/webpack-plugin@npm:2.1.5"
-  dependencies:
-    "@vanilla-extract/integration": ^2.0.1
-    chalk: ^4.1.1
-    debug: ^4.3.1
-    loader-utils: ^2.0.0
-    virtual-resource-loader: ^1.0.0
-  peerDependencies:
-    webpack: ^4.30.0 || ^5.20.2
-  checksum: 842c66b91e5e76c2c8a9f48028a0b47fbb0ff90ce069747a39e72483a7a947be68059f762e1b2c9dbbeebb57672c0f8b007fb6fcab0033911dc93304e76bed75
+  checksum: d17527d4ded1ed5e9e7fe185a2ba9a987c66580d45e109213c34ecdc23b20a88cc5761887814a9a5907cb5fd4079216e4853cec81fe4884319a18705fb3b969e
   languageName: node
   linkType: hard
 
@@ -9362,7 +9312,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eval@npm:^0.1.6":
+"eval@npm:0.1.6, eval@npm:^0.1.6":
   version: 0.1.6
   resolution: "eval@npm:0.1.6"
   dependencies:
@@ -11094,8 +11044,8 @@ fsevents@^1.2.7:
     "@types/wavesurfer.js": ^5.2.2
     "@vanilla-extract/babel-plugin": ^1.1.2
     "@vanilla-extract/css": ^1.6.4
-    "@vanilla-extract/next-plugin": ^2.0.1
-    "@vanilla-extract/webpack-plugin": ^2.1.2
+    "@vanilla-extract/next-plugin": ^2.0.2
+    "@vanilla-extract/webpack-plugin": ^2.1.7
     babel-jest: ^27.5.1
     babel-loader: ^8.2.4
     babel-plugin-inline-react-svg: ^2.0.1
@@ -18714,15 +18664,6 @@ typescript@4.5.2:
     unist-util-stringify-position: ^2.0.0
     vfile-message: ^2.0.0
   checksum: ee5726e10d170472cde778fc22e0f7499caa096eb85babea5d0ce0941455b721037ee1c9e6ae506ca2803250acd313d0f464328ead0b55cfe7cb6315f1b462d6
-  languageName: node
-  linkType: hard
-
-"virtual-resource-loader@npm:^1.0.0":
-  version: 1.0.0
-  resolution: "virtual-resource-loader@npm:1.0.0"
-  dependencies:
-    loader-utils: ^2.0.0
-  checksum: 6d7cbdb6e7e6602a54f4b622047e5f8c4d2ff4812b2ef0d9044320c00bd1728a1bca047fef74f0e0fe4064184b01227625fe5b51b8772c5ce0543894a1a603c8
   languageName: node
   linkType: hard
 
