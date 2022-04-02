@@ -12,7 +12,7 @@ import Knob from "@/components/atoms/Knob";
 import NoteLengthTabs from "@/components/organismus/NoteLengthTabs";
 import NoteOctaveTabs from "@/components/organismus/NoteOctaveTabs";
 import NoteKeys from "@/components/organismus/NoteKeys";
-import { useModal } from "hooks/usePanel";
+import { useModal } from "@/hooks/usePanel";
 import {
   fmSynthOptionsState,
   fmSynthStepPadsState,

@@ -18,9 +18,9 @@ import StepPad from "@/components/atoms/StepPad";
 import Digits from "@/components/molecules/Digits";
 import DigitsSP from "@/components/molecules/DigitsSP";
 import { Context } from "@/contexts/state";
-import { useModal } from "hooks/usePanel";
-import { useMQ } from "hooks/useMQ";
-import { useClient } from "hooks/useClient";
+import { useModal } from "@/hooks/usePanel";
+import { useMQ } from "@/hooks/useMQ";
+import { useClient } from "@/hooks/useClient";
 import { getDefaultMatrix, getTempo, getTonePlayer, percent } from "@/utils";
 import {
   TRACK_LENGTH,

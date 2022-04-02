@@ -7,7 +7,7 @@ import { render, screen } from "@testing-library/react";
 import Home from "../../pages/index";
 
 describe("Home", () => {
-  it("renders a Seq", () => {
+  it("renders a index Page", () => {
     render(<Home />);
 
     expect(screen.getByText("Seq")).toBeInTheDocument();
