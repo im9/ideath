@@ -31,7 +31,7 @@ const FadeInImage = (props: any) => {
       }}
       variants={animationVariants}
     >
-      <Image alt={alt} {...props} onLoad={() => setLoaded(true)} />
+      <Image alt={alt} {...props} onLoadingComplete={() => setLoaded(true)} />
     </motion.div>
   );
 };

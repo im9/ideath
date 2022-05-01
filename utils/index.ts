@@ -89,3 +89,16 @@ export const floor = (value: number, base: number) => {
 export const percent = (value: number | undefined) => {
   return Math.floor(value ? value * 100 : 0);
 };
+
+/**
+ * Getting the protocol, domain, port from a URL
+ * @returns {string}
+ */
+export const getDomain = () => {
+  if (typeof window === "undefined") return "";
+
+  const protocol = window.location.protocol;
+  const domain = window.location.hostname;
+  const port = window.location.port;
+  return `${protocol}//${domain}:${port ? port : ""}`;
+};
