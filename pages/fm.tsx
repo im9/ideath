@@ -123,7 +123,7 @@ const FM: NextPage = () => {
    * 再生ボタンのクリックイベントをハンドルする
    */
   const handlePlayBtnClick = useCallback(
-    async (isStart) => {
+    async (isStart: boolean) => {
       dispatch({
         type: "SET_PLAY",
         payload: isStart,
@@ -278,21 +278,21 @@ const FM: NextPage = () => {
   /**
    * ディストーションの値を変更する
    */
-  const handleDistortionCtl = useCallback((value) => {
+  const handleDistortionCtl = useCallback((value: number) => {
     setDistortion(value * 3);
   }, []);
 
   /**
    * リバーブの値を変更する
    */
-  const handleReverbKnobCtl = useCallback((value) => {
+  const handleReverbKnobCtl = useCallback((value: number) => {
     setReverb(value * 3);
   }, []);
 
   /**
    * ディレイのisDisあplayAnaliseを変更する
    */
-  const handleDelayKnobCtl = useCallback((value) => {
+  const handleDelayKnobCtl = useCallback((value: number) => {
     setDelay(value * 3);
   }, []);
 
@@ -300,7 +300,7 @@ const FM: NextPage = () => {
    * 音量の値を変更する
    */
   const handleVolumeCtl = useCallback(
-    (value) => {
+    (value: number) => {
       const options = {
         ...fmSynthOptions,
         volume: 1 - (1 - value) * 10,
@@ -315,7 +315,7 @@ const FM: NextPage = () => {
    * 周波数の値を変更する
    */
   const handleFrequencyKnobCtl = useCallback(
-    (value) => {
+    (value: number) => {
       const options = {
         ...fmSynthOptions,
         frequency: value * 200,
@@ -330,7 +330,7 @@ const FM: NextPage = () => {
    * 変調の値を変更する
    */
   const handleModulationKnobCtl = useCallback(
-    (value) => {
+    (value: number) => {
       const options = {
         ...fmSynthOptions,
         modulationIndex: value * 3,
@@ -342,7 +342,7 @@ const FM: NextPage = () => {
   );
 
   const handleAttackKnobCtl = useCallback(
-    (value) => {
+    (value: any) => {
       const options = {
         ...fmSynthOptions,
         modulationEnvelope: {
@@ -357,7 +357,7 @@ const FM: NextPage = () => {
   );
 
   const handleDecayKnobCtl = useCallback(
-    (value) => {
+    (value: any) => {
       const options = {
         ...fmSynthOptions,
         modulationEnvelope: {
@@ -372,7 +372,7 @@ const FM: NextPage = () => {
   );
 
   const handleSustainKnobCtl = useCallback(
-    (value) => {
+    (value: any) => {
       const options = {
         ...fmSynthOptions,
         envelope: {
@@ -387,7 +387,7 @@ const FM: NextPage = () => {
   );
 
   const handleReleaseKnobCtl = useCallback(
-    (value) => {
+    (value: any) => {
       const options = {
         ...fmSynthOptions,
         modulationEnvelope: {
@@ -405,7 +405,7 @@ const FM: NextPage = () => {
    * ハーモニーを変更する
    */
   const handleHarmonicityKnobCtl = useCallback(
-    (value) => {
+    (value: any) => {
       const options = {
         ...fmSynthOptions,
         harmonicity: value,

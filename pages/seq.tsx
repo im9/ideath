@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  SetStateAction,
 } from "react";
 import * as Tone from "tone";
 import MainLayout from "@/components/layouts/MainLayout";
@@ -76,7 +77,7 @@ const Seq: NextPage = () => {
    * 再生／停止ボタンのクリックイベントをハンドルする
    */
   const handlePlayBtnClick = useCallback(
-    async (isStart) => {
+    async (isStart: boolean) => {
       dispatch({
         type: "SET_PLAY",
         payload: isStart,
@@ -102,7 +103,7 @@ const Seq: NextPage = () => {
    * 各パッドのクリックイベントをハンドルする
    */
   const handlePadClick = useCallback(
-    (index, key) => {
+    (index: any, key: any) => {
       matrix[index][key] = Number(!matrix[index][key]);
       setMatrix(JSON.parse(JSON.stringify(matrix)));
     },
@@ -112,7 +113,7 @@ const Seq: NextPage = () => {
   /**
    * トラック選択ボタンのクリックをハンドルする
    */
-  const handleTrackBtnClick = useCallback((value) => {
+  const handleTrackBtnClick = useCallback((value: SetStateAction<number>) => {
     setSelectedTrack(value);
   }, []);
 
@@ -120,7 +121,7 @@ const Seq: NextPage = () => {
    * マスターヴォリュームの値を更新する
    */
   const handleMasterVolumeKnobCtl = useCallback(
-    (value) => {
+    (value: number) => {
       selectedSamples.forEach((sample, index) => {
         const { path, d, r } = sample;
         samples[index] = getTonePlayer(path, d, r, value * 10);
@@ -138,7 +139,7 @@ const Seq: NextPage = () => {
    * 選択中のトラックのディストーションの値を更新する
    */
   const handleTrackDistortionKnobCtl = useCallback(
-    (value) => {
+    (value: number) => {
       if (samples[selectedTrack] && Tone.loaded()) {
         setSelectedSamples(() => {
           selectedSamples[selectedTrack].d = value;
@@ -158,7 +159,7 @@ const Seq: NextPage = () => {
    * 選択中のトラックのリバーブの値を更新する
    */
   const handleTrackReverbKnobCtl = useCallback(
-    (value) => {
+    (value: number) => {
       if (samples[selectedTrack] && Tone.loaded()) {
         setSelectedSamples(() => {
           selectedSamples[selectedTrack].r = value;
