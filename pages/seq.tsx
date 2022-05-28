@@ -140,7 +140,7 @@ const Seq: NextPage = () => {
    */
   const handleTrackDistortionKnobCtl = useCallback(
     (value: number) => {
-      if (samples[selectedTrack] && Tone.loaded()) {
+      if (samples[selectedTrack]) {
         setSelectedSamples(() => {
           selectedSamples[selectedTrack].d = value;
           return selectedSamples;
@@ -160,7 +160,7 @@ const Seq: NextPage = () => {
    */
   const handleTrackReverbKnobCtl = useCallback(
     (value: number) => {
-      if (samples[selectedTrack] && Tone.loaded()) {
+      if (samples[selectedTrack]) {
         setSelectedSamples(() => {
           selectedSamples[selectedTrack].r = value;
           return selectedSamples;
@@ -179,7 +179,7 @@ const Seq: NextPage = () => {
    * 選択中のトラックのエフェクトを設定する
    */
   const handleTrackEffectKnobCtl = useCallback(() => {
-    if (samples[selectedTrack] && Tone.loaded()) {
+    if (samples[selectedTrack]) {
       const { path, d, r, v } = selectedSamples[selectedTrack];
       samples[selectedTrack] = getTonePlayer(path, d, r, v);
     }
