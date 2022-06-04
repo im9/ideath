@@ -26,6 +26,30 @@ export const getTempo = (bpm: number = 120): number => {
 };
 
 /**
+ * ノートとオクターブから12平均律の周波数を算出する
+ * @returns freq
+ */
+export const getFreq = (note: string, octave: number) => {
+  const notes = [
+    "C",
+    "C#",
+    "D",
+    "D#",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "G#",
+    "A",
+    "A#",
+    "B",
+  ];
+  const findNote = (v: string) => v === note;
+  const pitch = notes.findIndex(findNote) + 1 + octave * 12;
+  return 440.0 * Math.pow(2.0, (pitch - 69) / 12);
+};
+
+/**
  * サンプル音のオブジェクトを生成する
  * @param path
  * @param d ディストーションのパラメータ

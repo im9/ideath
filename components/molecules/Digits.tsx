@@ -14,9 +14,11 @@ const Digits: React.FC<Props> = ({
   min = 20,
   max = 300,
 }) => {
-  if (bpm > max || bpm < min) return <></>;
+  let dispBpm = bpm;
+  if (bpm > max) dispBpm = max;
+  if (bpm < min) dispBpm = min;
 
-  const digits = String(bpm)
+  const digits = String(dispBpm)
     .padStart(String(max).length, "0")
     .split("")
     .map((value, index) => {

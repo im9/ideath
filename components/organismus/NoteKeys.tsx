@@ -16,6 +16,7 @@ const NoteKeys: React.FC<Props> = ({
   onClick,
 }) => {
   const notes = NOTES[octaveIndex];
+
   /**
    * 白鍵を描画する
    */
@@ -39,7 +40,8 @@ const NoteKeys: React.FC<Props> = ({
           <div className={`${styles.whiteKey} ${checkedCls}`} />
         </div>
       );
-    });
+    })
+    .filter((el) => el);
 
   /**
    * 黒鍵を描画する
@@ -55,6 +57,7 @@ const NoteKeys: React.FC<Props> = ({
         selectedValues.includes(note) && selectedOctave === octave
           ? styles.blackKeyPushed
           : "";
+
       return (
         <div
           key={index}
@@ -64,13 +67,20 @@ const NoteKeys: React.FC<Props> = ({
           <div className={`${styles.blackKey} ${checkedCls}`} />
         </div>
       );
-    });
+    })
+    .filter((el) => el);
 
   return (
-    <>
-      <div className={styles.blackkeysArea1}>{allBlackKeys}</div>
-      <div className={styles.whitekeysArea}>{allWhiteKeys}</div>
-    </>
+    <div className={styles.notes}>
+      <div className={styles.blackKeys1}>{allBlackKeys.splice(0, 3)}</div>
+      <div className={styles.blackKeys2}>{allBlackKeys.splice(0, 2)}</div>
+      <div className={styles.blackKeys3}>{allBlackKeys.splice(0, 3)}</div>
+      <div className={styles.blackKeys4}>{allBlackKeys.splice(0, 2)}</div>
+      <div className={styles.whiteKeys1}>{allWhiteKeys.splice(0, 4)}</div>
+      <div className={styles.whiteKeys2}>{allWhiteKeys.splice(0, 3)}</div>
+      <div className={styles.whiteKeys3}>{allWhiteKeys.splice(0, 4)}</div>
+      <div className={styles.whiteKeys4}>{allWhiteKeys.splice(0, 3)}</div>
+    </div>
   );
 };
 

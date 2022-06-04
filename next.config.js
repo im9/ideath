@@ -12,6 +12,13 @@ const nextConfig = {
   experimental: {
     optimizeFonts: true,
   },
+  webpack: (config) => ({
+    ...config,
+    // NOTE: wasm を import する場合に使う
+    // experiments: {
+    //   asyncWebAssembly: true,
+    // },
+  }),
 };
 
 module.exports = withVanillaExtract(nextConfig);

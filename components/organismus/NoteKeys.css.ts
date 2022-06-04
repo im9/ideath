@@ -70,9 +70,62 @@ export const blackKeyBlock = style({
   borderRadius: "4px",
 });
 
-export const blackkeysArea1 = style({
+export const notes = style({
+  display: "grid",
+  gridTemplateColumns: "268px 200px 268px 200px",
+  gridTemplateRows: "64px 132px",
+  gridColumnGap: "4px",
+  gridRowGap: "4px",
+});
+
+export const blackKeys1 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  alignContent: "space-between",
+});
+
+export const blackKeys2 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  alignContent: "space-between",
+  gridColumn: 2,
+});
+
+export const blackKeys3 = style({
+  display: "flex",
+  gridColumn: 3,
+});
+
+export const blackKeys4 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  gridColumn: 4,
+});
+
+export const whiteKeys1 = style({
   display: "flex",
   justifyContent: "space-between",
   gridColumn: 1,
+  gridRow: 2,
+});
+
+export const whiteKeys2 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  gridColumn: 2,
+  gridRow: 2,
+});
+
+export const whiteKeys3 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  gridColumn: 3,
+  gridRow: 2,
+});
+
+export const whiteKeys4 = style({
+  display: "flex",
+  justifyContent: "space-between",
+  gridColumn: 4,
   gridRow: 2,
 });
