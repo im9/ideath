@@ -70,6 +70,19 @@ export const blackKeyBlock = style({
   borderRadius: "4px",
 });
 
+export const blackKeyBlockRight = style({
+  transform: "translateX(0)",
+});
+
+export const blackKeyBlockCenter = style({
+  width: "64px",
+  transform: "translateX(-16px)",
+});
+
+export const blackKeyBlockLeft = style({
+  transform: "translateX(-32px)",
+});
+
 export const notes = style({
   display: "grid",
   gridTemplateColumns: "268px 200px 268px 200px",

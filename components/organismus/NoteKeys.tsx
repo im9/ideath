@@ -58,10 +58,19 @@ const NoteKeys: React.FC<Props> = ({
           ? styles.blackKeyPushed
           : "";
 
+      let blackKeyBlockPosCls = "";
+      if ([1, 8, 13, 20].includes(index)) {
+        blackKeyBlockPosCls = styles.blackKeyBlockRight;
+      } else if ([3, 15].includes(index)) {
+        blackKeyBlockPosCls = styles.blackKeyBlockCenter;
+      } else if ([6, 10, 18, 22].includes(index)) {
+        blackKeyBlockPosCls = styles.blackKeyBlockLeft;
+      }
+
       return (
         <div
           key={index}
-          className={styles.blackKeyBlock}
+          className={`${styles.blackKeyBlock} ${blackKeyBlockPosCls}`}
           onClick={() => onClick(note, octave)}
         >
           <div className={`${styles.blackKey} ${checkedCls}`} />
