@@ -59,11 +59,12 @@ const NoteKeys: React.FC<Props> = ({
           : "";
 
       let blackKeyBlockPosCls = "";
-      if ([1, 8, 13, 20].includes(index)) {
+      console.log(index);
+      if ([1, 6, 13, 18].includes(index)) {
         blackKeyBlockPosCls = styles.blackKeyBlockRight;
-      } else if ([3, 15].includes(index)) {
+      } else if ([8, 20].includes(index)) {
         blackKeyBlockPosCls = styles.blackKeyBlockCenter;
-      } else if ([6, 10, 18, 22].includes(index)) {
+      } else if ([3, 10, 15, 22].includes(index)) {
         blackKeyBlockPosCls = styles.blackKeyBlockLeft;
       }
 
@@ -81,14 +82,14 @@ const NoteKeys: React.FC<Props> = ({
 
   return (
     <div className={styles.notes}>
-      <div className={styles.blackKeys1}>{allBlackKeys.splice(0, 3)}</div>
-      <div className={styles.blackKeys2}>{allBlackKeys.splice(0, 2)}</div>
-      <div className={styles.blackKeys3}>{allBlackKeys.splice(0, 3)}</div>
-      <div className={styles.blackKeys4}>{allBlackKeys.splice(0, 2)}</div>
-      <div className={styles.whiteKeys1}>{allWhiteKeys.splice(0, 4)}</div>
-      <div className={styles.whiteKeys2}>{allWhiteKeys.splice(0, 3)}</div>
-      <div className={styles.whiteKeys3}>{allWhiteKeys.splice(0, 4)}</div>
-      <div className={styles.whiteKeys4}>{allWhiteKeys.splice(0, 3)}</div>
+      <div className={styles.blackKeys1}>{allBlackKeys.splice(0, 2)}</div>
+      <div className={styles.blackKeys2}>{allBlackKeys.splice(0, 3)}</div>
+      <div className={styles.blackKeys3}>{allBlackKeys.splice(0, 2)}</div>
+      <div className={styles.blackKeys4}>{allBlackKeys.splice(0, 3)}</div>
+      <div className={styles.whiteKeys1}>{allWhiteKeys.splice(0, 3)}</div>
+      <div className={styles.whiteKeys2}>{allWhiteKeys.splice(0, 4)}</div>
+      <div className={styles.whiteKeys3}>{allWhiteKeys.splice(0, 3)}</div>
+      <div className={styles.whiteKeys4}>{allWhiteKeys.splice(0, 4)}</div>
     </div>
   );
 };

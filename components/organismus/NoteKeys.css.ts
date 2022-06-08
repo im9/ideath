@@ -85,7 +85,7 @@ export const blackKeyBlockLeft = style({
 
 export const notes = style({
   display: "grid",
-  gridTemplateColumns: "268px 200px 268px 200px",
+  gridTemplateColumns: "200px 268px 200px 268px",
   gridTemplateRows: "64px 132px",
   gridColumnGap: "4px",
   gridRowGap: "4px",
