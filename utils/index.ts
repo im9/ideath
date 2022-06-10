@@ -30,6 +30,7 @@ export const getTempo = (bpm: number = 120): number => {
  * @returns freq
  */
 export const getFreq = (note: string, octave: number) => {
+  // TODO 半音に対応
   const notes = [
     "C",
     "C#",
@@ -45,8 +46,8 @@ export const getFreq = (note: string, octave: number) => {
     "B",
   ];
   const findNote = (v: string) => v === note;
-  const pitch = notes.findIndex(findNote) + 1 + octave * 12;
-  return 440.0 * Math.pow(2.0, (pitch - 69) / 12);
+  const pitch = notes.findIndex(findNote) + octave * 12;
+  return 440.0 * Math.pow(2.0, (pitch - 69) * (1.0 / 12.0));
 };
 
 /**

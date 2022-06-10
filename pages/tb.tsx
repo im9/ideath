@@ -205,8 +205,8 @@ const Tb: NextPage = () => {
           </div> */}
         </div>
         <NoteKeys
-          octaveIndex={0}
-          selectedOctave={0}
+          octaveIndex={1}
+          selectedOctave={1}
           selectedValues={[]}
           onClick={(note: string, octave: number) => {
             handleKeyClick(note, octave);
