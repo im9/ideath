@@ -2,6 +2,10 @@ class MyProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       {
+        name: "mode",
+        defaultValue: 0,
+      },
+      {
         name: "freq",
         defaultValue: 440.0,
       },
@@ -59,6 +63,7 @@ class MyProcessor extends AudioWorkletProcessor {
     if (!this._wasm) {
       return true;
     }
+    this._wasm.exports.set_mode(parameters.mode[0]);
     this._wasm.exports.set_frequency(parameters.freq[0]);
     this._wasm.exports.set_gain(parameters.gain[0]);
     this._wasm.exports.set_cutoff(parameters.cutoff[0]);

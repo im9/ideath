@@ -2,4 +2,5 @@
 
 ```
 $ wasm-pack build
+$ sh ../build.sh
 ```

@@ -24,6 +24,12 @@ pub extern "C" fn process(out_ptr: *mut f32, size: usize) {
 }
 
 #[no_mangle]
+pub extern "C" fn set_mode(mode: i8) {
+    let mut synth = SYNTH.lock().unwrap();
+    synth.mode = mode as i8;
+}
+
+#[no_mangle]
 pub extern "C" fn set_frequency(frequency: f32) {
     let mut synth = SYNTH.lock().unwrap();
     synth.frequency = frequency as f64;

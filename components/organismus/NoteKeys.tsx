@@ -59,7 +59,7 @@ const NoteKeys: React.FC<Props> = ({
           : "";
 
       let blackKeyBlockPosCls = "";
-      console.log(index);
+
       if ([1, 6, 13, 18].includes(index)) {
         blackKeyBlockPosCls = styles.blackKeyBlockRight;
       } else if ([8, 20].includes(index)) {

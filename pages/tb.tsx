@@ -118,6 +118,15 @@ const Tb: NextPage = () => {
         <h1 className={styles.titleCls}>TB</h1>
         <div className={styles.settingsCls}>
           <div className={styles.knobsCls}>
+            <input
+              type="checkbox"
+              onChange={() => {
+                const mode = processor?.current?.parameters.get("mode");
+                if (mode?.value !== undefined) {
+                  mode.value = mode.value === 0 ? 1 : 0;
+                }
+              }}
+            />
             <Knob
               label="CutOff"
               value={1}

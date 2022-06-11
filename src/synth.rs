@@ -1,6 +1,7 @@
 use std::f64::consts::PI;
 
 pub struct Synth {
+    pub mode: i8,
     pub frequency: f64,
     pub decay: f64,
     pub cutoff: f64,
@@ -18,6 +19,7 @@ pub struct Synth {
 impl Synth {
     pub fn new() -> Synth {
         Synth {
+            mode: 0,
             wave_phase: 0,
             env_time: -1,
             decay: 1.0,
@@ -75,10 +77,21 @@ impl Synth {
         t_factor - t_factor.floor() - 0.5
     }
 
+    fn triangle_wave(&self, frequency: f64, phase: i64) -> f64 {
+        let t = (phase as f64) / 44100.0 - 0.75;
+        let t_factor = t * frequency;
+        let saw_amp = 2. * (-t_factor - (0.5 - t_factor as f64).floor() as f64);
+        2.0 * saw_amp.abs() - 1.0
+    }
+
     fn generate_wave_buf(&mut self, size:usize) -> [f64; 128] {
         let mut output: [f64; 128] = [0.0; 128];
         for i in 0..size {
-            let v = self.sawtooth_wave(self.frequency, self.wave_phase);
+            let v = if self.mode == 0 {
+                self.sawtooth_wave(self.frequency, self.wave_phase)
+            } else {
+                self.triangle_wave(self.frequency, self.wave_phase)
+            };
             output[i] = v;
             self.wave_phase = (self.wave_phase + 1) % 44100;
         }
