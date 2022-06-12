@@ -15,10 +15,10 @@ export const toggle = style({
   borderRadius: "15px",
   overflow: "hidden",
   boxShadow: `
-    4px -2px 4px 0px var(--color-white),
-    -4px 2px 12px 0px #d1d9e6,
-    4px 4px 4px 0px #d1d9e6 inset,
-    inset -4px 4px 10px var(--color-gray2), inset 4px -4px 10px var(--color-white);
+    2px -2px 2px 0px var(--color-gray2),
+    -2px 2px 12px 0px #d1d9e6,
+    2px 2px 2px 0px #d1d9e6 inset,
+    inset 2px -2px 10px var(--color-white);
   `,
 });
 
@@ -29,13 +29,13 @@ export const toggleState = style({
 export const indicator = style({
   height: "100%",
   width: "200%",
-  background: "#ecf0f3",
+  background: "var(--color-white)",
   borderRadius: "15px",
   transform: "translate3d(-75%, 0, 0)",
   transition: "transform 0.4s cubic-bezier(0.85, 0.05, 0.18, 1.35)",
   boxShadow: `
-  -8px -4px 8px 0px #ffffff,
-  8px 4px 12px 0px #d1d9e6,
+  -4px -4px 4px 0px #ecf0f3 inset,
+  4px 4px 12px 0px #d1d9e6;
   `,
 });
 
