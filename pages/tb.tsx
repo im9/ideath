@@ -8,6 +8,7 @@ import DigitsSP from "@/components/molecules/DigitsSP";
 import PlayButton from "@/components/atoms/PlayButton";
 import SquareButton from "@/components/atoms/SquareButton";
 import CircleButton from "@/components/atoms/CircleButton";
+import Label from "@/components/atoms/Label";
 import Toggle from "@/components/atoms/Toggle";
 import Knob from "@/components/atoms/Knob";
 import Icons from "@/components/atoms/Icons";
@@ -121,19 +122,24 @@ const Tb: NextPage = () => {
         <h1 className={styles.titleCls}>TB</h1>
         <div className={styles.settingsCls}>
           <div className={styles.oscToggleCls}>
-            <Toggle
-              isOn={isTriangleOsc}
-              onClick={(e: Event) => {
-                e.preventDefault();
+            <div>
+              <Label label="Waveform" />
+            </div>
+            <div>
+              <Toggle
+                isOn={isTriangleOsc}
+                onClick={(e: Event) => {
+                  e.preventDefault();
 
-                const mode = processor?.current?.parameters.get("mode");
-                if (mode?.value !== undefined) {
-                  mode.value = mode.value === 0 ? 1 : 0;
-                  setIsTriangleOsc(!!mode.value);
-                }
-              }}
-            />
-            <Icons name="TriangleWave" />
+                  const mode = processor?.current?.parameters.get("mode");
+                  if (mode?.value !== undefined) {
+                    mode.value = mode.value === 0 ? 1 : 0;
+                    setIsTriangleOsc(!!mode.value);
+                  }
+                }}
+              />
+              <Icons name="TriangleWave" />
+            </div>
           </div>
           <div className={styles.knobsCls}>
             <Knob

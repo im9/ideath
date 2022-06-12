@@ -49,7 +49,11 @@ export const settingsCls = style({
 });
 
 export const oscToggleCls = style({
-  display: "flex",
+  margin: "12px",
+});
+
+globalStyle(`${oscToggleCls} > div > label`, {
+  margin: "14px 8px",
 });
 
 globalStyle(`${oscToggleCls} > i`, {
