@@ -11,6 +11,7 @@ import Pause from "./svg/pause.svg";
 import Record from "./svg/record.svg";
 import SkipNext from "./svg/skip_next.svg";
 import Stop from "./svg/stop.svg";
+import TriangleWave from "./svg/triangle_wave.svg";
 // import { iconCls } from "./IconButton.css";
 
 type Props = {
@@ -44,6 +45,8 @@ const renderIcon = (name = "") => {
       return <SkipNext />;
     case "Stop":
       return <Stop />;
+    case "TriangleWave":
+      return <TriangleWave />;
     default:
       return <>{name}</>;
   }

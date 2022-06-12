@@ -48,6 +48,14 @@ export const settingsCls = style({
   },
 });
 
+export const oscToggleCls = style({
+  display: "flex",
+});
+
+globalStyle(`${oscToggleCls} > i`, {
+  margin: "auto 12px",
+});
+
 export const knobsCls = style({});
 
 globalStyle(`${knobsCls} > div`, {

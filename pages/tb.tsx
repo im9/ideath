@@ -10,6 +10,7 @@ import SquareButton from "@/components/atoms/SquareButton";
 import CircleButton from "@/components/atoms/CircleButton";
 import Toggle from "@/components/atoms/Toggle";
 import Knob from "@/components/atoms/Knob";
+import Icons from "@/components/atoms/Icons";
 import { useMQ } from "@/hooks/useMQ";
 import { DEFAULT_BPM } from "@/constants/seq";
 import { getTempo, getFreq } from "@/utils";
@@ -119,7 +120,7 @@ const Tb: NextPage = () => {
       <MainLayout className={styles.mainFrameCls}>
         <h1 className={styles.titleCls}>TB</h1>
         <div className={styles.settingsCls}>
-          <div className={styles.knobsCls}>
+          <div className={styles.oscToggleCls}>
             <Toggle
               isOn={isTriangleOsc}
               onClick={(e: Event) => {
@@ -132,6 +133,9 @@ const Tb: NextPage = () => {
                 }
               }}
             />
+            <Icons name="TriangleWave" />
+          </div>
+          <div className={styles.knobsCls}>
             <Knob
               label="CutOff"
               value={1}
