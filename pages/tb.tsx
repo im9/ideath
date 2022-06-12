@@ -8,6 +8,7 @@ import DigitsSP from "@/components/molecules/DigitsSP";
 import PlayButton from "@/components/atoms/PlayButton";
 import SquareButton from "@/components/atoms/SquareButton";
 import CircleButton from "@/components/atoms/CircleButton";
+import Toggle from "@/components/atoms/Toggle";
 import Knob from "@/components/atoms/Knob";
 import { useMQ } from "@/hooks/useMQ";
 import { DEFAULT_BPM } from "@/constants/seq";
@@ -20,6 +21,7 @@ import * as styles from "@/styles/tb.css";
 const Tb: NextPage = () => {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [isPlay, setIsPlay] = useState(false);
+  const [isTriangleOsc, setIsTriangleOsc] = useState(false);
 
   const { isMobile } = useMQ();
 
@@ -118,12 +120,15 @@ const Tb: NextPage = () => {
         <h1 className={styles.titleCls}>TB</h1>
         <div className={styles.settingsCls}>
           <div className={styles.knobsCls}>
-            <input
-              type="checkbox"
-              onChange={() => {
+            <Toggle
+              isOn={isTriangleOsc}
+              onClick={(e: Event) => {
+                e.preventDefault();
+
                 const mode = processor?.current?.parameters.get("mode");
                 if (mode?.value !== undefined) {
                   mode.value = mode.value === 0 ? 1 : 0;
+                  setIsTriangleOsc(!!mode.value);
                 }
               }}
             />
