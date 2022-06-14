@@ -1,5 +1,0 @@
-{
-  "baseUrl": "https://ideath.vercel.app",
-  "pluginsFile": "cypress/plugins/index.ts",
-  "supportFile": "cypress/support/index.ts"
-}
