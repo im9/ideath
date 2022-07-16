@@ -8,22 +8,28 @@ import DigitsSP from "@/components/molecules/DigitsSP";
 import PlayButton from "@/components/atoms/PlayButton";
 import SquareButton from "@/components/atoms/SquareButton";
 import CircleButton from "@/components/atoms/CircleButton";
+import StepPad from "@/components/atoms/StepPad";
 import Label from "@/components/atoms/Label";
 import Toggle from "@/components/atoms/Toggle";
 import Knob from "@/components/atoms/Knob";
 import Icons from "@/components/atoms/Icons";
 import { useMQ } from "@/hooks/useMQ";
-import { DEFAULT_BPM } from "@/constants/seq";
-import { getTempo, getFreq } from "@/utils";
+import { DEFAULT_BPM, STEP_LENGTH } from "@/constants/seq";
+import { getTempo, getFreq, getDefaultMatrix } from "@/utils";
 import * as styles from "@/styles/tb.css";
+
+const TRACK = 1;
 
 /**
  * TB
  */
 const Tb: NextPage = () => {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
+  const [step, setStep] = useState(0);
+  const [matrix, setMatrix] = useState(getDefaultMatrix(TRACK, STEP_LENGTH));
   const [isPlay, setIsPlay] = useState(false);
   const [isTriangleOsc, setIsTriangleOsc] = useState(false);
+  const [kick, setKick] = useState();
 
   const { isMobile } = useMQ();
 
@@ -56,6 +62,7 @@ const Tb: NextPage = () => {
   useEffect(() => {
     if (isPlay) {
       intervalRef.current = setInterval(() => {
+        // bass
         if (Math.random() > 0.7) {
           return;
         }
@@ -67,6 +74,8 @@ const Tb: NextPage = () => {
           freq.value = 440.0 * Math.pow(2.0, (note - 69) / 12);
           processor?.current?.port.postMessage({ type: "trigger" });
         }
+
+        setStep((step) => (step < STEP_LENGTH - 1 ? ++step : 0));
       }, getTempo(tempoRef.current));
     } else {
       intervalRef.current && clearInterval(intervalRef.current);
@@ -91,6 +100,11 @@ const Tb: NextPage = () => {
       freq.value = getFreq(note, octave);
       processor?.current?.port.postMessage({ type: "trigger" });
     }
+    const test = processor?.current?.parameters.get("steps");
+    if (test?.value) {
+      test.value = test?.value + 1;
+    }
+    console.log(test);
   }, []);
 
   const handlePlayButtonClick = useCallback(async () => {
@@ -99,6 +113,14 @@ const Tb: NextPage = () => {
 
     setIsPlay((s) => !s);
   }, []);
+
+  const handlePadClick = useCallback(
+    (index: any, key: any) => {
+      matrix[index][key] = Number(!matrix[index][key]);
+      setMatrix(JSON.parse(JSON.stringify(matrix)));
+    },
+    [matrix]
+  );
 
   // const initTimer = useCallback(() => {
   //   intervalRef.current && clearInterval(intervalRef.current);
@@ -110,6 +132,28 @@ const Tb: NextPage = () => {
     <Digits label={"BPM"} bpm={bpm} />
   );
 
+  const steps = (
+    <div className={styles.padsWrapperCls}>
+      {[...Array(16)].map((_, col) => {
+        const row = TRACK - 1;
+        const isPushed = !!matrix[row][col];
+        const isCurrent = col === step && isPlay;
+        return (
+          <StepPad
+            key={`step${col}`}
+            pushed={isPushed}
+            current={isCurrent}
+            row={0}
+            col={0}
+            onClick={() => {
+              handlePadClick(row, col);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className={styles.containerCls}>
       <Head>
@@ -119,7 +163,7 @@ const Tb: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <MainLayout className={styles.mainFrameCls}>
-        <h1 className={styles.titleCls}>TB</h1>
+        <h1 className={styles.titleCls}>TBR</h1>
         <div className={styles.settingsCls}>
           <div className={styles.oscToggleCls}>
             <div>
@@ -223,19 +267,25 @@ const Tb: NextPage = () => {
         </div>
 
         <div className={styles.controlsCls}>
-          <PlayButton pushed={isPlay} onClick={handlePlayButtonClick} />
+          {steps}
           {/* <div>
             <SquareButton label="RESET" onClick={() => {}} />
           </div> */}
+
+          <div>
+            <div className={styles.masterControlCls}>
+              <PlayButton pushed={isPlay} onClick={handlePlayButtonClick} />
+            </div>
+            <NoteKeys
+              octaveIndex={1}
+              selectedOctave={1}
+              selectedValues={[]}
+              onClick={(note: string, octave: number) => {
+                handleKeyClick(note, octave);
+              }}
+            />
+          </div>
         </div>
-        <NoteKeys
-          octaveIndex={1}
-          selectedOctave={1}
-          selectedValues={[]}
-          onClick={(note: string, octave: number) => {
-            handleKeyClick(note, octave);
-          }}
-        />
       </MainLayout>
     </div>
   );

@@ -38,7 +38,7 @@ export const titleCls = style({
 export const settingsCls = style({
   display: "flex",
   alignItems: "center",
-  justifyContent: "end",
+  justifyContent: "flex-end",
   flexWrap: "wrap",
   "@media": {
     "screen and (max-width: 480px)": {
@@ -78,9 +78,7 @@ export const settingsTrackCls = style({
 
 export const controlsCls = style({
   display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  margin: "1rem",
+  alignItems: "flex-end",
 });
 
 export const padsCls = style({
@@ -90,15 +88,14 @@ export const padsCls = style({
 });
 
 export const padsWrapperCls = style({
-  marginTop: "1rem",
-  display: "inline-block",
-  maxWidth: "100vw",
-  "@media": {
-    "screen and (max-width: 480px)": {
-      maxWidth: "calc(100vw - 2.8rem)",
-      margin: "0",
-    },
-  },
+  display: "flex",
+  flexWrap: "wrap",
+  maxWidth: "320px",
+  marginRight: "24px",
+});
+
+export const masterControlCls = style({
+  margin: "32px 12px",
 });
 
 export const settingsTrackDisplayCls = style({

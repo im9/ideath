@@ -4,6 +4,7 @@ extern crate lazy_static;
 use std::sync::Mutex;
 
 mod synth;
+mod sequencer;
 
 #[no_mangle]
 pub extern "C" fn alloc(size: usize) -> *mut f32 {
@@ -15,6 +16,7 @@ pub extern "C" fn alloc(size: usize) -> *mut f32 {
 
 lazy_static! {
     static ref SYNTH: Mutex<synth::Synth> = Mutex::new(synth::Synth::new());
+    static ref SEQ: Mutex<sequencer::Seq> = Mutex::new(sequencer::Seq::new());
 }
 
 #[no_mangle]
@@ -63,6 +65,12 @@ pub extern "C" fn set_decay(decay: f32) {
 pub extern "C" fn set_amount(amount: f32) {
     let mut synth = SYNTH.lock().unwrap();
     synth.amount = amount as f64;
+}
+
+#[no_mangle]
+pub extern "C" fn set_step(step: i32) {
+    let mut seq = SEQ.lock().unwrap();
+    seq.steps[1] = step as i32;
 }
 
 #[no_mangle]

@@ -107,7 +107,6 @@ impl Synth {
         output
     }
 
-    // http://vstcpp.wpblog.jp/?page_id=523
     fn low_pass_filter(&mut self, input: [f64; 128]) -> [f64; 128] {
         let mut output: [f64; 128] = [0.0; 128];
         let _q = match self.q {

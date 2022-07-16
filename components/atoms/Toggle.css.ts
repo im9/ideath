@@ -29,7 +29,7 @@ export const toggleState = style({
 export const indicator = style({
   height: "100%",
   width: "200%",
-  background: "var(--color-white)",
+  background: "var(--color-grayLight2)",
   borderRadius: "15px",
   transform: "translate3d(-75%, 0, 0)",
   transition: "transform 0.4s cubic-bezier(0.85, 0.05, 0.18, 1.35)",

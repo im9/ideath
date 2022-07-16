@@ -29,6 +29,10 @@ class MyProcessor extends AudioWorkletProcessor {
         name: "amount",
         defaultValue: 0.2,
       },
+      {
+        name: "steps",
+        defaultValue: 0,
+      },
     ];
   }
 
@@ -70,6 +74,9 @@ class MyProcessor extends AudioWorkletProcessor {
     this._wasm.exports.set_q(parameters.q[0]);
     this._wasm.exports.set_decay(parameters.decay[0]);
     this._wasm.exports.set_amount(parameters.amount[0]);
+
+    // SEQ
+    this._wasm.exports.set_step(parameters.steps[0]);
 
     let output = outputs[0];
     for (let channel = 0; channel < output.length; ++channel) {
