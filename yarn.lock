@@ -4949,10 +4949,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/p5@npm:^1.4.2":
-  version: 1.4.2
-  resolution: "@types/p5@npm:1.4.2"
-  checksum: 9bdb365d3141f1d29bee4060cf24f9ca3bea0f6410b5dd3d2f9d04c0c8863d778b69de191925d04a73d8a6758db5c599580c940fc47f22c71236b97367448410
+"@types/p5@npm:^1.4.3":
+  version: 1.4.3
+  resolution: "@types/p5@npm:1.4.3"
+  checksum: 9a4b157b8dc6055ec067e5332e55bf1b6bb6ec6feacbd0543ae56a337918261ff74e432b5cd386b560157eb7b76a42b73af343fb0f7a4aed8f257e71ca74003d
   languageName: node
   linkType: hard
 
@@ -11434,7 +11434,7 @@ fsevents@^1.2.7:
     "@testing-library/user-event": ^14.4.3
     "@types/cypress-image-snapshot": ^3.1.6
     "@types/jest": ^29.0.0
-    "@types/p5": ^1.4.2
+    "@types/p5": ^1.4.3
     "@types/react": ^18.0.18
     "@types/react-dom": ^18.0.6
     "@types/react-howler": ^5.2.0
@@ -11464,7 +11464,7 @@ fsevents@^1.2.7:
     react: ^18.2.0
     react-dom: ^18.2.0
     react-howler: ^5.2.0
-    react-p5: ^1.3.30
+    react-p5: ^1.3.33
     react-responsive: ^9.0.0-beta.10
     react-test-renderer: ^18.2.0
     recoil: ^0.7.6
@@ -16196,9 +16196,9 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
-"react-p5@npm:^1.3.30":
-  version: 1.3.30
-  resolution: "react-p5@npm:1.3.30"
+"react-p5@npm:^1.3.33":
+  version: 1.3.33
+  resolution: "react-p5@npm:1.3.33"
   dependencies:
     "@types/p5": 1.3.3
     opencollective-postinstall: 2.0.2
@@ -16206,7 +16206,7 @@ fsevents@^1.2.7:
   peerDependencies:
     react: ">= 17.0.1"
     react-dom: ">= 17.0.1"
-  checksum: 400e53bf578c80c2b6cac870a4b68d2ee130f17e30f30675f787bcb18f404980c8f9e264876bd0511e36c0e664dca57a5843ca8b3805b105c9e4db53e826afd8
+  checksum: 6dc0593e3db1235a410731529d6bb041c6d7f120a75b1c1904602ce7f557f0e412314352dc38dc6d27b14104c6f1a475305104d299fbd825605f9563c4de6c2c
   languageName: node
   linkType: hard
 
