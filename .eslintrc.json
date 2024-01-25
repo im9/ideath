@@ -1,8 +1,12 @@
 {
+  "parser": "@babel/eslint-parser",
   "extends": [
     "next/core-web-vitals",
     "plugin:cypress/recommended"
   ],
+  "rules": {
+    "react/no-unescaped-entities": []
+  },
   "plugins": [
     "testing-library",
     "cypress"

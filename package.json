@@ -19,7 +19,7 @@
   "dependencies": {
     "disable-scroll": "^0.6.0",
     "framer-motion": "^8.0.2",
-    "next": "^13.1.1",
+    "next": "^14.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-howler": "^5.2.0",
@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.7",
+    "@babel/eslint-parser": "^7.23.3",
     "@mdx-js/react": "^2.2.1",
     "@storybook/addon-actions": "^6.5.15",
     "@storybook/addon-docs": "^6.5.15",
@@ -52,9 +53,9 @@
     "@types/react-howler": "^5.2.0",
     "@types/wavesurfer.js": "^5.2.2",
     "@vanilla-extract/babel-plugin": "^1.2.0",
-    "@vanilla-extract/css": "^1.9.2",
-    "@vanilla-extract/next-plugin": "^2.1.1",
-    "@vanilla-extract/webpack-plugin": "^2.2.0",
+    "@vanilla-extract/css": "^1.14.0",
+    "@vanilla-extract/next-plugin": "^2.3.3",
+    "@vanilla-extract/webpack-plugin": "^2.3.2",
     "babel-jest": "^29.3.1",
     "babel-loader": "^9.1.0",
     "babel-plugin-inline-react-svg": "^2.0.1",
@@ -73,7 +74,7 @@
     "react-test-renderer": "^18.2.0",
     "sass": "^1.57.1",
     "ts-jest": "^29.0.3",
-    "typescript": "4.9.4"
+    "typescript": "5.3.3"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
