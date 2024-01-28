@@ -13,8 +13,7 @@
     "test:e2e": "cypress run --browser chrome",
     "lint": "eslint",
     "prepare": "husky install",
-    "sb": "start-storybook -p 6006",
-    "build-storybook": "build-storybook"
+    "storybook": "storybook dev --docs"
   },
   "dependencies": {
     "disable-scroll": "^0.6.0",
@@ -36,11 +35,12 @@
     "@babel/core": "^7.20.7",
     "@babel/eslint-parser": "^7.23.3",
     "@mdx-js/react": "^2.2.1",
-    "@storybook/addon-actions": "^6.5.15",
-    "@storybook/addon-docs": "^6.5.15",
-    "@storybook/addon-essentials": "^6.5.15",
-    "@storybook/addon-links": "^6.5.15",
-    "@storybook/react": "^6.5.15",
+    "@storybook/addon-actions": "^7.6.10",
+    "@storybook/addon-docs": "^7.6.10",
+    "@storybook/addon-essentials": "^7.6.10",
+    "@storybook/addon-links": "^7.6.10",
+    "@storybook/nextjs": "^7.6.10",
+    "@storybook/react": "^7.6.10",
     "@testing-library/cypress": "^9.0.0",
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
@@ -73,6 +73,7 @@
     "prettier": "^2.8.1",
     "react-test-renderer": "^18.2.0",
     "sass": "^1.57.1",
+    "storybook": "^7.6.10",
     "ts-jest": "^29.0.3",
     "typescript": "5.3.3"
   },
