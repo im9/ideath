@@ -1,5 +1,5 @@
 import React from "react";
-import { ComponentStory, ComponentMeta } from "@storybook/react";
+import { StoryObj, Meta } from "@storybook/react";
 
 import CircleButton from "./CircleButton";
 
@@ -13,10 +13,10 @@ export default {
     active: { type: "boolean", defaultValue: false },
     onClick: { type: "function", defaultValue: () => {} },
   },
-} as ComponentMeta<typeof CircleButton>;
+} as Meta<typeof CircleButton>;
 
 // More on component templates: https://storybook.js.org/docs/react/writing-stories/introduction#using-args
-const Template: ComponentStory<typeof CircleButton> = (args) => (
+const Template: StoryObj<typeof CircleButton> = (args) => (
   <CircleButton {...args} />
 );
 

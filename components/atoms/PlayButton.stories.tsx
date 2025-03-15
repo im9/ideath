@@ -1,5 +1,5 @@
 import React from "react";
-import { ComponentStory, ComponentMeta } from "@storybook/react";
+import { StoryObj, Meta } from "@storybook/react";
 
 import PlayButton from "./PlayButton";
 
@@ -12,10 +12,10 @@ export default {
     pushed: { type: "boolean", defaultValue: false },
     onClick: { type: "function", defaultValue: () => {} },
   },
-} as ComponentMeta<typeof PlayButton>;
+} as Meta<typeof PlayButton>;
 
 // More on component templates: https://storybook.js.org/docs/react/writing-stories/introduction#using-args
-const Template: ComponentStory<typeof PlayButton> = (args) => (
+const Template: StoryObj<typeof PlayButton> = (args) => (
   <PlayButton {...args} />
 );
 
