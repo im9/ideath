@@ -16,14 +16,10 @@ export default {
 } as Meta<typeof CircleButton>;
 
 // More on component templates: https://storybook.js.org/docs/react/writing-stories/introduction#using-args
-const Template: StoryObj<typeof CircleButton> = (args) => (
-  <CircleButton {...args} />
-);
+type Story = StoryObj<typeof CircleButton>
 
-export const Primary = Template.bind({});
+// export const Primary = Template.bind({});
 // More on args: https://storybook.js.org/docs/react/writing-stories/args
-Primary.args = {
-  label: "Button",
-  active: false,
-  onClick: () => {},
+export const Primary: Story = {
+  render: () => <CircleButton label="Button" onClick={() => {}} />,
 };

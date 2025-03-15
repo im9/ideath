@@ -15,13 +15,8 @@ export default {
 } as Meta<typeof PlayButton>;
 
 // More on component templates: https://storybook.js.org/docs/react/writing-stories/introduction#using-args
-const Template: StoryObj<typeof PlayButton> = (args) => (
-  <PlayButton {...args} />
-);
+type Story = StoryObj<typeof PlayButton>
 
-export const Primary = Template.bind({});
-// More on args: https://storybook.js.org/docs/react/writing-stories/args
-Primary.args = {
-  pushed: false,
-  onClick: () => {},
+export const Primary: Story = {
+  render: () => <PlayButton onClick={() => {}} />,
 };
