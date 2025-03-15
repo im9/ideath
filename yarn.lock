@@ -8629,7 +8629,7 @@ __metadata:
     sass: ^1.57.1
     soundbank-reverb: ^1.1.2
     storybook: ^8.6.6
-    tone: ^14.7.77
+    tone: ^15.0.4
     ts-jest: ^29.2.6
     tunajs: ^1.0.15
     typescript: 5.8.2
@@ -13865,13 +13865,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tone@npm:^14.7.77":
-  version: 14.9.17
-  resolution: "tone@npm:14.9.17"
+"tone@npm:^15.0.4":
+  version: 15.1.18
+  resolution: "tone@npm:15.1.18"
   dependencies:
     standardized-audio-context: ^25.3.70
     tslib: ^2.3.1
-  checksum: c90192efec9b61ef77b8f78aee418b6d2801b09e5b0a59f5121b22305515b9628f63f57d8e18dc706ffabbf338a7ad5f428bae5a1378426ec0580aa652aa7741
+  checksum: c9b3df1be903426fb8aef2301d22d94920f79d2c853ce347f69856e291be32a5c2a69014cdc1042590c8c4357916ee06dbf3cb173e5c6f761ad6c912eb502a61
   languageName: node
   linkType: hard
 
