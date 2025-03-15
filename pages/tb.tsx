@@ -69,11 +69,11 @@ const Tb: NextPage = () => {
         }
       }, getTempo(tempoRef.current));
     } else {
-      intervalRef.current && clearInterval(intervalRef.current);
+      intervalRef.current && clearInterval(intervalRef.current as NodeJS.Timeout);
       intervalRef.current = null;
     }
     return () => {
-      intervalRef.current && clearInterval(intervalRef.current);
+      intervalRef.current && clearInterval(intervalRef.current as NodeJS.Timeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlay]);
