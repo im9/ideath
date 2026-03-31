@@ -18,6 +18,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Saturation** | tanh drive + polynomial soft clip |
 | **Wavetable** | 4-bit wavetable oscillator (Game Boy style, nearest/linear interpolation) |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
+| **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
 
 ## Design Principles
 

@@ -15,6 +15,7 @@ add_library(ideath STATIC
     src/Saturation.cpp
     src/Wavetable.cpp
     src/BitCrusher.cpp
+    src/DelayLine.cpp
 )
 
 target_include_directories(ideath
@@ -46,6 +47,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_Saturation.cpp
         tests/test_Wavetable.cpp
         tests/test_BitCrusher.cpp
+        tests/test_DelayLine.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
