@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.22)
+
+project(ideath VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# --- Library -----------------------------------------------------------
+add_library(ideath STATIC
+    src/Biquad.cpp
+    src/Oscillator.cpp
+    src/Envelope.cpp
+    src/Noise.cpp
+    src/Saturation.cpp
+)
+
+target_include_directories(ideath
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+# --- Tests (opt-in) ----------------------------------------------------
+option(TN_DSP_BUILD_TESTS "Build unit tests" ON)
+
+if(TN_DSP_BUILD_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.7.1
+    )
+    FetchContent_MakeAvailable(Catch2)
+
+    enable_testing()
+
+    add_executable(ideath_tests
+        tests/main.cpp
+        tests/test_Biquad.cpp
+        tests/test_Oscillator.cpp
+        tests/test_Envelope.cpp
+        tests/test_Noise.cpp
+        tests/test_Saturation.cpp
+    )
+
+    target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
+
+    include(Catch)
+    catch_discover_tests(ideath_tests)
+endif()
