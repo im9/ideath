@@ -62,6 +62,31 @@ tests/          — Catch2 v3 unit tests
 3. Create `src/Foo.cpp` with the implementation
 4. Add source files to `CMakeLists.txt` (`target_sources` for lib, `add_executable` for tests)
 5. `make test` — all green
+6. Update Primitives list in `CLAUDE.md` and `README.md`
+
+## Testing Conventions
+
+- Every primitive must have corresponding tests in `tests/test_<Name>.cpp`
+- Tests must verify at minimum:
+  - **Output range** — bounds checks (e.g., `[-1, 1]`)
+  - **Expected behavior** — correct frequency, waveform shape, timing, etc.
+  - **Reset/state** — `reset()` returns to initial state
+  - **Edge cases** — parameter clamping, zero/extreme values
+- Use absolute assertions: `REQUIRE`, `REQUIRE_THAT(x, WithinAbs(y, tol))`
+- Tag all tests with the primitive name: `[osc]`, `[wavetable]`, `[delay]`, etc.
+- No allocation in test loops (mirrors real-time constraint)
+
+## Primitive API Conventions
+
+Every primitive follows the same interface pattern:
+
+- `prepare(float sampleRate)` — initialize with sample rate, call `reset()`
+- `reset()` — return to initial state (zero phase, clear buffers)
+- `set<Param>(...)` — parameter setters, precompute coefficients
+- `process(...)` — per-sample processing, returns `float`
+- Parameters are raw physical units (Hz, seconds, dB)
+- No allocation in `process()` — real-time safe
+- Default-constructible with sensible defaults (44100 Hz sample rate)
 
 ## Integration with Plugin Projects
 
