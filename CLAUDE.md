@@ -110,8 +110,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 ## Relationship to Other Projects
 
-- **inboil** (`/Users/tn/src/front/inboil`) — browser DAW. DSP algorithms originate here, ported to C++
-- **tr606** (`/Users/tn/src/vst/tr606`) — JUCE VST prototype, will link ideath as subdirectory
+- **inboil** (https://github.com/im9/inboil) — browser DAW. DSP algorithms originate here, ported to C++
 - **Future iOS/VST apps** — consume ideath for DSP, own UI is separate
 
 ## Docs, Code, and Commits
