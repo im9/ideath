@@ -13,6 +13,7 @@ add_library(ideath STATIC
     src/Envelope.cpp
     src/Noise.cpp
     src/Saturation.cpp
+    src/Wavetable.cpp
 )
 
 target_include_directories(ideath
@@ -42,6 +43,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_Envelope.cpp
         tests/test_Noise.cpp
         tests/test_Saturation.cpp
+        tests/test_Wavetable.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)

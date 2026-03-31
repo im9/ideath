@@ -16,6 +16,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **AdsrEnvelope** | Attack/Decay/Sustain/Release (sustained sounds) |
 | **Noise** | xorshift32 white noise generator |
 | **Saturation** | tanh drive + polynomial soft clip |
+| **Wavetable** | 4-bit wavetable oscillator (Game Boy style, nearest/linear interpolation) |
 
 ## Design Principles
 
