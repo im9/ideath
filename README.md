@@ -16,7 +16,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **AdsrEnvelope** | Attack/Decay/Sustain/Release (sustained sounds) |
 | **Noise** | xorshift32 white noise generator |
 | **Saturation** | tanh drive + polynomial soft clip |
-| **Wavetable** | 4-bit wavetable oscillator (Game Boy style, nearest/linear interpolation) |
+| **Wavetable** | Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation) |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
 | **LFO** | Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot) |
