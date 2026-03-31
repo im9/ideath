@@ -59,3 +59,10 @@ if(TN_DSP_BUILD_TESTS)
     include(Catch)
     catch_discover_tests(ideath_tests)
 endif()
+
+# --- REPL tool (opt-in) ------------------------------------------------
+option(TN_DSP_BUILD_REPL "Build interactive REPL tool" OFF)
+
+if(TN_DSP_BUILD_REPL)
+    add_subdirectory(tools/repl)
+endif()

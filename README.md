@@ -42,6 +42,7 @@ Or with the provided Makefile:
 ```bash
 make build     # configure + build
 make test      # build + run tests
+make repl      # build + launch interactive REPL
 make clean     # remove build directory
 ```
 
@@ -60,12 +61,32 @@ target_link_libraries(MyPlugin PRIVATE ideath)
 // ...
 ```
 
+## Interactive REPL
+
+A live-coding environment for auditioning primitives in real time. Type commands to build a signal chain and hear the results immediately through your speakers.
+
+```bash
+make repl
+```
+
+```
+ideath> wt square 440
+ideath> filter lp 1000 0.7
+ideath> crush 4 8000
+ideath> delay 0.3 0.4
+ideath> note C4
+ideath> stop
+```
+
+See [tools/repl/COMMANDS.md](tools/repl/COMMANDS.md) for the full command reference.
+
 ## Project Structure
 
 ```
 include/ideath/ — public headers (the API)
 src/            — implementation files
 tests/          — Catch2 v3 unit tests
+tools/repl/     — interactive REPL tool (miniaudio)
 ```
 
 ## License

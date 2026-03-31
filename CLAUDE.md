@@ -17,6 +17,7 @@ cmake --build build -j8
 ```bash
 make build     # configure + build
 make test      # build + run tests
+make repl      # build + launch interactive REPL
 make clean     # remove build directory
 ```
 
@@ -26,7 +27,15 @@ make clean     # remove build directory
 include/ideath/ — public headers (the API)
 src/            — implementation files
 tests/          — Catch2 v3 unit tests
+tools/repl/     — interactive REPL tool (miniaudio, real-time audio)
 ```
+
+### REPL Tool
+Interactive live-coding environment for auditioning primitives. Builds a single-voice
+signal chain: Source → Envelope → Filter → BitCrusher → Saturation → Delay → output.
+Commands are documented in `tools/repl/COMMANDS.md`.
+Built with miniaudio (vendored in `third_party/miniaudio/`).
+CMake option: `TN_DSP_BUILD_REPL=ON`.
 
 ### Primitives (low-level, stateless or minimal state)
 - **Biquad** — Direct Form II Transposed (LP/HP/BP, RBJ cookbook)
