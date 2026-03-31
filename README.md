@@ -19,6 +19,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Wavetable** | 4-bit wavetable oscillator (Game Boy style, nearest/linear interpolation) |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
+| **LFO** | Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot) |
+| **Portamento** | Exponential pitch/value glide |
 
 ## Design Principles
 
