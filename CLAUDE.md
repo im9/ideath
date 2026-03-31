@@ -113,6 +113,16 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - **inboil** (https://github.com/im9/inboil) — browser DAW. DSP algorithms originate here, ported to C++
 - **Future iOS/VST apps** — consume ideath for DSP, own UI is separate
 
+## Next Steps
+
+- [ ] REPL: sequencer (`seq C4 E4 G4 120bpm`)
+- [ ] REPL: optimize filter coefficient recalculation (only on parameter change)
+- [ ] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
+- [ ] Polyphony management — multi-voice allocation (Junior supports up to 16)
+- [ ] Plugin project — JUCE VST3/AU or iOS AUv3
+- [ ] FM Synth primitive — hardware-inspired (YM2612/SID reference), needs design
+- [ ] Reverb primitive — needs careful design for generality
+
 ## Docs, Code, and Commits
 
 - All in English
