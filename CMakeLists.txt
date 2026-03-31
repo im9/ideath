@@ -52,6 +52,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_DelayLine.cpp
         tests/test_LFO.cpp
         tests/test_Portamento.cpp
+        tests/test_AudioSafety.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)

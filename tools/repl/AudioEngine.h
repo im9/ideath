@@ -46,6 +46,8 @@ private:
 
     float baseFreq_ = 440.0f;
     bool stopped_ = true;
+    bool delayCleared_ = false;
+    Portamento gainSmoother_;
 };
 
 }} // namespace ideath::repl

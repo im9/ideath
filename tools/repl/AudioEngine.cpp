@@ -14,22 +14,47 @@ void AudioEngine::prepare(float sampleRate)
     delay_.prepare(sampleRate, 2.0f); // max 2 seconds delay
     lfo_.prepare(sampleRate);
     porta_.prepare(sampleRate);
+    gainSmoother_.prepare(sampleRate);
+    gainSmoother_.setTime(0.005f); // 5ms fade
+    gainSmoother_.setValue(0.0f);
+    gainSmoother_.setTarget(0.0f);
 }
 
 void AudioEngine::applyPendingState(SharedState& shared)
 {
     if (shared.paramsReady.load(std::memory_order_acquire))
     {
-        params_ = shared.staging;
+        VoiceParams newParams = shared.staging;
         shared.paramsReady.store(false, std::memory_order_release);
+
+        // Wavetable: only rebuild when shape actually changes
+        if (newParams.source == SourceType::Wavetable &&
+            (newParams.wtShape != params_.wtShape || params_.source != SourceType::Wavetable))
+        {
+            switch (newParams.wtShape)
+            {
+                case WtShape::Square:   wt_ = Wavetable::squareTable(); break;
+                case WtShape::Saw:      wt_ = Wavetable::sawTable(); break;
+                case WtShape::Triangle: wt_ = Wavetable::triangleTable(); break;
+                case WtShape::Sine:     wt_ = Wavetable::sineTable(); break;
+            }
+            wt_.prepare(sampleRate_);
+        }
+
+        // Update gain target for smooth transitions
+        if (newParams.source != SourceType::None)
+            gainSmoother_.setTarget(1.0f);
+        else
+            gainSmoother_.setTarget(0.0f);
+
+        params_ = newParams;
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
     {
         stopped_ = true;
         env_.noteOff();
-        delay_.reset();
-        lfo_.reset();
+        gainSmoother_.setTarget(0.0f);
         shared.stopRequested.store(false, std::memory_order_release);
     }
 
@@ -41,6 +66,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
         stopped_ = false;
         baseFreq_ = params_.frequency;
         porta_.setTarget(baseFreq_);
+        gainSmoother_.setTarget(1.0f);
 
         if (params_.envelopeEnabled)
         {
@@ -62,8 +88,20 @@ void AudioEngine::applyPendingState(SharedState& shared)
 
 float AudioEngine::process()
 {
-    if (stopped_ && params_.source == SourceType::None)
+    float gain = gainSmoother_.process();
+
+    if (gain < 0.0001f && params_.source == SourceType::None)
+    {
+        // Fully faded out, safe to reset
+        if (!delayCleared_)
+        {
+            delay_.reset();
+            lfo_.reset();
+            delayCleared_ = true;
+        }
         return 0.0f;
+    }
+    delayCleared_ = false;
 
     // --- Portamento ---
     porta_.setTime(params_.portaTime);
@@ -103,27 +141,16 @@ float AudioEngine::process()
             break;
 
         case SourceType::Wavetable:
-        {
-            // Rebuild wavetable if shape changed (cheap for small tables)
-            switch (params_.wtShape)
-            {
-                case WtShape::Square:   wt_ = Wavetable::squareTable(); break;
-                case WtShape::Saw:      wt_ = Wavetable::sawTable(); break;
-                case WtShape::Triangle: wt_ = Wavetable::triangleTable(); break;
-                case WtShape::Sine:     wt_ = Wavetable::sineTable(); break;
-            }
-            wt_.prepare(sampleRate_);
             wt_.setFrequency(freq);
             sample = wt_.process();
             break;
-        }
 
         case SourceType::Noise:
             sample = noise_.process();
             break;
 
         case SourceType::None:
-            return 0.0f;
+            break;
     }
 
     // --- Envelope ---
@@ -131,10 +158,6 @@ float AudioEngine::process()
     {
         float envVal = env_.process();
         sample *= envVal;
-
-        // If envelope finished and in envelope mode, go silent
-        if (!env_.isActive() && lastNoteOff_ > 0)
-            sample = 0.0f;
     }
 
     // --- Filter ---
@@ -180,10 +203,14 @@ float AudioEngine::process()
 
     // --- LFO → Volume ---
     if (params_.lfoTarget == LfoTarget::Volume)
-        sample *= 1.0f + lfoVal * params_.lfoDepth * 0.01f; // depth as percentage
+        sample *= 1.0f + lfoVal * params_.lfoDepth * 0.01f;
 
-    // --- Master volume ---
-    sample *= params_.volume;
+    // --- Master volume with gain smoothing ---
+    sample *= params_.volume * gain;
+
+    // --- Hard limiter: protect speakers ---
+    if (sample > 1.0f) sample = 1.0f;
+    else if (sample < -1.0f) sample = -1.0f;
 
     return sample;
 }
