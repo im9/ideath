@@ -148,9 +148,9 @@ float AudioEngine::process()
 
         switch (params_.filterType)
         {
-            case FilterType::Lowpass:  filter_.setLowpass(sampleRate_, filterFreq, params_.filterQ); break;
-            case FilterType::Highpass: filter_.setHighpass(sampleRate_, filterFreq, params_.filterQ); break;
-            case FilterType::Bandpass: filter_.setBandpass(sampleRate_, filterFreq, params_.filterQ); break;
+            case FilterType::Lowpass:  filter_.setLowpass(filterFreq, params_.filterQ, sampleRate_); break;
+            case FilterType::Highpass: filter_.setHighpass(filterFreq, params_.filterQ, sampleRate_); break;
+            case FilterType::Bandpass: filter_.setBandpass(filterFreq, params_.filterQ, sampleRate_); break;
             default: break;
         }
 
