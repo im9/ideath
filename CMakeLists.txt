@@ -23,6 +23,7 @@ add_library(ideath STATIC
     src/FMSynth.cpp
     src/Reverb.cpp
     src/HallReverb.cpp
+    src/ShimmerReverb.cpp
 )
 
 target_include_directories(ideath
@@ -62,6 +63,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_FMSynth.cpp
         tests/test_Reverb.cpp
         tests/test_HallReverb.cpp
+        tests/test_ShimmerReverb.cpp
         tests/test_AudioSafety.cpp
     )
 

@@ -26,6 +26,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FMSynth** | 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired) |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
 | **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
+| **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
 
 ## Design Principles
 
