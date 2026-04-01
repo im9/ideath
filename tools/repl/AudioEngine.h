@@ -45,6 +45,9 @@ private:
     Portamento porta_;
 
     float baseFreq_ = 440.0f;
+    float lastFilterFreq_ = -1.0f;
+    float lastFilterQ_ = -1.0f;
+    FilterType lastFilterType_ = FilterType::Off;
     bool stopped_ = true;
     bool delayCleared_ = false;
     Portamento gainSmoother_;

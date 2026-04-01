@@ -265,12 +265,19 @@ float AudioEngine::process()
         if (params_.lfoTarget == LfoTarget::Filter)
             filterFreq *= std::pow(2.0f, lfoVal * params_.lfoDepth / 1200.0f);
 
-        switch (params_.filterType)
+        // Only recompute coefficients when parameters actually change
+        if (filterFreq != lastFilterFreq_ || params_.filterQ != lastFilterQ_ || params_.filterType != lastFilterType_)
         {
-            case FilterType::Lowpass:  filter_.setLowpass(filterFreq, params_.filterQ, sampleRate_); break;
-            case FilterType::Highpass: filter_.setHighpass(filterFreq, params_.filterQ, sampleRate_); break;
-            case FilterType::Bandpass: filter_.setBandpass(filterFreq, params_.filterQ, sampleRate_); break;
-            default: break;
+            switch (params_.filterType)
+            {
+                case FilterType::Lowpass:  filter_.setLowpass(filterFreq, params_.filterQ, sampleRate_); break;
+                case FilterType::Highpass: filter_.setHighpass(filterFreq, params_.filterQ, sampleRate_); break;
+                case FilterType::Bandpass: filter_.setBandpass(filterFreq, params_.filterQ, sampleRate_); break;
+                default: break;
+            }
+            lastFilterFreq_ = filterFreq;
+            lastFilterQ_ = params_.filterQ;
+            lastFilterType_ = params_.filterType;
         }
 
         sample = filter_.process(sample);
