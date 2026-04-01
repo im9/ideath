@@ -19,6 +19,9 @@ void AudioEngine::prepare(float sampleRate)
     reverb_.prepare(sampleRate);
     hallReverb_.prepare(sampleRate);
     shimmerReverb_.prepare(sampleRate);
+    wavefolder_.prepare(sampleRate);
+    unison_.prepare(sampleRate);
+    looper_.prepare(sampleRate, 30.0f); // max 30 seconds loop
     gainSmoother_.prepare(sampleRate);
     gainSmoother_.setTime(0.005f); // 5ms fade
     gainSmoother_.setValue(0.0f);
@@ -58,6 +61,18 @@ void AudioEngine::applyPendingState(SharedState& shared)
             gainSmoother_.setTarget(1.0f);
         else
             gainSmoother_.setTarget(0.0f);
+
+        // Looper actions
+        switch (newParams.loopAction)
+        {
+            case VoiceParams::LoopAction::Record:  looper_.record(); break;
+            case VoiceParams::LoopAction::Stop:    looper_.stop(); break;
+            case VoiceParams::LoopAction::Play:    looper_.play(); break;
+            case VoiceParams::LoopAction::Overdub: looper_.overdub(); break;
+            case VoiceParams::LoopAction::Off:     looper_.reset(); break;
+            case VoiceParams::LoopAction::None:    break;
+        }
+        newParams.loopAction = VoiceParams::LoopAction::None;
 
         params_ = newParams;
     }
@@ -274,6 +289,13 @@ float AudioEngine::process()
             sample = fm_.process();
             break;
 
+        case SourceType::Unison:
+            unison_.setFrequency(freq);
+            unison_.setVoiceCount(params_.unisonVoices);
+            unison_.setDetune(params_.unisonDetune);
+            sample = unison_.process(params_.oscWaveform == OscWaveform::Saw ? 1.0f : 0.0f);
+            break;
+
         case SourceType::None:
             break;
     }
@@ -335,6 +357,14 @@ float AudioEngine::process()
     if (params_.satEnabled)
         sample = Saturation::tanhDrive(sample, params_.satDrive);
 
+    // --- Wavefolder ---
+    if (params_.foldEnabled)
+    {
+        wavefolder_.setDrive(params_.foldDrive);
+        wavefolder_.setMix(params_.foldMix);
+        sample = wavefolder_.process(sample);
+    }
+
     // --- Delay ---
     if (params_.delayEnabled)
     {
@@ -342,6 +372,13 @@ float AudioEngine::process()
         delay_.setFeedback(params_.delayFeedback);
         delay_.setMix(0.5f);
         sample = delay_.process(sample);
+    }
+
+    // --- Looper (FeedbackBuffer) ---
+    {
+        looper_.setFeedback(params_.loopFeedback);
+        looper_.setMix(params_.loopMix);
+        sample = looper_.process(sample);
     }
 
     // --- Reverb (mono sum of stereo output) ---

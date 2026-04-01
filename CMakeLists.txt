@@ -26,6 +26,9 @@ add_library(ideath STATIC
     src/ShimmerReverb.cpp
     src/PeakLimiter.cpp
     src/Compressor.cpp
+    src/Wavefolder.cpp
+    src/UnisonOscillator.cpp
+    src/FeedbackBuffer.cpp
 )
 
 target_include_directories(ideath
@@ -68,6 +71,9 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_ShimmerReverb.cpp
         tests/test_PeakLimiter.cpp
         tests/test_Compressor.cpp
+        tests/test_Wavefolder.cpp
+        tests/test_UnisonOscillator.cpp
+        tests/test_FeedbackBuffer.cpp
         tests/test_AudioSafety.cpp
     )
 

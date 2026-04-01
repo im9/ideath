@@ -29,6 +29,9 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
 | **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead) |
 | **Compressor** | Peak envelope compressor (threshold/ratio/attack/release/makeup/knee) |
+| **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping |
+| **FeedbackBuffer** | Long circular buffer looper (record/overdub/playback) |
+| **UnisonOscillator** | Stacked detuned oscillators (unison spread) |
 
 ## Design Principles
 

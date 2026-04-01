@@ -40,10 +40,14 @@ ideath REPL commands:
   wt <square|saw|tri|sine> <freq>  Wavetable source
   noise                         Noise source
   fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
+  unison <saw|square> <freq> [voices] [detune_cents]
+                                Unison oscillator source
   filter <lp|hp|bp> <freq> <Q>  Biquad filter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
+  fold <drive> [mix]            Wavefolder (or "fold off")
   delay <time> <feedback>       Delay line (or "delay off")
+  loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
@@ -627,6 +631,81 @@ bool parseCommand(const std::string& line, SharedState& shared)
         {
             std::cout << "No valid notes in sequence." << std::endl;
         }
+        return true;
+    }
+
+    if (cmd == "unison")
+    {
+        shared.staging.source = SourceType::Unison;
+        if (tokens.size() > 1)
+        {
+            if (tokens[1] == "saw") shared.staging.oscWaveform = OscWaveform::Saw;
+            else if (tokens[1] == "square") shared.staging.oscWaveform = OscWaveform::Square;
+        }
+        if (tokens.size() > 2)
+            shared.staging.frequency = parseFloat(tokens[2], 440.0f);
+        if (tokens.size() > 3)
+            shared.staging.unisonVoices = parseInt(tokens[3], 5);
+        if (tokens.size() > 4)
+            shared.staging.unisonDetune = parseFloat(tokens[4], 15.0f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Unison: " << shared.staging.unisonVoices
+                  << " voices, detune=" << shared.staging.unisonDetune << " cents" << std::endl;
+        return true;
+    }
+
+    if (cmd == "fold")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.foldEnabled = false;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Wavefolder OFF" << std::endl;
+            return true;
+        }
+
+        shared.staging.foldEnabled = true;
+        if (tokens.size() > 1)
+            shared.staging.foldDrive = parseFloat(tokens[1], 1.0f);
+        if (tokens.size() > 2)
+            shared.staging.foldMix = parseFloat(tokens[2], 1.0f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Wavefolder: drive=" << shared.staging.foldDrive
+                  << " mix=" << shared.staging.foldMix << std::endl;
+        return true;
+    }
+
+    if (cmd == "loop")
+    {
+        if (tokens.size() < 2)
+        {
+            std::cout << "Usage: loop <rec|stop|play|overdub|off> [feedback] [mix]" << std::endl;
+            return true;
+        }
+
+        if (tokens[1] == "rec")
+            shared.staging.loopAction = VoiceParams::LoopAction::Record;
+        else if (tokens[1] == "stop")
+            shared.staging.loopAction = VoiceParams::LoopAction::Stop;
+        else if (tokens[1] == "play")
+            shared.staging.loopAction = VoiceParams::LoopAction::Play;
+        else if (tokens[1] == "overdub" || tokens[1] == "dub")
+            shared.staging.loopAction = VoiceParams::LoopAction::Overdub;
+        else if (tokens[1] == "off")
+            shared.staging.loopAction = VoiceParams::LoopAction::Off;
+        else if (tokens[1] == "feedback" && tokens.size() > 2)
+        {
+            shared.staging.loopFeedback = parseFloat(tokens[2], 0.8f);
+            shared.staging.loopAction = VoiceParams::LoopAction::None;
+        }
+        else if (tokens[1] == "mix" && tokens.size() > 2)
+        {
+            shared.staging.loopMix = parseFloat(tokens[2], 1.0f);
+            shared.staging.loopAction = VoiceParams::LoopAction::None;
+        }
+
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Loop: " << tokens[1] << std::endl;
         return true;
     }
 

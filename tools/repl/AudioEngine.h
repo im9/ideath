@@ -16,6 +16,9 @@
 #include <ideath/Reverb.h>
 #include <ideath/HallReverb.h>
 #include <ideath/ShimmerReverb.h>
+#include <ideath/Wavefolder.h>
+#include <ideath/UnisonOscillator.h>
+#include <ideath/FeedbackBuffer.h>
 
 namespace ideath { namespace repl {
 
@@ -53,6 +56,9 @@ private:
     Reverb reverb_;
     HallReverb hallReverb_;
     ShimmerReverb shimmerReverb_;
+    Wavefolder wavefolder_;
+    UnisonOscillator unison_;
+    FeedbackBuffer looper_;
 
     float baseFreq_ = 440.0f;
     float lastFilterFreq_ = -1.0f;

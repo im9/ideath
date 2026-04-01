@@ -7,7 +7,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -80,6 +80,21 @@ struct VoiceParams
     float reverbModDepth = 0.5f;
     // Shimmer-specific
     float reverbShimmer = 0.5f;
+
+    // Wavefolder
+    bool foldEnabled = false;
+    float foldDrive = 1.0f;
+    float foldMix = 1.0f;
+
+    // Unison oscillator
+    int unisonVoices = 5;
+    float unisonDetune = 15.0f;
+
+    // Looper (FeedbackBuffer)
+    enum class LoopAction { None, Record, Stop, Play, Overdub, Off };
+    LoopAction loopAction = LoopAction::None;
+    float loopFeedback = 0.8f;
+    float loopMix = 1.0f;
 
     // Portamento
     float portaTime = 0.0f;

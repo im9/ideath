@@ -34,12 +34,16 @@ See the project wiki for VSCode / Vim integration examples.
 ## Signal Chain
 
 ```
-Source (osc | wt | noise)
+Source (osc | wt | noise | fm | unison)
   → AdsrEnvelope
   → Biquad filter
+  → Compressor
   → BitCrusher
   → Saturation
+  → Wavefolder
   → DelayLine
+  → Looper (FeedbackBuffer)
+  → Reverb
   → master volume
   → output
 ```
@@ -58,6 +62,7 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `noise` | White noise source |
 | `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FM synth source (algo 0-7) |
 | `fmfb <op 0-3> <amount>` | Set FM operator feedback |
+| `unison <saw\|square> <freq> [voices] [detune_cents]` | Unison oscillator (default 5 voices, 15 cents) |
 
 FM operator format is `ratio:level` (e.g., `fm 0 1:1 2:0.5 3:0.3 4:0.2`).
 Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
@@ -69,7 +74,11 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `filter <lp\|hp\|bp> <freq> <Q>` | Biquad filter |
 | `crush <bits> <downsample_rate>` | BitCrusher |
 | `sat <drive>` | Saturation (tanh drive) |
+| `fold <drive> [mix]` | Wavefolder (sine-based, `fold off` to disable) |
 | `delay <time_sec> <feedback>` | Delay line |
+| `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
+| `loop feedback <0-1>` | Looper overdub feedback |
+| `loop mix <0-1>` | Looper dry/wet mix |
 | `comp <thresh_dB> <ratio> [attack] [release] [makeup_dB]` | Compressor |
 | `comp off` | Disable compressor |
 | `reverb <room\|hall\|shimmer> [size] [damp] [mix]` | Reverb effect |

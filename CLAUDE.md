@@ -61,6 +61,9 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
 - **PeakLimiter** — Lookahead brickwall limiter (threshold/release/lookahead)
 - **Compressor** — Peak envelope compressor (threshold/ratio/attack/release/makeup/knee)
+- **Wavefolder** — sin(input * drive) wavefolder (West Coast timbre shaping, drive/mix)
+- **FeedbackBuffer** — Long circular buffer looper (record/overdub/playback, feedback/mix)
+- **UnisonOscillator** — Stacked detuned oscillators (voice count, detune spread in cents)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -142,6 +145,9 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [ ] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
 - [x] PeakLimiter — lookahead brickwall limiter
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
+- [x] Wavefolder — sin(input * drive) wavefolder (West Coast timbre shaping)
+- [x] FeedbackBuffer — long circular buffer looper (record/overdub/playback, extends DelayLine concept)
+- [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
