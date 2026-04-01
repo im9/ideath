@@ -56,6 +56,8 @@ CMake option: `TN_DSP_BUILD_REPL=ON`.
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
 - **Real-time safe** — no allocation after construction, no exceptions, no locks
+- **Mono-first** — primitives process mono (`float` in/out); stereo routing, panning, and M/S are the plugin layer's responsibility. Exception: algorithms that are inherently stereo (e.g. Reverb, PingPongDelay) may output L/R
+- **No mod matrix** — modulation routing is the plugin layer's responsibility. Primitives just expose per-sample-safe setters; the plugin calls `set<Param>()` each sample with base + mod values
 - **Testable** — every primitive has Catch2 tests with absolute-level assertions
 - **Namespace** — everything lives under `ideath::`
 
@@ -118,13 +120,20 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 ## Next Steps
 
-- [x] REPL: sequencer (`seq C4 E4 G4 120`)
-- [x] REPL: optimize filter coefficient recalculation (only on parameter change)
-- [x] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
-- [x] Polyphony management — multi-voice allocation (Junior supports up to 16)
+### Primitives — Effects (port from inboil)
+- [ ] Reverb (Freeverb) — 8 comb + 4 allpass, size/damp/freeze
+- [ ] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
+- [ ] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
+- [ ] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
+- [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze
+- [ ] StutterBuffer — slice repeat glitch, crossfade boundaries
+- [ ] CombFilter — feedback delay, Karplus-Strong / metallic textures
+- [ ] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
+- [ ] PeakLimiter — lookahead brickwall limiter
+- [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
+
+### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
-- [x] FM Synth primitive — 4-operator, 8 algorithms, YM2612-inspired
-- [ ] Reverb primitive — needs careful design for generality
 
 ## Docs, Code, and Commits
 

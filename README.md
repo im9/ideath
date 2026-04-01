@@ -29,6 +29,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
 - **Real-time safe** — no allocation after construction, no exceptions, no locks
+- **Mono-first** — primitives process mono (`float` in/out); stereo routing and panning are the plugin layer's responsibility. Inherently stereo algorithms (Reverb, PingPongDelay) may output L/R
+- **No mod matrix** — modulation routing lives in the plugin layer; primitives expose per-sample-safe setters
 - **Testable** — every primitive has Catch2 tests with absolute-level assertions
 - **Raw units** — parameters are Hz, seconds, dB; normalization happens in the plugin layer
 
