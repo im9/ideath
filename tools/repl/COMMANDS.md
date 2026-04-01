@@ -13,6 +13,22 @@ ideath> note C4
 ideath> quit
 ```
 
+## Editor Integration (TCP)
+
+The REPL listens on `127.0.0.1:7777` for TCP connections, enabling
+Cmd+Enter style workflows from any editor (like TidalCycles / SuperCollider).
+
+```bash
+# Send a single command
+echo "osc saw 440" | nc localhost 7777
+
+# Send multiple commands at once
+printf "osc saw 440\nfilter lp 800\nnote C4\n" | nc localhost 7777
+```
+
+Write commands in your editor, select them, and send with a keybinding.
+See the project wiki for VSCode / Vim integration examples.
+
 ## Signal Chain
 
 ```

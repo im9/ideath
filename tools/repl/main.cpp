@@ -4,9 +4,11 @@
 #include "AudioEngine.h"
 #include "CommandParser.h"
 #include "SharedState.h"
+#include "TcpServer.h"
 
 #include <iostream>
 #include <string>
+#include <mutex>
 
 static ideath::repl::AudioEngine g_engine;
 static ideath::repl::SharedState g_shared;
@@ -50,17 +52,32 @@ int main()
         return 1;
     }
 
+    // --- TCP server for editor integration (Cmd+Enter) ---
+    // Mutex protects parseCommand (not thread-safe for concurrent calls)
+    std::mutex cmdMutex;
+
+    ideath::repl::TcpServer tcpServer(7777);
+    tcpServer.start([&](const std::string& line) {
+        std::lock_guard<std::mutex> lock(cmdMutex);
+        std::cout << "[tcp] " << line << std::endl;
+        ideath::repl::parseCommand(line, g_shared);
+    });
+
     // --- REPL ---
     std::cout << "iDEATH REPL — type 'help' for commands, 'quit' to exit." << std::endl;
+    std::cout << "       TCP listening on 127.0.0.1:7777" << std::endl;
     std::cout << "ideath> " << std::flush;
 
     std::string line;
     while (std::getline(std::cin, line))
     {
+        std::lock_guard<std::mutex> lock(cmdMutex);
         if (!ideath::repl::parseCommand(line, g_shared))
             break;
         std::cout << "ideath> " << std::flush;
     }
+
+    tcpServer.stop();
 
     // --- Cleanup ---
     ma_device_uninit(&device);

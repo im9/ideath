@@ -3,6 +3,7 @@ add_executable(ideath_repl
     AudioEngine.cpp
     CommandParser.cpp
     NoteUtils.cpp
+    TcpServer.cpp
 )
 
 target_link_libraries(ideath_repl PRIVATE ideath)
