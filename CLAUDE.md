@@ -53,6 +53,7 @@ CMake option: `TN_DSP_BUILD_REPL=ON`.
 - **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)
 - **FMSynth** — 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired)
 - **Reverb** — Freeverb (8 comb + 4 allpass, size/damp/freeze, stereo out)
+- **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -123,7 +124,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 ### Primitives — Effects (port from inboil)
 - [x] Reverb (Freeverb) — 8 comb + 4 allpass, size/damp/freeze, stereo out (mono-first exception)
-- [ ] HallReverb — pre-delay + LFO-modulated Freeverb (port from inboil Hall flavor)
+- [x] HallReverb — pre-delay + LFO-modulated Freeverb (port from inboil Hall flavor)
 - [ ] ShimmerReverb — cross-coupled allpass network + octave pitch shift feedback (port from inboil Shimmer flavor)
 - [ ] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
 - [ ] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)

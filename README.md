@@ -25,6 +25,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Polyphony** | Multi-voice manager (pool allocation, voice stealing, mixing) |
 | **FMSynth** | 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired) |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
+| **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
 
 ## Design Principles
 
