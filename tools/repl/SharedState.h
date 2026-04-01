@@ -1,8 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 
 namespace ideath { namespace repl {
+
+static constexpr int kMaxSeqSteps = 64;
 
 enum class SourceType { Oscillator, Wavetable, Noise, None };
 enum class OscWaveform { Saw, Square };
@@ -58,6 +61,14 @@ struct VoiceParams
     float volume = 0.5f;
 };
 
+struct SequencerState
+{
+    float frequencies[kMaxSeqSteps] = {}; // 0 = rest
+    int numSteps = 0;
+    float bpm = 120.0f;
+    bool running = false;
+};
+
 struct SharedState
 {
     VoiceParams staging;
@@ -65,6 +76,9 @@ struct SharedState
     std::atomic<int> noteOnCounter{0};
     std::atomic<int> noteOffCounter{0};
     std::atomic<bool> stopRequested{false};
+
+    SequencerState seqStaging;
+    std::atomic<bool> seqReady{false};
 };
 
 }} // namespace ideath::repl

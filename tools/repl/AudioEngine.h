@@ -48,6 +48,16 @@ private:
     bool stopped_ = true;
     bool delayCleared_ = false;
     Portamento gainSmoother_;
+
+    // Sequencer state (audio-thread local)
+    SequencerState seq_;
+    int seqStep_ = 0;
+    int seqSampleCounter_ = 0;
+    int seqSamplesPerStep_ = 0;
+    int seqGateSamples_ = 0;
+    bool seqGateOpen_ = false;
+
+    void advanceSequencer();
 };
 
 }} // namespace ideath::repl

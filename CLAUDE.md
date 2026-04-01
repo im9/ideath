@@ -117,7 +117,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 ## Next Steps
 
-- [ ] REPL: sequencer (`seq C4 E4 G4 120bpm`)
+- [x] REPL: sequencer (`seq C4 E4 G4 120`)
 - [ ] REPL: optimize filter coefficient recalculation (only on parameter change)
 - [x] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
 - [x] Polyphony management — multi-voice allocation (Junior supports up to 16)

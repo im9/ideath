@@ -18,6 +18,13 @@ void AudioEngine::prepare(float sampleRate)
     gainSmoother_.setTime(0.005f); // 5ms fade
     gainSmoother_.setValue(0.0f);
     gainSmoother_.setTarget(0.0f);
+
+    seq_ = {};
+    seqStep_ = 0;
+    seqSampleCounter_ = 0;
+    seqSamplesPerStep_ = 0;
+    seqGateSamples_ = 0;
+    seqGateOpen_ = false;
 }
 
 void AudioEngine::applyPendingState(SharedState& shared)
@@ -84,10 +91,99 @@ void AudioEngine::applyPendingState(SharedState& shared)
         lastNoteOff_ = noteOff;
         env_.noteOff();
     }
+
+    // --- Sequencer ---
+    if (shared.seqReady.load(std::memory_order_acquire))
+    {
+        seq_ = shared.seqStaging;
+        shared.seqReady.store(false, std::memory_order_release);
+
+        if (seq_.running && seq_.numSteps > 0)
+        {
+            seqStep_ = 0;
+            seqSampleCounter_ = 0;
+            seqSamplesPerStep_ = static_cast<int>(sampleRate_ * 60.0f / seq_.bpm);
+            seqGateSamples_ = seqSamplesPerStep_ * 80 / 100; // 80% gate
+            seqGateOpen_ = false;
+
+            // Trigger first step immediately
+            float freq = seq_.frequencies[0];
+            if (freq > 0.0f)
+            {
+                params_.frequency = freq;
+                stopped_ = false;
+                baseFreq_ = freq;
+                porta_.setTarget(freq);
+                gainSmoother_.setTarget(1.0f);
+
+                if (params_.envelopeEnabled)
+                {
+                    env_.setAttack(params_.attack);
+                    env_.setDecay(params_.decay);
+                    env_.setSustain(params_.sustain);
+                    env_.setRelease(params_.release);
+                    env_.noteOn();
+                }
+                seqGateOpen_ = true;
+            }
+        }
+        else
+        {
+            seq_.running = false;
+            if (seqGateOpen_)
+            {
+                env_.noteOff();
+                seqGateOpen_ = false;
+            }
+        }
+    }
+}
+
+void AudioEngine::advanceSequencer()
+{
+    if (!seq_.running || seq_.numSteps <= 0) return;
+
+    // Gate off at 80% of step
+    if (seqGateOpen_ && seqSampleCounter_ >= seqGateSamples_)
+    {
+        env_.noteOff();
+        seqGateOpen_ = false;
+    }
+
+    ++seqSampleCounter_;
+    if (seqSampleCounter_ < seqSamplesPerStep_) return;
+
+    // Advance to next step
+    seqSampleCounter_ = 0;
+    seqStep_ = (seqStep_ + 1) % seq_.numSteps;
+
+    float freq = seq_.frequencies[seqStep_];
+    if (freq > 0.0f)
+    {
+        // Trigger note via shared state (same path as manual note command)
+        params_.frequency = freq;
+        stopped_ = false;
+        baseFreq_ = freq;
+        porta_.setTarget(freq);
+        gainSmoother_.setTarget(1.0f);
+
+        if (params_.envelopeEnabled)
+        {
+            env_.setAttack(params_.attack);
+            env_.setDecay(params_.decay);
+            env_.setSustain(params_.sustain);
+            env_.setRelease(params_.release);
+            env_.noteOn();
+        }
+        seqGateOpen_ = true;
+    }
+    // freq == 0 means rest: no noteOn, gate stays closed
 }
 
 float AudioEngine::process()
 {
+    advanceSequencer();
+
     float gain = gainSmoother_.process();
 
     if (gain < 0.0001f && params_.source == SourceType::None)

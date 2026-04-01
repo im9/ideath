@@ -45,6 +45,9 @@ ideath REPL commands:
   env <A> <D> <S> <R>          Set ADSR envelope (or "env off")
   note <C4|freq>               Trigger note (with envelope if set)
   release                      Release note
+  seq <notes...> [bpm]         Step sequencer (e.g. seq C4 E4 G4 120)
+  seq bpm <bpm>                Change sequencer tempo
+  seq stop                     Stop sequencer
   porta <time>                 Portamento time in seconds
   vol <0.0-1.0>                Master volume
   stop                         Silence and reset
@@ -271,11 +274,104 @@ bool parseCommand(const std::string& line, SharedState& shared)
         return true;
     }
 
+    if (cmd == "seq")
+    {
+        if (tokens.size() > 1 && tokens[1] == "stop")
+        {
+            shared.seqStaging.running = false;
+            shared.seqReady.store(true, std::memory_order_release);
+            std::cout << "Sequencer stopped." << std::endl;
+            return true;
+        }
+
+        if (tokens.size() > 1 && tokens[1] == "bpm")
+        {
+            if (tokens.size() > 2)
+            {
+                shared.seqStaging.bpm = parseFloat(tokens[2], 120.0f);
+                shared.seqStaging.running = true;
+                shared.seqReady.store(true, std::memory_order_release);
+                std::cout << "BPM: " << shared.seqStaging.bpm << std::endl;
+            }
+            return true;
+        }
+
+        // seq <note1> <note2> ... [bpm]
+        // Last token is BPM if it's a number, otherwise default 120
+        if (tokens.size() < 2)
+        {
+            std::cout << "Usage: seq <note1> [note2] ... [bpm]" << std::endl;
+            return true;
+        }
+
+        // Collect notes and detect BPM (last token if purely numeric)
+        float bpm = 120.0f;
+        size_t noteEnd = tokens.size();
+
+        // Check if last token is a BPM value (purely numeric)
+        const auto& lastTok = tokens.back();
+        bool lastIsNumber = !lastTok.empty();
+        for (char c : lastTok)
+        {
+            if (!std::isdigit(c) && c != '.')
+            {
+                lastIsNumber = false;
+                break;
+            }
+        }
+        // If last token is a number > 20, treat as BPM (notes like C4 contain letters)
+        if (lastIsNumber)
+        {
+            float val = parseFloat(lastTok, 0.0f);
+            if (val > 20.0f)
+            {
+                bpm = val;
+                noteEnd = tokens.size() - 1;
+            }
+        }
+
+        int numSteps = 0;
+        for (size_t i = 1; i < noteEnd && numSteps < kMaxSeqSteps; ++i)
+        {
+            if (tokens[i] == "-" || tokens[i] == ".")
+            {
+                shared.seqStaging.frequencies[numSteps++] = 0.0f; // rest
+            }
+            else
+            {
+                float freq = noteToFreq(tokens[i]);
+                if (freq <= 0.0f)
+                    freq = parseFloat(tokens[i], 0.0f);
+                if (freq > 0.0f)
+                    shared.seqStaging.frequencies[numSteps++] = freq;
+                else
+                    std::cout << "Skipping unknown note: " << tokens[i] << std::endl;
+            }
+        }
+
+        if (numSteps > 0)
+        {
+            shared.seqStaging.numSteps = numSteps;
+            shared.seqStaging.bpm = bpm;
+            shared.seqStaging.running = true;
+            shared.seqReady.store(true, std::memory_order_release);
+            std::cout << "Sequencer: " << numSteps << " steps @ " << bpm << " BPM" << std::endl;
+        }
+        else
+        {
+            std::cout << "No valid notes in sequence." << std::endl;
+        }
+        return true;
+    }
+
     if (cmd == "stop")
     {
         shared.staging.source = SourceType::None;
         shared.paramsReady.store(true, std::memory_order_release);
         shared.stopRequested.store(true, std::memory_order_release);
+        // Also stop sequencer
+        shared.seqStaging.running = false;
+        shared.seqReady.store(true, std::memory_order_release);
         return true;
     }
 

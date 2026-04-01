@@ -75,6 +75,17 @@ Any effect can be disabled with `<command> off` (e.g., `filter off`).
 
 LFO depth units: cents for pitch/filter targets, percentage for volume.
 
+### Sequencer
+
+| Command | Description |
+|---------|-------------|
+| `seq <notes...> [bpm]` | Start step sequencer (default 120 BPM) |
+| `seq bpm <bpm>` | Change tempo while running |
+| `seq stop` | Stop sequencer |
+
+Notes can be note names (`C4`, `C#4`, `Bb3`) or frequencies (`440`).
+Use `-` or `.` for rests. BPM is the last argument if it's a number > 20.
+
 ### Playback
 
 | Command | Description |
@@ -82,7 +93,7 @@ LFO depth units: cents for pitch/filter targets, percentage for volume.
 | `note <C4\|C#4\|Bb3\|freq>` | Trigger note (sets frequency + noteOn) |
 | `release` | Release current note (noteOff) |
 | `vol <0.0-1.0>` | Master volume |
-| `stop` | Silence and reset all state |
+| `stop` | Silence and reset all state (also stops sequencer) |
 
 ### System
 
@@ -118,6 +129,18 @@ ideath> noise
 ideath> filter lp 800 2.0
 ideath> delay 0.4 0.6
 ideath> vol 0.2
+
+# Arpeggio with envelope
+ideath> wt sine 440
+ideath> env 0.01 0.1 0.0 0.05
+ideath> seq C4 E4 G4 C5 180
+
+# Chiptune sequence with rests
+ideath> wt square 440
+ideath> crush 4 8000
+ideath> env 0.01 0.05 0.0 0.02
+ideath> seq C4 C4 - E4 G4 - C5 - 200
+ideath> seq stop
 ```
 
 ## Note Names
