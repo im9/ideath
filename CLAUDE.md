@@ -51,6 +51,7 @@ CMake option: `TN_DSP_BUILD_REPL=ON`.
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
 - **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)
+- **FMSynth** — 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -122,7 +123,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
 - [x] Polyphony management — multi-voice allocation (Junior supports up to 16)
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
-- [ ] FM Synth primitive — hardware-inspired (YM2612/SID reference), needs design
+- [x] FM Synth primitive — 4-operator, 8 algorithms, YM2612-inspired
 - [ ] Reverb primitive — needs careful design for generality
 
 ## Docs, Code, and Commits
