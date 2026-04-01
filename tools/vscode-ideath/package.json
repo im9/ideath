@@ -1,0 +1,25 @@
+{
+  "name": "ideath-send",
+  "displayName": "iDEATH Send",
+  "description": "Send selected text to iDEATH REPL via TCP",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ideath.send",
+        "title": "iDEATH: Send to REPL"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "ideath.send",
+        "key": "cmd+enter",
+        "when": "editorTextFocus"
+      }
+    ]
+  }
+}
