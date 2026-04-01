@@ -102,6 +102,55 @@ TEST_CASE("Oscillator: square wave RMS is ~1.0", "[osc]")
     REQUIRE_THAT(level, WithinAbs(1.0f, 0.05f));
 }
 
+TEST_CASE("Oscillator: PolyBLEP reduces aliasing at high frequencies", "[osc]")
+{
+    // Generate a high-frequency saw and measure energy above Nyquist/2.
+    // PolyBLEP should reduce high-frequency energy vs naive saw.
+    // We use a simple proxy: count how many sample-to-sample jumps exceed
+    // a threshold. Naive saw has a ~2.0 jump at phase reset; PolyBLEP smooths it.
+    ideath::Oscillator osc;
+    osc.prepare(kSampleRate);
+    osc.setFrequency(8000.0f); // high frequency, near Nyquist/5
+
+    constexpr int N = 44100;
+    float prev = osc.process(1.0f); // saw
+    int largeJumps = 0;
+    for (int i = 1; i < N; ++i)
+    {
+        float s = osc.process(1.0f);
+        if (std::fabs(s - prev) > 1.5f) // naive saw jumps ~2.0
+            ++largeJumps;
+        prev = s;
+    }
+
+    // With PolyBLEP, there should be zero jumps > 1.5
+    // (naive saw at 8kHz would have ~8000 such jumps per second)
+    REQUIRE(largeJumps == 0);
+}
+
+TEST_CASE("Oscillator: PolyBLEP square wave has no harsh transitions", "[osc]")
+{
+    ideath::Oscillator osc;
+    osc.prepare(kSampleRate);
+    osc.setFrequency(5000.0f);
+
+    constexpr int N = 44100;
+    float prev = osc.process(0.0f); // square
+    float maxJump = 0.0f;
+    for (int i = 1; i < N; ++i)
+    {
+        float s = osc.process(0.0f);
+        float jump = std::fabs(s - prev);
+        if (jump > maxJump)
+            maxJump = jump;
+        prev = s;
+    }
+
+    // Naive square at 5kHz has jumps of 2.0.
+    // PolyBLEP softens transitions; max jump should be well under 2.0.
+    REQUIRE(maxJump < 1.5f);
+}
+
 TEST_CASE("Oscillator: reset returns phase to zero", "[osc]")
 {
     ideath::Oscillator osc;
