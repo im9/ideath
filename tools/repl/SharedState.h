@@ -64,8 +64,10 @@ struct VoiceParams
 struct SequencerState
 {
     float frequencies[kMaxSeqSteps] = {}; // 0 = rest
+    float velocities[kMaxSeqSteps] = {};  // 0.0-1.0 per step
     int numSteps = 0;
     float bpm = 120.0f;
+    float gatePercent = 80.0f;            // 1-100
     bool running = false;
 };
 

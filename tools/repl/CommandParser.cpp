@@ -1,9 +1,12 @@
 #include "CommandParser.h"
 #include "NoteUtils.h"
+#include "Presets.h"
 #include <sstream>
 #include <vector>
 #include <iostream>
 #include <cctype>
+#include <algorithm>
+#include <random>
 
 namespace ideath { namespace repl {
 
@@ -45,9 +48,16 @@ ideath REPL commands:
   env <A> <D> <S> <R>          Set ADSR envelope (or "env off")
   note <C4|freq>               Trigger note (with envelope if set)
   release                      Release note
-  seq <notes...> [bpm]         Step sequencer (e.g. seq C4 E4 G4 120)
+  seq <notes...> [bpm]         Step sequencer (e.g. seq C4 E4 G4! 120)
   seq bpm <bpm>                Change sequencer tempo
+  seq gate <percent>           Gate length (1-100, default 80)
+  seq reverse                  Reverse pattern
+  seq shuffle                  Shuffle pattern
+  seq rotate [n]               Rotate pattern by n steps (default 1)
   seq stop                     Stop sequencer
+  preset <name>                Load voice preset (or "preset list")
+  track <n>                    Switch active track (1-8)
+  track <n> mute|solo|vol <v>  Track mixing controls
   porta <time>                 Portamento time in seconds
   vol <0.0-1.0>                Master volume
   stop                         Silence and reset
@@ -274,6 +284,35 @@ bool parseCommand(const std::string& line, SharedState& shared)
         return true;
     }
 
+    if (cmd == "preset")
+    {
+        if (tokens.size() < 2 || tokens[1] == "list")
+        {
+            std::cout << "Available presets:" << std::endl;
+            for (const auto& entry : getAllPresets())
+                std::cout << "  " << entry.name << "  — " << entry.description << std::endl;
+            return true;
+        }
+        auto* entry = getPreset(tokens[1]);
+        if (entry)
+        {
+            // Preserve current frequency and volume
+            float freq = shared.staging.frequency;
+            float vol = shared.staging.volume;
+            shared.staging = entry->params;
+            if (entry->params.frequency == 440.0f) // default; keep user's freq
+                shared.staging.frequency = freq;
+            shared.staging.volume = vol;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Preset: " << entry->name << " (" << entry->description << ")" << std::endl;
+        }
+        else
+        {
+            std::cout << "Unknown preset: " << tokens[1] << ". Type 'preset list' for options." << std::endl;
+        }
+        return true;
+    }
+
     if (cmd == "seq")
     {
         if (tokens.size() > 1 && tokens[1] == "stop")
@@ -296,16 +335,81 @@ bool parseCommand(const std::string& line, SharedState& shared)
             return true;
         }
 
+        if (tokens.size() > 1 && tokens[1] == "gate")
+        {
+            if (tokens.size() > 2)
+            {
+                shared.seqStaging.gatePercent = parseFloat(tokens[2], 80.0f);
+                if (shared.seqStaging.gatePercent < 1.0f) shared.seqStaging.gatePercent = 1.0f;
+                if (shared.seqStaging.gatePercent > 100.0f) shared.seqStaging.gatePercent = 100.0f;
+                shared.seqStaging.running = true;
+                shared.seqReady.store(true, std::memory_order_release);
+                std::cout << "Gate: " << shared.seqStaging.gatePercent << "%" << std::endl;
+            }
+            return true;
+        }
+
+        if (tokens.size() > 1 && tokens[1] == "reverse")
+        {
+            int n = shared.seqStaging.numSteps;
+            if (n > 1)
+            {
+                std::reverse(shared.seqStaging.frequencies, shared.seqStaging.frequencies + n);
+                std::reverse(shared.seqStaging.velocities, shared.seqStaging.velocities + n);
+                shared.seqStaging.running = true;
+                shared.seqReady.store(true, std::memory_order_release);
+                std::cout << "Sequence reversed." << std::endl;
+            }
+            return true;
+        }
+
+        if (tokens.size() > 1 && tokens[1] == "shuffle")
+        {
+            int n = shared.seqStaging.numSteps;
+            if (n > 1)
+            {
+                static std::mt19937 rng{std::random_device{}()};
+                // Fisher-Yates shuffle, keeping freq/vel pairs together
+                for (int i = n - 1; i > 0; --i)
+                {
+                    std::uniform_int_distribution<int> dist(0, i);
+                    int j = dist(rng);
+                    std::swap(shared.seqStaging.frequencies[i], shared.seqStaging.frequencies[j]);
+                    std::swap(shared.seqStaging.velocities[i], shared.seqStaging.velocities[j]);
+                }
+                shared.seqStaging.running = true;
+                shared.seqReady.store(true, std::memory_order_release);
+                std::cout << "Sequence shuffled." << std::endl;
+            }
+            return true;
+        }
+
+        if (tokens.size() > 1 && tokens[1] == "rotate")
+        {
+            int n = shared.seqStaging.numSteps;
+            if (n > 1)
+            {
+                int amount = (tokens.size() > 2) ? parseInt(tokens[2], 1) : 1;
+                amount = ((amount % n) + n) % n; // normalize
+                std::rotate(shared.seqStaging.frequencies, shared.seqStaging.frequencies + amount, shared.seqStaging.frequencies + n);
+                std::rotate(shared.seqStaging.velocities, shared.seqStaging.velocities + amount, shared.seqStaging.velocities + n);
+                shared.seqStaging.running = true;
+                shared.seqReady.store(true, std::memory_order_release);
+                std::cout << "Sequence rotated by " << amount << "." << std::endl;
+            }
+            return true;
+        }
+
         // seq <note1> <note2> ... [bpm]
-        // Last token is BPM if it's a number, otherwise default 120
+        // Notes can end with ! for accent (velocity 1.0, normal = 0.7)
         if (tokens.size() < 2)
         {
-            std::cout << "Usage: seq <note1> [note2] ... [bpm]" << std::endl;
+            std::cout << "Usage: seq <note1> [note2!] ... [bpm]" << std::endl;
             return true;
         }
 
         // Collect notes and detect BPM (last token if purely numeric)
-        float bpm = 120.0f;
+        float bpm = shared.seqStaging.bpm; // preserve current BPM
         size_t noteEnd = tokens.size();
 
         // Check if last token is a BPM value (purely numeric)
@@ -335,15 +439,30 @@ bool parseCommand(const std::string& line, SharedState& shared)
         {
             if (tokens[i] == "-" || tokens[i] == ".")
             {
-                shared.seqStaging.frequencies[numSteps++] = 0.0f; // rest
+                shared.seqStaging.frequencies[numSteps] = 0.0f; // rest
+                shared.seqStaging.velocities[numSteps] = 0.0f;
+                ++numSteps;
             }
             else
             {
-                float freq = noteToFreq(tokens[i]);
+                // Check for accent suffix '!'
+                std::string noteStr = tokens[i];
+                float velocity = 0.7f;
+                if (!noteStr.empty() && noteStr.back() == '!')
+                {
+                    velocity = 1.0f;
+                    noteStr.pop_back();
+                }
+
+                float freq = noteToFreq(noteStr);
                 if (freq <= 0.0f)
-                    freq = parseFloat(tokens[i], 0.0f);
+                    freq = parseFloat(noteStr, 0.0f);
                 if (freq > 0.0f)
-                    shared.seqStaging.frequencies[numSteps++] = freq;
+                {
+                    shared.seqStaging.frequencies[numSteps] = freq;
+                    shared.seqStaging.velocities[numSteps] = velocity;
+                    ++numSteps;
+                }
                 else
                     std::cout << "Skipping unknown note: " << tokens[i] << std::endl;
             }
@@ -353,6 +472,7 @@ bool parseCommand(const std::string& line, SharedState& shared)
         {
             shared.seqStaging.numSteps = numSteps;
             shared.seqStaging.bpm = bpm;
+            shared.seqStaging.gatePercent = shared.seqStaging.gatePercent > 0.0f ? shared.seqStaging.gatePercent : 80.0f;
             shared.seqStaging.running = true;
             shared.seqReady.store(true, std::memory_order_release);
             std::cout << "Sequencer: " << numSteps << " steps @ " << bpm << " BPM" << std::endl;

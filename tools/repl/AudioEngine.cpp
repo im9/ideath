@@ -103,7 +103,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
             seqStep_ = 0;
             seqSampleCounter_ = 0;
             seqSamplesPerStep_ = static_cast<int>(sampleRate_ * 60.0f / seq_.bpm);
-            seqGateSamples_ = seqSamplesPerStep_ * 80 / 100; // 80% gate
+            seqGateSamples_ = seqSamplesPerStep_ * static_cast<int>(seq_.gatePercent) / 100;
             seqGateOpen_ = false;
 
             // Trigger first step immediately
@@ -114,7 +114,8 @@ void AudioEngine::applyPendingState(SharedState& shared)
                 stopped_ = false;
                 baseFreq_ = freq;
                 porta_.setTarget(freq);
-                gainSmoother_.setTarget(1.0f);
+                seqVelocity_ = seq_.velocities[0] > 0.0f ? seq_.velocities[0] : 1.0f;
+                gainSmoother_.setTarget(seqVelocity_);
 
                 if (params_.envelopeEnabled)
                 {
@@ -160,12 +161,12 @@ void AudioEngine::advanceSequencer()
     float freq = seq_.frequencies[seqStep_];
     if (freq > 0.0f)
     {
-        // Trigger note via shared state (same path as manual note command)
         params_.frequency = freq;
         stopped_ = false;
         baseFreq_ = freq;
         porta_.setTarget(freq);
-        gainSmoother_.setTarget(1.0f);
+        seqVelocity_ = seq_.velocities[seqStep_] > 0.0f ? seq_.velocities[seqStep_] : 1.0f;
+        gainSmoother_.setTarget(seqVelocity_);
 
         if (params_.envelopeEnabled)
         {

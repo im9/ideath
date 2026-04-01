@@ -7,10 +7,12 @@ make repl
 ```
 
 ```
-ideath> osc saw 440
-ideath> filter lp 1000 0.7
-ideath> note C4
-ideath> quit
+ideath[1]> preset acid
+ideath[1]> seq C3 C3 - E3 G3! - C4! - 140
+ideath[1]> track 2
+ideath[2]> preset hihat
+ideath[2]> seq C4 C4 C4 C4 200
+ideath[2]> track
 ```
 
 ## Editor Integration (TCP)
@@ -23,7 +25,7 @@ Cmd+Enter style workflows from any editor (like TidalCycles / SuperCollider).
 echo "osc saw 440" | nc localhost 7777
 
 # Send multiple commands at once
-printf "osc saw 440\nfilter lp 800\nnote C4\n" | nc localhost 7777
+printf "preset acid\nnote C3\n" | nc localhost 7777
 ```
 
 Write commands in your editor, select them, and send with a keybinding.
@@ -43,6 +45,7 @@ Source (osc | wt | noise)
 ```
 
 Each stage can be independently enabled/disabled. LFO and Portamento act as modulators.
+8 independent tracks, each with its own signal chain and sequencer.
 
 ## Commands
 
@@ -75,16 +78,45 @@ Any effect can be disabled with `<command> off` (e.g., `filter off`).
 
 LFO depth units: cents for pitch/filter targets, percentage for volume.
 
+### Presets
+
+| Command | Description |
+|---------|-------------|
+| `preset <name>` | Load voice preset |
+| `preset list` | Show available presets |
+
+Available presets: `acid`, `chiptune`, `pad`, `kick`, `perc`, `bass`, `lead`, `hihat`, `ambient`, `lofi`.
+
+Presets set source, envelope, filter, and effects. Current volume is preserved.
+
 ### Sequencer
 
 | Command | Description |
 |---------|-------------|
-| `seq <notes...> [bpm]` | Start step sequencer (default 120 BPM) |
+| `seq <notes...> [bpm]` | Start step sequencer |
 | `seq bpm <bpm>` | Change tempo while running |
+| `seq gate <percent>` | Gate length (1-100, default 80) |
+| `seq reverse` | Reverse pattern |
+| `seq shuffle` | Randomize step order |
+| `seq rotate [n]` | Rotate pattern by n steps (default 1) |
 | `seq stop` | Stop sequencer |
 
 Notes can be note names (`C4`, `C#4`, `Bb3`) or frequencies (`440`).
-Use `-` or `.` for rests. BPM is the last argument if it's a number > 20.
+Use `-` or `.` for rests. Append `!` for accent (e.g., `C4!`).
+BPM is the last argument if it's a number > 20.
+
+### Tracks
+
+| Command | Description |
+|---------|-------------|
+| `track <n>` | Switch active track (1-8) |
+| `track <n> mute` | Toggle track mute |
+| `track <n> solo` | Toggle track solo |
+| `track <n> vol <0.0-1.0>` | Set track volume |
+| `track` | Show track status |
+
+Each track has its own signal chain, presets, and sequencer.
+All commands apply to the active track. Solo overrides mute.
 
 ### Playback
 
@@ -92,7 +124,7 @@ Use `-` or `.` for rests. BPM is the last argument if it's a number > 20.
 |---------|-------------|
 | `note <C4\|C#4\|Bb3\|freq>` | Trigger note (sets frequency + noteOn) |
 | `release` | Release current note (noteOff) |
-| `vol <0.0-1.0>` | Master volume |
+| `vol <0.0-1.0>` | Master volume (per-track) |
 | `stop` | Silence and reset all state (also stops sequencer) |
 
 ### System
@@ -105,42 +137,57 @@ Use `-` or `.` for rests. BPM is the last argument if it's a number > 20.
 ## Examples
 
 ```bash
+# Acid bass line
+ideath[1]> preset acid
+ideath[1]> seq C3 C3 - Eb3 C3 F3! - C3 140
+
+# Drum pattern on track 2
+ideath[1]> track 2
+ideath[2]> preset kick
+ideath[2]> seq C2 - - - C2 - - - 140
+
+# Hi-hat on track 3
+ideath[2]> track 3
+ideath[3]> preset hihat
+ideath[3]> seq C4 C4 C4 C4 C4 C4 C4 C4 280
+
+# Check all tracks
+ideath[3]> track
+
+# Mute the drums
+ideath[3]> track 2 mute
+
+# Reverse the bass pattern
+ideath[3]> track 1
+ideath[1]> seq reverse
+
 # Chiptune square wave with bitcrusher
-ideath> wt square 440
-ideath> crush 4 8000
-ideath> vol 0.3
+ideath[1]> wt square 440
+ideath[1]> crush 4 8000
+ideath[1]> vol 0.3
 
 # Filtered saw with vibrato
-ideath> osc saw 440
-ideath> filter lp 2000 0.7
-ideath> lfo sine 5 pitch 50
+ideath[1]> osc saw 440
+ideath[1]> filter lp 2000 0.7
+ideath[1]> lfo sine 5 pitch 50
 
 # Bass with envelope and portamento
-ideath> osc square 110
-ideath> env 0.01 0.2 0.6 0.5
-ideath> porta 0.1
-ideath> note C2
-ideath> note E2
-ideath> note G2
-ideath> release
+ideath[1]> osc square 110
+ideath[1]> env 0.01 0.2 0.6 0.5
+ideath[1]> porta 0.1
+ideath[1]> note C2
+ideath[1]> note E2
+ideath[1]> release
 
-# Noisy delay texture
-ideath> noise
-ideath> filter lp 800 2.0
-ideath> delay 0.4 0.6
-ideath> vol 0.2
+# Arpeggio with accents
+ideath[1]> wt sine 440
+ideath[1]> env 0.01 0.1 0.0 0.05
+ideath[1]> seq C4 E4! G4 C5! 180
 
-# Arpeggio with envelope
-ideath> wt sine 440
-ideath> env 0.01 0.1 0.0 0.05
-ideath> seq C4 E4 G4 C5 180
-
-# Chiptune sequence with rests
-ideath> wt square 440
-ideath> crush 4 8000
-ideath> env 0.01 0.05 0.0 0.02
-ideath> seq C4 C4 - E4 G4 - C5 - 200
-ideath> seq stop
+# Short gate staccato
+ideath[1]> preset chiptune
+ideath[1]> seq C4 E4 G4 C5 160
+ideath[1]> seq gate 30
 ```
 
 ## Note Names

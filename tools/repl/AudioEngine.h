@@ -59,6 +59,7 @@ private:
     int seqSamplesPerStep_ = 0;
     int seqGateSamples_ = 0;
     bool seqGateOpen_ = false;
+    float seqVelocity_ = 1.0f;
 
     void advanceSequencer();
 };

@@ -1,35 +1,147 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "../../third_party/miniaudio/miniaudio.h"
 
-#include "AudioEngine.h"
+#include "TrackManager.h"
 #include "CommandParser.h"
 #include "SharedState.h"
 #include "TcpServer.h"
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <mutex>
 
-static ideath::repl::AudioEngine g_engine;
-static ideath::repl::SharedState g_shared;
+static ideath::repl::TrackManager g_tracks;
+static int g_activeTrack = 0; // command-thread only, protected by cmdMutex
 
 static void audioCallback(ma_device* /*device*/, void* output, const void* /*input*/, ma_uint32 frameCount)
 {
-    g_engine.applyPendingState(g_shared);
+    g_tracks.applyPendingState();
 
     auto* out = static_cast<float*>(output);
     for (ma_uint32 i = 0; i < frameCount; ++i)
+        out[i] = g_tracks.process();
+}
+
+static float parseFloat(const std::string& s, float fallback)
+{
+    try { return std::stof(s); }
+    catch (...) { return fallback; }
+}
+
+static void printTrackStatus()
+{
+    using namespace ideath::repl;
+    for (int i = 0; i < kMaxTracks; ++i)
     {
-        float sample = g_engine.process();
-        out[i] = sample;
+        auto& mix = g_tracks.getMix(i);
+        bool m = mix.muted.load(std::memory_order_relaxed);
+        bool s = mix.solo.load(std::memory_order_relaxed);
+        float v = mix.volume.load(std::memory_order_relaxed);
+
+        // Only show tracks that are active or modified
+        auto& sh = g_tracks.getShared(i);
+        bool hasSource = sh.staging.source != SourceType::None;
+        bool hasSeq = sh.seqStaging.running;
+        if (!hasSource && !hasSeq && !m && !s && i != g_activeTrack)
+            continue;
+
+        std::cout << "  [" << (i + 1) << "]"
+                  << (i == g_activeTrack ? "*" : " ")
+                  << " vol=" << v
+                  << (m ? " MUTE" : "")
+                  << (s ? " SOLO" : "")
+                  << (hasSeq ? " seq" : "")
+                  << std::endl;
     }
+}
+
+/// Handle track command. Returns true if handled.
+static bool handleTrackCommand(const std::string& line)
+{
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+    if (cmd != "track") return false;
+
+    std::string arg1;
+    if (!(iss >> arg1))
+    {
+        // Just "track" — show status
+        printTrackStatus();
+        return true;
+    }
+
+    // Parse track number (1-indexed)
+    int trackNum = 0;
+    try { trackNum = std::stoi(arg1); }
+    catch (...) { trackNum = 0; }
+
+    if (trackNum < 1 || trackNum > ideath::repl::kMaxTracks)
+    {
+        std::cout << "Track number must be 1-" << ideath::repl::kMaxTracks << std::endl;
+        return true;
+    }
+
+    int trackIdx = trackNum - 1;
+
+    std::string subcmd;
+    if (!(iss >> subcmd))
+    {
+        // "track N" — switch active track
+        g_activeTrack = trackIdx;
+        std::cout << "Active track: " << trackNum << std::endl;
+        return true;
+    }
+
+    if (subcmd == "mute")
+    {
+        auto& mix = g_tracks.getMix(trackIdx);
+        bool curr = mix.muted.load(std::memory_order_relaxed);
+        mix.muted.store(!curr, std::memory_order_relaxed);
+        std::cout << "Track " << trackNum << (curr ? " unmuted" : " muted") << std::endl;
+    }
+    else if (subcmd == "solo")
+    {
+        auto& mix = g_tracks.getMix(trackIdx);
+        bool curr = mix.solo.load(std::memory_order_relaxed);
+        mix.solo.store(!curr, std::memory_order_relaxed);
+        std::cout << "Track " << trackNum << (curr ? " unsolo" : " solo") << std::endl;
+    }
+    else if (subcmd == "vol")
+    {
+        std::string vstr;
+        if (iss >> vstr)
+        {
+            float v = parseFloat(vstr, 1.0f);
+            g_tracks.getMix(trackIdx).volume.store(v, std::memory_order_relaxed);
+            std::cout << "Track " << trackNum << " volume: " << v << std::endl;
+        }
+    }
+    else
+    {
+        std::cout << "Unknown track subcommand: " << subcmd << std::endl;
+    }
+    return true;
+}
+
+static void processLine(const std::string& line)
+{
+    if (handleTrackCommand(line))
+        return;
+    ideath::repl::parseCommand(line, g_tracks.getShared(g_activeTrack));
+}
+
+static std::string prompt()
+{
+    return "ideath[" + std::to_string(g_activeTrack + 1) + "]> ";
 }
 
 int main()
 {
     constexpr float kSampleRate = 44100.0f;
 
-    g_engine.prepare(kSampleRate);
+    g_tracks.prepare(kSampleRate);
 
     // --- miniaudio setup ---
     ma_device_config config = ma_device_config_init(ma_device_type_playback);
@@ -53,28 +165,29 @@ int main()
     }
 
     // --- TCP server for editor integration (Cmd+Enter) ---
-    // Mutex protects parseCommand (not thread-safe for concurrent calls)
     std::mutex cmdMutex;
 
     ideath::repl::TcpServer tcpServer(7777);
     tcpServer.start([&](const std::string& line) {
         std::lock_guard<std::mutex> lock(cmdMutex);
         std::cout << "[tcp] " << line << std::endl;
-        ideath::repl::parseCommand(line, g_shared);
+        processLine(line);
     });
 
     // --- REPL ---
     std::cout << "iDEATH REPL — type 'help' for commands, 'quit' to exit." << std::endl;
     std::cout << "       TCP listening on 127.0.0.1:7777" << std::endl;
-    std::cout << "ideath> " << std::flush;
+    std::cout << "       8 tracks available (track 1-8)" << std::endl;
+    std::cout << prompt() << std::flush;
 
     std::string line;
     while (std::getline(std::cin, line))
     {
         std::lock_guard<std::mutex> lock(cmdMutex);
-        if (!ideath::repl::parseCommand(line, g_shared))
+        if (line == "quit" || line == "exit")
             break;
-        std::cout << "ideath> " << std::flush;
+        processLine(line);
+        std::cout << prompt() << std::flush;
     }
 
     tcpServer.stop();

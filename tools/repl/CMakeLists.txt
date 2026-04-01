@@ -4,6 +4,8 @@ add_executable(ideath_repl
     CommandParser.cpp
     NoteUtils.cpp
     TcpServer.cpp
+    Presets.cpp
+    TrackManager.cpp
 )
 
 target_link_libraries(ideath_repl PRIVATE ideath)
