@@ -24,6 +24,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
 | **Polyphony** | Multi-voice manager (pool allocation, voice stealing, mixing) |
 | **FMSynth** | 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired) |
+| **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
 
 ## Design Principles
 

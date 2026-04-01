@@ -21,6 +21,7 @@ add_library(ideath STATIC
     src/Voice.cpp
     src/Polyphony.cpp
     src/FMSynth.cpp
+    src/Reverb.cpp
 )
 
 target_include_directories(ideath
@@ -58,6 +59,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_Voice.cpp
         tests/test_Polyphony.cpp
         tests/test_FMSynth.cpp
+        tests/test_Reverb.cpp
         tests/test_AudioSafety.cpp
     )
 
