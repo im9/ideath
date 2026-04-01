@@ -125,9 +125,51 @@ static bool handleTrackCommand(const std::string& line)
     return true;
 }
 
+/// Handle limiter command. Returns true if handled.
+static bool handleLimiterCommand(const std::string& line)
+{
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+    if (cmd != "limiter") return false;
+
+    std::string arg;
+    if (!(iss >> arg))
+    {
+        // Just "limiter" — show status
+        bool on = g_tracks.limiterEnabled.load(std::memory_order_relaxed);
+        float gr = g_tracks.getLimiter().getGainReductionDb();
+        std::cout << "Limiter: " << (on ? "ON" : "OFF")
+                  << "  GR: " << gr << " dB" << std::endl;
+        return true;
+    }
+
+    if (arg == "off")
+    {
+        g_tracks.limiterEnabled.store(false, std::memory_order_relaxed);
+        std::cout << "Limiter OFF" << std::endl;
+    }
+    else if (arg == "on")
+    {
+        g_tracks.limiterEnabled.store(true, std::memory_order_relaxed);
+        std::cout << "Limiter ON" << std::endl;
+    }
+    else
+    {
+        // Treat as threshold in dB
+        float dB = parseFloat(arg, 0.0f);
+        g_tracks.getLimiter().setThreshold(dB);
+        g_tracks.limiterEnabled.store(true, std::memory_order_relaxed);
+        std::cout << "Limiter threshold: " << dB << " dB" << std::endl;
+    }
+    return true;
+}
+
 static void processLine(const std::string& line)
 {
     if (handleTrackCommand(line))
+        return;
+    if (handleLimiterCommand(line))
         return;
     ideath::repl::parseCommand(line, g_tracks.getShared(g_activeTrack));
 }

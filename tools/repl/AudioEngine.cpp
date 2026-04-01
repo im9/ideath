@@ -14,6 +14,10 @@ void AudioEngine::prepare(float sampleRate)
     delay_.prepare(sampleRate, 2.0f); // max 2 seconds delay
     lfo_.prepare(sampleRate);
     porta_.prepare(sampleRate);
+    fm_.prepare(sampleRate);
+    reverb_.prepare(sampleRate);
+    hallReverb_.prepare(sampleRate);
+    shimmerReverb_.prepare(sampleRate);
     gainSmoother_.prepare(sampleRate);
     gainSmoother_.setTime(0.005f); // 5ms fade
     gainSmoother_.setValue(0.0f);
@@ -83,6 +87,19 @@ void AudioEngine::applyPendingState(SharedState& shared)
             env_.setRelease(params_.release);
             env_.noteOn();
         }
+
+        // FM synth note on
+        if (params_.source == SourceType::FM)
+        {
+            fm_.setAlgorithm(params_.fmAlgorithm);
+            for (int i = 0; i < 4; ++i)
+            {
+                fm_.setRatio(i, params_.fmRatios[i]);
+                fm_.setLevel(i, params_.fmLevels[i]);
+                fm_.setFeedback(i, params_.fmFeedback[i]);
+            }
+            fm_.noteOn(baseFreq_);
+        }
     }
 
     int noteOff = shared.noteOffCounter.load(std::memory_order_acquire);
@@ -90,6 +107,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
     {
         lastNoteOff_ = noteOff;
         env_.noteOff();
+        fm_.noteOff();
     }
 
     // --- Sequencer ---
@@ -125,6 +143,8 @@ void AudioEngine::applyPendingState(SharedState& shared)
                     env_.setRelease(params_.release);
                     env_.noteOn();
                 }
+                if (params_.source == SourceType::FM)
+                    fm_.noteOn(freq);
                 seqGateOpen_ = true;
             }
         }
@@ -144,10 +164,11 @@ void AudioEngine::advanceSequencer()
 {
     if (!seq_.running || seq_.numSteps <= 0) return;
 
-    // Gate off at 80% of step
+    // Gate off at gate percent of step
     if (seqGateOpen_ && seqSampleCounter_ >= seqGateSamples_)
     {
         env_.noteOff();
+        fm_.noteOff();
         seqGateOpen_ = false;
     }
 
@@ -176,6 +197,8 @@ void AudioEngine::advanceSequencer()
             env_.setRelease(params_.release);
             env_.noteOn();
         }
+        if (params_.source == SourceType::FM)
+            fm_.noteOn(freq);
         seqGateOpen_ = true;
     }
     // freq == 0 means rest: no noteOn, gate stays closed
@@ -246,6 +269,10 @@ float AudioEngine::process()
             sample = noise_.process();
             break;
 
+        case SourceType::FM:
+            sample = fm_.process();
+            break;
+
         case SourceType::None:
             break;
     }
@@ -303,6 +330,48 @@ float AudioEngine::process()
         delay_.setFeedback(params_.delayFeedback);
         delay_.setMix(0.5f);
         sample = delay_.process(sample);
+    }
+
+    // --- Reverb (mono sum of stereo output) ---
+    if (params_.reverbType != ReverbType::Off)
+    {
+        switch (params_.reverbType)
+        {
+            case ReverbType::Room:
+            {
+                reverb_.setSize(params_.reverbSize);
+                reverb_.setDamp(params_.reverbDamp);
+                reverb_.setMix(params_.reverbMix);
+                reverb_.setFreeze(params_.reverbFreeze);
+                auto [l, r] = reverb_.process(sample);
+                sample = (l + r) * 0.5f;
+                break;
+            }
+            case ReverbType::Hall:
+            {
+                hallReverb_.setSize(params_.reverbSize);
+                hallReverb_.setDamp(params_.reverbDamp);
+                hallReverb_.setPreDelay(params_.reverbPreDelay);
+                hallReverb_.setModDepth(params_.reverbModDepth);
+                hallReverb_.setMix(params_.reverbMix);
+                hallReverb_.setFreeze(params_.reverbFreeze);
+                auto [l, r] = hallReverb_.process(sample);
+                sample = (l + r) * 0.5f;
+                break;
+            }
+            case ReverbType::Shimmer:
+            {
+                shimmerReverb_.setSize(params_.reverbSize);
+                shimmerReverb_.setDamp(params_.reverbDamp);
+                shimmerReverb_.setShimmer(params_.reverbShimmer);
+                shimmerReverb_.setMix(params_.reverbMix);
+                shimmerReverb_.setFreeze(params_.reverbFreeze);
+                auto [l, r] = shimmerReverb_.process(sample);
+                sample = (l + r) * 0.5f;
+                break;
+            }
+            default: break;
+        }
     }
 
     // --- LFO → Volume ---

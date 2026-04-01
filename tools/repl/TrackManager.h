@@ -2,6 +2,7 @@
 
 #include "AudioEngine.h"
 #include "SharedState.h"
+#include <ideath/PeakLimiter.h>
 #include <array>
 #include <atomic>
 
@@ -28,11 +29,15 @@ public:
 
     SharedState& getShared(int trackIndex) { return shared_[trackIndex]; }
     TrackMixState& getMix(int trackIndex) { return mix_[trackIndex]; }
+    PeakLimiter& getLimiter() { return limiter_; }
+
+    std::atomic<bool> limiterEnabled{true};
 
 private:
     std::array<AudioEngine, kMaxTracks> engines_;
     std::array<SharedState, kMaxTracks> shared_;
     std::array<TrackMixState, kMaxTracks> mix_;
+    PeakLimiter limiter_;
 };
 
 }} // namespace ideath::repl

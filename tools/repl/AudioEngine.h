@@ -11,6 +11,10 @@
 #include <ideath/DelayLine.h>
 #include <ideath/LFO.h>
 #include <ideath/Portamento.h>
+#include <ideath/FMSynth.h>
+#include <ideath/Reverb.h>
+#include <ideath/HallReverb.h>
+#include <ideath/ShimmerReverb.h>
 
 namespace ideath { namespace repl {
 
@@ -43,6 +47,10 @@ private:
     DelayLine delay_;
     LFO lfo_;
     Portamento porta_;
+    FMSynth fm_;
+    Reverb reverb_;
+    HallReverb hallReverb_;
+    ShimmerReverb shimmerReverb_;
 
     float baseFreq_ = 440.0f;
     float lastFilterFreq_ = -1.0f;

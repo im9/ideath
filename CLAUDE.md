@@ -31,11 +31,15 @@ tools/repl/     — interactive REPL tool (miniaudio, real-time audio)
 ```
 
 ### REPL Tool
-Interactive live-coding environment for auditioning primitives. Builds a single-voice
-signal chain: Source → Envelope → Filter → BitCrusher → Saturation → Delay → output.
-Commands are documented in `tools/repl/COMMANDS.md`.
+Interactive live-coding environment for auditioning primitives. 8 independent tracks,
+each with its own signal chain, sequencer, and presets. Master output protected by
+PeakLimiter. Commands are documented in `tools/repl/COMMANDS.md`.
 Built with miniaudio (vendored in `third_party/miniaudio/`).
 CMake option: `TN_DSP_BUILD_REPL=ON`.
+
+**REPL exposure guideline:** Every primitive that produces or transforms audio should
+be accessible as a REPL command. Primitives that only bundle other primitives (Voice,
+Polyphony) are excluded because the REPL itself serves that role.
 
 ### Primitives (low-level, stateless or minimal state)
 - **Biquad** — Direct Form II Transposed (LP/HP/BP, RBJ cookbook)

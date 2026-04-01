@@ -7,12 +7,13 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
 enum class LfoTarget { Off, Pitch, Filter, Volume };
 enum class LfoWaveform { Sine, Triangle, Square, Saw, SampleAndHold };
+enum class ReverbType { Off, Room, Hall, Shimmer };
 
 struct VoiceParams
 {
@@ -53,6 +54,24 @@ struct VoiceParams
     LfoWaveform lfoWaveform = LfoWaveform::Sine;
     float lfoRate = 5.0f;
     float lfoDepth = 0.0f;
+
+    // FM Synth
+    int fmAlgorithm = 0;
+    float fmRatios[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float fmLevels[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float fmFeedback[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    // Reverb
+    ReverbType reverbType = ReverbType::Off;
+    float reverbSize = 0.5f;
+    float reverbDamp = 0.3f;
+    float reverbMix = 0.3f;
+    bool reverbFreeze = false;
+    // Hall-specific
+    float reverbPreDelay = 0.03f;
+    float reverbModDepth = 0.5f;
+    // Shimmer-specific
+    float reverbShimmer = 0.5f;
 
     // Portamento
     float portaTime = 0.0f;

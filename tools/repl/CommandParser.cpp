@@ -39,10 +39,12 @@ ideath REPL commands:
   osc <saw|square> <freq>       Oscillator source
   wt <square|saw|tri|sine> <freq>  Wavetable source
   noise                         Noise source
+  fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
   filter <lp|hp|bp> <freq> <Q>  Biquad filter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
   delay <time> <feedback>       Delay line (or "delay off")
+  reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
                                 LFO modulation (or "lfo off")
   env <A> <D> <S> <R>          Set ADSR envelope (or "env off")
@@ -56,6 +58,7 @@ ideath REPL commands:
   seq rotate [n]               Rotate pattern by n steps (default 1)
   seq stop                     Stop sequencer
   preset <name>                Load voice preset (or "preset list")
+  limiter <threshold_dB>       Set limiter threshold (or "limiter off")
   track <n>                    Switch active track (1-8)
   track <n> mute|solo|vol <v>  Track mixing controls
   porta <time>                 Portamento time in seconds
@@ -116,6 +119,115 @@ bool parseCommand(const std::string& line, SharedState& shared)
     {
         shared.staging.source = SourceType::Noise;
         shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "fm")
+    {
+        shared.staging.source = SourceType::FM;
+        if (tokens.size() > 1)
+            shared.staging.fmAlgorithm = parseInt(tokens[1], 0);
+        // fm <algo> <r1:l1> <r2:l2> <r3:l3> <r4:l4>
+        // e.g. fm 0 1:1 2:0.5 3:0.3 4:0.2
+        for (size_t i = 2; i < tokens.size() && (i - 2) < 4; ++i)
+        {
+            int op = static_cast<int>(i - 2);
+            // Parse ratio:level or just ratio
+            auto colonPos = tokens[i].find(':');
+            if (colonPos != std::string::npos)
+            {
+                shared.staging.fmRatios[op] = parseFloat(tokens[i].substr(0, colonPos), 1.0f);
+                shared.staging.fmLevels[op] = parseFloat(tokens[i].substr(colonPos + 1), 1.0f);
+            }
+            else
+            {
+                shared.staging.fmRatios[op] = parseFloat(tokens[i], 1.0f);
+            }
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "fmfb")
+    {
+        // Set per-operator feedback: fmfb <op> <amount>
+        if (tokens.size() > 2)
+        {
+            int op = parseInt(tokens[1], 0);
+            if (op >= 0 && op < 4)
+            {
+                shared.staging.fmFeedback[op] = parseFloat(tokens[2], 0.0f);
+                shared.paramsReady.store(true, std::memory_order_release);
+            }
+        }
+        else
+        {
+            std::cout << "Usage: fmfb <op 0-3> <amount 0-1>" << std::endl;
+        }
+        return true;
+    }
+
+    if (cmd == "reverb")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.reverbType = ReverbType::Off;
+            shared.paramsReady.store(true, std::memory_order_release);
+            return true;
+        }
+
+        if (tokens.size() > 1 && tokens[1] == "freeze")
+        {
+            shared.staging.reverbFreeze = !shared.staging.reverbFreeze;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Reverb freeze: " << (shared.staging.reverbFreeze ? "ON" : "OFF") << std::endl;
+            return true;
+        }
+
+        if (tokens.size() > 1)
+        {
+            if (tokens[1] == "room") shared.staging.reverbType = ReverbType::Room;
+            else if (tokens[1] == "hall") shared.staging.reverbType = ReverbType::Hall;
+            else if (tokens[1] == "shimmer") shared.staging.reverbType = ReverbType::Shimmer;
+        }
+
+        // Common params: reverb <type> [size] [damp] [mix]
+        if (tokens.size() > 2)
+            shared.staging.reverbSize = parseFloat(tokens[2], 0.5f);
+        if (tokens.size() > 3)
+            shared.staging.reverbDamp = parseFloat(tokens[3], 0.3f);
+        if (tokens.size() > 4)
+            shared.staging.reverbMix = parseFloat(tokens[4], 0.3f);
+
+        // Hall-specific: reverb hall <size> <damp> <mix> <predelay> <moddepth>
+        if (shared.staging.reverbType == ReverbType::Hall)
+        {
+            if (tokens.size() > 5)
+                shared.staging.reverbPreDelay = parseFloat(tokens[5], 0.03f);
+            if (tokens.size() > 6)
+                shared.staging.reverbModDepth = parseFloat(tokens[6], 0.5f);
+        }
+
+        // Shimmer-specific: reverb shimmer <size> <damp> <mix> <shimmer_amount>
+        if (shared.staging.reverbType == ReverbType::Shimmer)
+        {
+            if (tokens.size() > 5)
+                shared.staging.reverbShimmer = parseFloat(tokens[5], 0.5f);
+        }
+
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Reverb: ";
+        switch (shared.staging.reverbType)
+        {
+            case ReverbType::Room:    std::cout << "room"; break;
+            case ReverbType::Hall:    std::cout << "hall"; break;
+            case ReverbType::Shimmer: std::cout << "shimmer"; break;
+            default: break;
+        }
+        std::cout << " size=" << shared.staging.reverbSize
+                  << " damp=" << shared.staging.reverbDamp
+                  << " mix=" << shared.staging.reverbMix
+                  << std::endl;
         return true;
     }
 

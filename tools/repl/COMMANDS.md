@@ -56,6 +56,11 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `osc <saw\|square> <freq>` | Oscillator source |
 | `wt <square\|saw\|tri\|sine> <freq>` | Wavetable source |
 | `noise` | White noise source |
+| `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FM synth source (algo 0-7) |
+| `fmfb <op 0-3> <amount>` | Set FM operator feedback |
+
+FM operator format is `ratio:level` (e.g., `fm 0 1:1 2:0.5 3:0.3 4:0.2`).
+Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 
 ### Effects
 
@@ -65,6 +70,11 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `crush <bits> <downsample_rate>` | BitCrusher |
 | `sat <drive>` | Saturation (tanh drive) |
 | `delay <time_sec> <feedback>` | Delay line |
+| `reverb <room\|hall\|shimmer> [size] [damp] [mix]` | Reverb effect |
+| `reverb hall <size> <damp> <mix> <predelay> <moddepth>` | Hall with extra params |
+| `reverb shimmer <size> <damp> <mix> <shimmer_amount>` | Shimmer with extra params |
+| `reverb freeze` | Toggle reverb freeze |
+| `reverb off` | Disable reverb |
 
 Any effect can be disabled with `<command> off` (e.g., `filter off`).
 
@@ -117,6 +127,17 @@ BPM is the last argument if it's a number > 20.
 
 Each track has its own signal chain, presets, and sequencer.
 All commands apply to the active track. Solo overrides mute.
+
+### Limiter
+
+| Command | Description |
+|---------|-------------|
+| `limiter` | Show limiter status and gain reduction |
+| `limiter <dB>` | Set limiter threshold (e.g., `limiter -6`) |
+| `limiter on` | Enable limiter |
+| `limiter off` | Disable limiter (hard clamp fallback) |
+
+Brickwall peak limiter on the master output (default: ON, 0 dB threshold, 5ms lookahead).
 
 ### Playback
 
