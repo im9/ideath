@@ -27,6 +27,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
 | **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
 | **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
+| **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead) |
 
 ## Design Principles
 

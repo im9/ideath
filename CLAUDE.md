@@ -55,6 +55,7 @@ CMake option: `TN_DSP_BUILD_REPL=ON`.
 - **Reverb** — Freeverb (8 comb + 4 allpass, size/damp/freeze, stereo out)
 - **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
 - **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
+- **PeakLimiter** — Lookahead brickwall limiter (threshold/release/lookahead)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -134,7 +135,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [ ] StutterBuffer — slice repeat glitch, crossfade boundaries
 - [ ] CombFilter — feedback delay, Karplus-Strong / metallic textures
 - [ ] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
-- [ ] PeakLimiter — lookahead brickwall limiter
+- [x] PeakLimiter — lookahead brickwall limiter
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
 
 ### Other
