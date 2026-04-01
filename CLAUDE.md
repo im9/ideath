@@ -60,6 +60,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
 - **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
 - **PeakLimiter** — Lookahead brickwall limiter (threshold/release/lookahead)
+- **Compressor** — Peak envelope compressor (threshold/ratio/attack/release/makeup/knee)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -132,7 +133,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] Reverb (Freeverb) — 8 comb + 4 allpass, size/damp/freeze, stereo out (mono-first exception)
 - [x] HallReverb — pre-delay + LFO-modulated Freeverb (port from inboil Hall flavor)
 - [x] ShimmerReverb — cross-coupled allpass network + octave pitch shift feedback (port from inboil Shimmer flavor)
-- [ ] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
+- [x] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
 - [ ] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
 - [ ] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
 - [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze

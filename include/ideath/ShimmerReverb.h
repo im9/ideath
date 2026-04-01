@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Reverb.h"
 #include <array>
 #include <utility>
 #include <vector>
@@ -43,10 +44,16 @@ private:
     float shimmer_ = 0.5f;
     float mix_ = 0.5f;
     bool freeze_ = false;
+    bool prevFreeze_ = false;
 
     // Derived
     float feedback_ = 0.0f;
     float dampCoeff_ = 0.0f;
+
+    // Freeze crossfade: shimmer → Freeverb over 200ms
+    Reverb freezeReverb_;
+    float freezeXfade_ = 0.0f;   // 0 = shimmer, 1 = freeverb
+    float freezeXfadeInc_ = 0.0f;
 
     void updateParams();
 

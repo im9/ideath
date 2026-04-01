@@ -15,6 +15,7 @@ void AudioEngine::prepare(float sampleRate)
     lfo_.prepare(sampleRate);
     porta_.prepare(sampleRate);
     fm_.prepare(sampleRate);
+    comp_.prepare(sampleRate);
     reverb_.prepare(sampleRate);
     hallReverb_.prepare(sampleRate);
     shimmerReverb_.prepare(sampleRate);
@@ -309,6 +310,17 @@ float AudioEngine::process()
         }
 
         sample = filter_.process(sample);
+    }
+
+    // --- Compressor ---
+    if (params_.compEnabled)
+    {
+        comp_.setThreshold(params_.compThreshold);
+        comp_.setRatio(params_.compRatio);
+        comp_.setAttack(params_.compAttack);
+        comp_.setRelease(params_.compRelease);
+        comp_.setMakeup(params_.compMakeup);
+        sample = comp_.process(sample);
     }
 
     // --- BitCrusher ---

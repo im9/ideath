@@ -61,6 +61,14 @@ struct VoiceParams
     float fmLevels[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
     float fmFeedback[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
+    // Compressor
+    bool compEnabled = false;
+    float compThreshold = -20.0f;
+    float compRatio = 4.0f;
+    float compAttack = 0.01f;
+    float compRelease = 0.1f;
+    float compMakeup = 0.0f;
+
     // Reverb
     ReverbType reverbType = ReverbType::Off;
     float reverbSize = 0.5f;

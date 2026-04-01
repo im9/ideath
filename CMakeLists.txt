@@ -25,6 +25,7 @@ add_library(ideath STATIC
     src/HallReverb.cpp
     src/ShimmerReverb.cpp
     src/PeakLimiter.cpp
+    src/Compressor.cpp
 )
 
 target_include_directories(ideath
@@ -66,6 +67,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_HallReverb.cpp
         tests/test_ShimmerReverb.cpp
         tests/test_PeakLimiter.cpp
+        tests/test_Compressor.cpp
         tests/test_AudioSafety.cpp
     )
 

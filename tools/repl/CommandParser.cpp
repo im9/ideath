@@ -44,6 +44,7 @@ ideath REPL commands:
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
   delay <time> <feedback>       Delay line (or "delay off")
+  comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
                                 LFO modulation (or "lfo off")
@@ -164,6 +165,39 @@ bool parseCommand(const std::string& line, SharedState& shared)
         {
             std::cout << "Usage: fmfb <op 0-3> <amount 0-1>" << std::endl;
         }
+        return true;
+    }
+
+    if (cmd == "comp")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.compEnabled = false;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Compressor OFF" << std::endl;
+            return true;
+        }
+
+        shared.staging.compEnabled = true;
+        // comp <threshold> <ratio> [attack] [release] [makeup]
+        if (tokens.size() > 1)
+            shared.staging.compThreshold = parseFloat(tokens[1], -20.0f);
+        if (tokens.size() > 2)
+            shared.staging.compRatio = parseFloat(tokens[2], 4.0f);
+        if (tokens.size() > 3)
+            shared.staging.compAttack = parseFloat(tokens[3], 0.01f);
+        if (tokens.size() > 4)
+            shared.staging.compRelease = parseFloat(tokens[4], 0.1f);
+        if (tokens.size() > 5)
+            shared.staging.compMakeup = parseFloat(tokens[5], 0.0f);
+
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Compressor: thresh=" << shared.staging.compThreshold
+                  << "dB ratio=" << shared.staging.compRatio
+                  << " A=" << shared.staging.compAttack
+                  << " R=" << shared.staging.compRelease
+                  << " makeup=" << shared.staging.compMakeup << "dB"
+                  << std::endl;
         return true;
     }
 

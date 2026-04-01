@@ -12,6 +12,7 @@
 #include <ideath/LFO.h>
 #include <ideath/Portamento.h>
 #include <ideath/FMSynth.h>
+#include <ideath/Compressor.h>
 #include <ideath/Reverb.h>
 #include <ideath/HallReverb.h>
 #include <ideath/ShimmerReverb.h>
@@ -48,6 +49,7 @@ private:
     LFO lfo_;
     Portamento porta_;
     FMSynth fm_;
+    Compressor comp_;
     Reverb reverb_;
     HallReverb hallReverb_;
     ShimmerReverb shimmerReverb_;

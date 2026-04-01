@@ -236,6 +236,11 @@ void ShimmerReverb::prepare(float sampleRate)
     fbL_ = 0.0f;
     fbR_ = 0.0f;
 
+    // Freeze reverb (Freeverb fallback)
+    freezeReverb_.prepare(sampleRate);
+    freezeXfade_ = 0.0f;
+    freezeXfadeInc_ = 1.0f / (0.2f * sampleRate); // 200ms crossfade
+
     updateParams();
     reset();
 }
@@ -262,6 +267,9 @@ void ShimmerReverb::reset()
 
     fbL_ = 0.0f;
     fbR_ = 0.0f;
+
+    freezeReverb_.reset();
+    freezeXfade_ = 0.0f;
 }
 
 void ShimmerReverb::setSize(float size)
@@ -289,6 +297,20 @@ void ShimmerReverb::setMix(float mix)
 
 void ShimmerReverb::setFreeze(bool freeze)
 {
+    if (freeze && !prevFreeze_)
+    {
+        // Entering freeze: configure Freeverb to hold the tail
+        freezeReverb_.setSize(size_);
+        freezeReverb_.setDamp(0.0f);
+        freezeReverb_.setFreeze(true);
+        freezeReverb_.setMix(1.0f);
+    }
+    else if (!freeze && prevFreeze_)
+    {
+        // Leaving freeze: unfreeze Freeverb
+        freezeReverb_.setFreeze(false);
+    }
+    prevFreeze_ = freeze;
     freeze_ = freeze;
     updateParams();
 }
@@ -332,50 +354,60 @@ void ShimmerReverb::updateParams()
 
 std::pair<float, float> ShimmerReverb::process(float input)
 {
-    // Modulation scale from size parameter (0.5–3.0)
+    // --- Shimmer path (always runs to keep state alive) ---
     float modScale = 0.5f + size_ * 2.5f;
 
-    // --- Forward allpass diffusion ---
-    // L channel
     float fwdL = input + fbL_;
     for (auto& ap : fwdApL_)
         fwdL = ap.process(fwdL, modScale);
 
-    // R channel
     float fwdR = input + fbR_;
     for (auto& ap : fwdApR_)
         fwdR = ap.process(fwdR, modScale);
 
-    // HF damping
     fwdL = dampL_.process(fwdL, dampCoeff_);
     fwdR = dampR_.process(fwdR, dampCoeff_);
 
-    // DC blocking
-    float dcFreeL = dcL_.process(fwdR); // cross-coupled: R→L feedback path
-    float dcFreeR = dcR_.process(fwdL); // L→R feedback path
+    float dcFreeL = dcL_.process(fwdR);
+    float dcFreeR = dcR_.process(fwdL);
 
-    // --- Feedback paths (cross-coupled) ---
-    // L feedback path (signal from R)
     float fbPathL = fbDelayPreL_.process(dcFreeL);
     for (auto& ap : fbApL_)
         fbPathL = ap.process(fbPathL, modScale);
     fbPathL = fbDelayPostL_.process(fbPathL);
     fbPathL = pitchL_.process(fbPathL);
 
-    // R feedback path (signal from L)
     float fbPathR = fbDelayPreR_.process(dcFreeR);
     for (auto& ap : fbApR_)
         fbPathR = ap.process(fbPathR, modScale);
     fbPathR = fbDelayPostR_.process(fbPathR);
     fbPathR = pitchR_.process(fbPathR);
 
-    // Store feedback for next sample
     fbL_ = fbPathL * feedback_;
     fbR_ = fbPathR * feedback_;
 
-    // Output is the forward allpass output (before feedback)
-    float outL = fwdL;
-    float outR = fwdR;
+    float shimL = fwdL;
+    float shimR = fwdR;
+
+    // --- Freeze crossfade ---
+    // Feed current shimmer output into Freeverb to capture the tail
+    auto [frzL, frzR] = freezeReverb_.process((shimL + shimR) * 0.5f);
+
+    // Advance crossfade
+    if (freeze_)
+    {
+        freezeXfade_ += freezeXfadeInc_;
+        if (freezeXfade_ > 1.0f) freezeXfade_ = 1.0f;
+    }
+    else
+    {
+        freezeXfade_ -= freezeXfadeInc_;
+        if (freezeXfade_ < 0.0f) freezeXfade_ = 0.0f;
+    }
+
+    // Blend: 0 = shimmer, 1 = freeverb
+    float outL = shimL * (1.0f - freezeXfade_) + frzL * freezeXfade_;
+    float outR = shimR * (1.0f - freezeXfade_) + frzR * freezeXfade_;
 
     // Dry/wet mix
     float dry = 1.0f - mix_;

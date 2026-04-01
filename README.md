@@ -28,6 +28,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
 | **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
 | **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead) |
+| **Compressor** | Peak envelope compressor (threshold/ratio/attack/release/makeup/knee) |
 
 ## Design Principles
 

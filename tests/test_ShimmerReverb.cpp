@@ -130,11 +130,17 @@ TEST_CASE("ShimmerReverb: freeze holds tail", "[shimmer]")
     rev.setShimmer(0.3f);
     rev.setMix(1.0f);
 
+    // Build up reverb tail
     for (int i = 0; i < 4410; ++i)
         rev.process(0.5f);
 
     rev.setFreeze(true);
 
+    // Wait for 200ms crossfade to complete (shimmer → Freeverb)
+    for (int i = 0; i < 8820; ++i)
+        rev.process(0.0f);
+
+    // Now measure two consecutive blocks — Freeverb freeze should sustain
     float energy1 = 0.0f;
     for (int i = 0; i < 4410; ++i)
     {
@@ -150,9 +156,8 @@ TEST_CASE("ShimmerReverb: freeze holds tail", "[shimmer]")
     }
 
     REQUIRE(energy1 > 0.0f);
-    // Shimmer freeze sustains via allpass recirculation + pitch feedback;
-    // energy decays slower than normal but not perfectly flat like Freeverb
-    REQUIRE(energy2 > energy1 * 0.2f);
+    // After crossfade, Freeverb freeze should hold energy well
+    REQUIRE(energy2 > energy1 * 0.9f);
 }
 
 TEST_CASE("ShimmerReverb: dry/wet mix", "[shimmer]")

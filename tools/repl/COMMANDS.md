@@ -70,6 +70,8 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `crush <bits> <downsample_rate>` | BitCrusher |
 | `sat <drive>` | Saturation (tanh drive) |
 | `delay <time_sec> <feedback>` | Delay line |
+| `comp <thresh_dB> <ratio> [attack] [release] [makeup_dB]` | Compressor |
+| `comp off` | Disable compressor |
 | `reverb <room\|hall\|shimmer> [size] [damp] [mix]` | Reverb effect |
 | `reverb hall <size> <damp> <mix> <predelay> <moddepth>` | Hall with extra params |
 | `reverb shimmer <size> <damp> <mix> <shimmer_amount>` | Shimmer with extra params |
