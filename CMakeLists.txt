@@ -18,6 +18,8 @@ add_library(ideath STATIC
     src/DelayLine.cpp
     src/LFO.cpp
     src/Portamento.cpp
+    src/Voice.cpp
+    src/Polyphony.cpp
 )
 
 target_include_directories(ideath
@@ -52,6 +54,8 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_DelayLine.cpp
         tests/test_LFO.cpp
         tests/test_Portamento.cpp
+        tests/test_Voice.cpp
+        tests/test_Polyphony.cpp
         tests/test_AudioSafety.cpp
     )
 
