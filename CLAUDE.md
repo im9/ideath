@@ -49,6 +49,8 @@ CMake option: `TN_DSP_BUILD_REPL=ON`.
 - **DelayLine** — Circular buffer delay with linear interpolation, feedback, dry/wet mix
 - **LFO** — Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot)
 - **Portamento** — Exponential pitch/value glide
+- **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
+- **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -117,8 +119,8 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 - [ ] REPL: sequencer (`seq C4 E4 G4 120bpm`)
 - [ ] REPL: optimize filter coefficient recalculation (only on parameter change)
-- [ ] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
-- [ ] Polyphony management — multi-voice allocation (Junior supports up to 16)
+- [x] Voice class — bundle primitives into a single voice (Wavetable + Env + Filter + LFO)
+- [x] Polyphony management — multi-voice allocation (Junior supports up to 16)
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
 - [ ] FM Synth primitive — hardware-inspired (YM2612/SID reference), needs design
 - [ ] Reverb primitive — needs careful design for generality

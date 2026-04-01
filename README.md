@@ -21,6 +21,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
 | **LFO** | Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot) |
 | **Portamento** | Exponential pitch/value glide |
+| **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
+| **Polyphony** | Multi-voice manager (pool allocation, voice stealing, mixing) |
 
 ## Design Principles
 
