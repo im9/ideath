@@ -148,6 +148,86 @@ TEST_CASE("FeedbackBuffer: recording auto-stops at buffer end", "[feedbackbuffer
     REQUIRE(fb.getLoopLength() > 0);
 }
 
+TEST_CASE("FeedbackBuffer: crossfade eliminates discontinuity at loop boundary", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setCrossfade(0.005f); // 5ms = 220 samples
+    fb.setMix(1.0f);
+
+    // Record a loop long enough for crossfade to engage:
+    // ramp up then hold, so buffer_[end] != buffer_[0] without crossfade
+    int loopLen = 2000;
+    fb.record();
+    for (int i = 0; i < loopLen; ++i)
+    {
+        float t = static_cast<float>(i) / static_cast<float>(loopLen);
+        fb.process(t < 0.1f ? t * 10.0f : 1.0f); // ramp 0→1, then hold 1.0
+    }
+    fb.stop();
+    REQUIRE(fb.getLoopLength() == loopLen);
+
+    // Play through the loop boundary and check for smooth transition
+    fb.play();
+    float prev = fb.process(0.0f);
+    float maxJump = 0.0f;
+    for (int i = 1; i < loopLen * 2; ++i)
+    {
+        float curr = fb.process(0.0f);
+        float jump = std::fabs(curr - prev);
+        if (jump > maxJump)
+            maxJump = jump;
+        prev = curr;
+    }
+    // Without crossfade, the jump at boundary would be ~1.0 (1.0 → ramp start).
+    // With crossfade, max sample-to-sample jump should be much smaller.
+    REQUIRE(maxJump < 0.1f);
+}
+
+TEST_CASE("FeedbackBuffer: setCrossfade changes crossfade length", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    // Record a long enough loop
+    int loopLen = 4000;
+    fb.record();
+    for (int i = 0; i < loopLen; ++i)
+        fb.process(static_cast<float>(i) / static_cast<float>(loopLen));
+    fb.stop();
+
+    // With crossfade=0, there should be a hard jump
+    fb.setCrossfade(0.0f);
+    fb.play();
+    float prev = fb.process(0.0f);
+    float maxJump0 = 0.0f;
+    for (int i = 1; i < loopLen * 2; ++i)
+    {
+        float curr = fb.process(0.0f);
+        float jump = std::fabs(curr - prev);
+        if (jump > maxJump0)
+            maxJump0 = jump;
+        prev = curr;
+    }
+
+    // With crossfade=10ms, the jump should be smaller
+    fb.setCrossfade(0.01f);
+    fb.play();
+    prev = fb.process(0.0f);
+    float maxJumpCF = 0.0f;
+    for (int i = 1; i < loopLen * 2; ++i)
+    {
+        float curr = fb.process(0.0f);
+        float jump = std::fabs(curr - prev);
+        if (jump > maxJumpCF)
+            maxJumpCF = jump;
+        prev = curr;
+    }
+
+    REQUIRE(maxJumpCF < maxJump0);
+}
+
 TEST_CASE("FeedbackBuffer: feedback clamped to [0, 1]", "[feedbackbuffer]")
 {
     ideath::FeedbackBuffer fb;

@@ -1,5 +1,6 @@
 #include <ideath/FeedbackBuffer.h>
 #include <algorithm>
+#include <cmath>
 
 namespace ideath {
 
@@ -8,6 +9,7 @@ void FeedbackBuffer::prepare(float sampleRate, float maxLengthSec)
     sampleRate_ = sampleRate;
     bufferSize_ = static_cast<int>(maxLengthSec * sampleRate) + 1;
     buffer_.resize(static_cast<size_t>(bufferSize_), 0.0f);
+    crossfadeSamples_ = static_cast<int>(0.005f * sampleRate); // 5ms default
     reset();
 }
 
@@ -28,6 +30,11 @@ void FeedbackBuffer::setFeedback(float feedback)
 void FeedbackBuffer::setMix(float mix)
 {
     mix_ = std::clamp(mix, 0.0f, 1.0f);
+}
+
+void FeedbackBuffer::setCrossfade(float seconds)
+{
+    crossfadeSamples_ = std::max(0, static_cast<int>(seconds * sampleRate_));
 }
 
 void FeedbackBuffer::record()
@@ -65,6 +72,39 @@ void FeedbackBuffer::overdub()
     }
 }
 
+float FeedbackBuffer::readSample(int pos) const
+{
+    float main = buffer_[static_cast<size_t>(pos)];
+
+    if (crossfadeSamples_ <= 0 || loopLength_ <= crossfadeSamples_ * 2)
+        return main;
+
+    // Near end of loop: fade out main, fade in loop-start sample
+    int distFromEnd = loopLength_ - 1 - pos;
+    if (distFromEnd < crossfadeSamples_)
+    {
+        // fade: 1.0 at crossfade boundary, 0.0 at loop end
+        float fade = static_cast<float>(distFromEnd) / static_cast<float>(crossfadeSamples_);
+        // Corresponding sample from the start of the loop
+        int startPos = crossfadeSamples_ - 1 - distFromEnd;
+        float wrap = buffer_[static_cast<size_t>(startPos)];
+        return main * fade + wrap * (1.0f - fade);
+    }
+
+    // Near start of loop: fade in main, fade out loop-end sample
+    if (pos < crossfadeSamples_)
+    {
+        // fade: 0.0 at loop start, 1.0 at crossfade boundary
+        float fade = static_cast<float>(pos) / static_cast<float>(crossfadeSamples_);
+        // Corresponding sample from near the end of the loop
+        int endPos = loopLength_ - crossfadeSamples_ + pos;
+        float wrap = buffer_[static_cast<size_t>(endPos)];
+        return main * fade + wrap * (1.0f - fade);
+    }
+
+    return main;
+}
+
 float FeedbackBuffer::process(float input)
 {
     float output = 0.0f;
@@ -86,7 +126,7 @@ float FeedbackBuffer::process(float input)
         return input;
 
     case Mode::Playing:
-        output = buffer_[static_cast<size_t>(readPos_)];
+        output = readSample(readPos_);
         ++readPos_;
         if (readPos_ >= loopLength_)
             readPos_ = 0;
@@ -94,9 +134,8 @@ float FeedbackBuffer::process(float input)
 
     case Mode::Overdub:
     {
-        float existing = buffer_[static_cast<size_t>(readPos_)];
+        float existing = readSample(readPos_);
         output = existing;
-        // Mix new input with existing content scaled by feedback
         buffer_[static_cast<size_t>(writePos_)] = input + existing * feedback_;
         ++readPos_;
         ++writePos_;

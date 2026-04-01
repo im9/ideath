@@ -42,13 +42,19 @@ public:
     Mode getMode() const { return mode_; }
     int getLoopLength() const { return loopLength_; }
 
+    /// Set crossfade length in seconds (default 0.005 = 5ms).
+    void setCrossfade(float seconds);
+
 private:
+    float readSample(int pos) const;
+
     float sampleRate_ = 44100.0f;
     std::vector<float> buffer_;
     int bufferSize_ = 0;
     int writePos_ = 0;
     int readPos_ = 0;
     int loopLength_ = 0;
+    int crossfadeSamples_ = 0;
     Mode mode_ = Mode::Stopped;
     float feedback_ = 0.8f;
     float mix_ = 1.0f;
