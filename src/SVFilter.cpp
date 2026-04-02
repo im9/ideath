@@ -4,6 +4,9 @@
 
 namespace ideath {
 
+// Tiny DC offset to flush denormals in filter state.
+static constexpr float kAntiDenormal = 1e-25f;
+
 void SVFilter::prepare(float sampleRate)
 {
     sampleRate_ = sampleRate;
@@ -39,8 +42,8 @@ SVFilter::Output SVFilter::processMulti(float x)
     const float v3 = x - ic2eq_;
     const float v1 = a1_ * ic1eq_ + a2_ * v3;
     const float v2 = ic2eq_ + a2_ * ic1eq_ + a3_ * v3;
-    ic1eq_ = 2.0f * v1 - ic1eq_;
-    ic2eq_ = 2.0f * v2 - ic2eq_;
+    ic1eq_ = 2.0f * v1 - ic1eq_ + kAntiDenormal;
+    ic2eq_ = 2.0f * v2 - ic2eq_ + kAntiDenormal;
 
     const float low  = v2;
     const float band = v1;
