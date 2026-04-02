@@ -43,7 +43,11 @@ void Portamento::setValue(float value)
 
 float Portamento::process()
 {
-    current_ += coef_ * (target_ - current_);
+    // Snap to target when close enough to avoid denormals
+    if (std::fabs(target_ - current_) < 1e-5f)
+        current_ = target_;
+    else
+        current_ += coef_ * (target_ - current_);
     return current_;
 }
 

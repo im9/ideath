@@ -76,9 +76,12 @@ float PeakLimiter::process(float input)
     else
         envelope_ = absInput + releaseCoeff_ * (envelope_ - absInput); // smooth release
 
+    // Flush denormals
+    if (envelope_ < 1e-8f) envelope_ = 0.0f;
+
     // Compute desired gain
     float targetGain = 1.0f;
-    if (envelope_ > thresholdLinear_)
+    if (envelope_ > thresholdLinear_ && envelope_ > 1e-8f)
         targetGain = thresholdLinear_ / envelope_;
 
     // Smooth gain: instant attack (never overshoot), smooth release

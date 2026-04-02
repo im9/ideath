@@ -38,12 +38,16 @@ float DecayEnvelope::process()
         return 0.0f;
 
     float out = level_;
-    level_ *= decayCoef_;
 
+    // Flush to zero before multiply to avoid denormals
     if (level_ < kSilenceThreshold)
     {
         level_ = 0.0f;
         active_ = false;
+    }
+    else
+    {
+        level_ *= decayCoef_;
     }
 
     return out;
@@ -118,11 +122,15 @@ float AdsrEnvelope::process()
         case Stage::Decay:
         {
             // Exponential decay toward sustain level.
-            level_ = sustainLevel_ + (level_ - sustainLevel_) * decayCoef_;
-            if (level_ - sustainLevel_ < 1e-4f)
+            float diff = level_ - sustainLevel_;
+            if (diff < 1e-4f)
             {
                 level_ = sustainLevel_;
                 stage_ = Stage::Sustain;
+            }
+            else
+            {
+                level_ = sustainLevel_ + diff * decayCoef_;
             }
             break;
         }
@@ -132,11 +140,14 @@ float AdsrEnvelope::process()
             break;
 
         case Stage::Release:
-            level_ *= releaseCoef_;
             if (level_ < 1e-5f)
             {
                 level_ = 0.0f;
                 stage_ = Stage::Idle;
+            }
+            else
+            {
+                level_ *= releaseCoef_;
             }
             break;
 

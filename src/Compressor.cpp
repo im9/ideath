@@ -68,6 +68,9 @@ float Compressor::process(float input)
     else
         envelope_ = absIn + releaseCoeff_ * (envelope_ - absIn);
 
+    // Flush denormals
+    if (envelope_ < 1e-8f) envelope_ = 0.0f;
+
     // Convert envelope to dB
     float envDb = (envelope_ > 1e-6f) ? 20.0f * std::log10(envelope_) : -120.0f;
 
