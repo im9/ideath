@@ -228,6 +228,286 @@ TEST_CASE("FeedbackBuffer: setCrossfade changes crossfade length", "[feedbackbuf
     REQUIRE(maxJumpCF < maxJump0);
 }
 
+TEST_CASE("FeedbackBuffer: setSpeed default is 1.0", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    REQUIRE_THAT(fb.getSpeed(), WithinAbs(1.0f, 1e-6f));
+}
+
+TEST_CASE("FeedbackBuffer: half speed doubles playback duration", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    // Record 4 samples: 0.1, 0.2, 0.3, 0.4
+    fb.record();
+    fb.process(0.1f);
+    fb.process(0.2f);
+    fb.process(0.3f);
+    fb.process(0.4f);
+    fb.stop();
+
+    // Play at half speed — should interpolate between samples
+    fb.setSpeed(0.5f);
+    fb.play();
+    // readPos advances 0.5 each sample, so:
+    //   pos=0.0 → 0.1
+    //   pos=0.5 → lerp(0.1, 0.2) = 0.15
+    //   pos=1.0 → 0.2
+    //   pos=1.5 → lerp(0.2, 0.3) = 0.25
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.15f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: double speed halves playback duration", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    // Record 4 samples
+    fb.record();
+    fb.process(0.1f);
+    fb.process(0.2f);
+    fb.process(0.3f);
+    fb.process(0.4f);
+    fb.stop();
+
+    // Play at double speed — skips every other sample
+    fb.setSpeed(2.0f);
+    fb.play();
+    // pos=0.0 → 0.1, pos=2.0 → 0.3
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: negative speed plays in reverse", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    // Record 4 samples
+    fb.record();
+    fb.process(0.1f);
+    fb.process(0.2f);
+    fb.process(0.3f);
+    fb.process(0.4f);
+    fb.stop();
+
+    // Play in reverse — starts from end of loop
+    fb.setSpeed(-1.0f);
+    fb.play();
+    // Reverse: starts at loopLength-1 = 3, goes backward
+    //   pos=3 → 0.4, pos=2 → 0.3, pos=1 → 0.2, pos=0 → 0.1
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
+    // Wraps: back to end
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: speed=0 freezes playback position", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    fb.record();
+    fb.process(0.5f);
+    fb.process(0.9f);
+    fb.stop();
+
+    fb.setSpeed(0.0f);
+    fb.play();
+    // Frozen at position 0 — always returns first sample
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: speed clamped to [-4, 4]", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+
+    fb.setSpeed(10.0f);
+    REQUIRE_THAT(fb.getSpeed(), WithinAbs(4.0f, 1e-6f));
+
+    fb.setSpeed(-10.0f);
+    REQUIRE_THAT(fb.getSpeed(), WithinAbs(-4.0f, 1e-6f));
+}
+
+TEST_CASE("FeedbackBuffer: half-speed reverse with interpolation", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    fb.record();
+    fb.process(0.1f);
+    fb.process(0.2f);
+    fb.process(0.3f);
+    fb.process(0.4f);
+    fb.stop();
+
+    fb.setSpeed(-0.5f);
+    fb.play();
+    // Starts at end (pos=3), moves -0.5 each sample
+    //   pos=3.0 → 0.4
+    //   pos=2.5 → lerp(0.3, 0.4) = 0.35
+    //   pos=2.0 → 0.3
+    //   pos=1.5 → lerp(0.2, 0.3) = 0.25
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.35f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: speed change during playback", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setMix(1.0f);
+
+    fb.record();
+    fb.process(0.1f);
+    fb.process(0.2f);
+    fb.process(0.3f);
+    fb.process(0.4f);
+    fb.stop();
+
+    fb.play();
+    // Normal speed: read sample 0
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
+    // Now at pos=1.0. Switch to half speed
+    fb.setSpeed(0.5f);
+    // pos=1.0 → 0.2
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
+    // pos=1.5 → lerp(0.2, 0.3) = 0.25
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: overdub works with non-unity speed", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setFeedback(1.0f);
+    fb.setMix(1.0f);
+
+    fb.record();
+    fb.process(0.5f);
+    fb.process(0.5f);
+    fb.process(0.5f);
+    fb.process(0.5f);
+    fb.stop();
+
+    // Overdub at half speed — both read and write advance at 0.5x (tape-style)
+    fb.setSpeed(0.5f);
+    fb.overdub();
+    float out0 = fb.process(0.1f);
+    // Read from pos=0.0 → 0.5, output should be 0.5
+    REQUIRE_THAT(out0, WithinAbs(0.5f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: overdub write position follows speed (tape-style)", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setFeedback(0.0f); // replace mode
+    fb.setMix(1.0f);
+
+    // Record 4 samples of silence
+    fb.record();
+    for (int i = 0; i < 4; ++i) fb.process(0.0f);
+    fb.stop();
+
+    // Overdub at half speed — both heads move at 0.5x
+    // readPos: 0.0, 0.5, 1.0, 1.5 → write to int positions: 0, 0, 1, 1
+    fb.setSpeed(0.5f);
+    fb.overdub();
+    for (int i = 0; i < 4; ++i) fb.process(0.9f);
+    fb.stop();
+
+    // Play at 1x — only positions 0,1 were written; 2,3 remain silent
+    fb.setSpeed(1.0f);
+    fb.play();
+    float s0 = fb.process(0.0f);
+    float s1 = fb.process(0.0f);
+    float s2 = fb.process(0.0f);
+    float s3 = fb.process(0.0f);
+
+    REQUIRE(s0 > 0.5f);
+    REQUIRE(s1 > 0.5f);
+    REQUIRE_THAT(s2, WithinAbs(0.0f, 1e-5f));
+    REQUIRE_THAT(s3, WithinAbs(0.0f, 1e-5f));
+}
+
+TEST_CASE("FeedbackBuffer: overdub reverse writes at reverse position", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setFeedback(0.0f); // replace mode
+    fb.setMix(1.0f);
+
+    // Record 4 samples of silence
+    fb.record();
+    for (int i = 0; i < 4; ++i) fb.process(0.0f);
+    fb.stop();
+
+    // Overdub in reverse — starts at end, writes backward
+    fb.setSpeed(-1.0f);
+    fb.overdub();
+    fb.process(0.7f); // writes at pos 3
+    fb.process(0.7f); // writes at pos 2
+    fb.stop();
+
+    // Play forward — positions 2,3 written, 0,1 untouched
+    fb.setSpeed(1.0f);
+    fb.play();
+    float s0 = fb.process(0.0f);
+    float s1 = fb.process(0.0f);
+    float s2 = fb.process(0.0f);
+    float s3 = fb.process(0.0f);
+
+    REQUIRE_THAT(s0, WithinAbs(0.0f, 1e-5f));
+    REQUIRE_THAT(s1, WithinAbs(0.0f, 1e-5f));
+    REQUIRE(s2 > 0.5f);
+    REQUIRE(s3 > 0.5f);
+}
+
+TEST_CASE("FeedbackBuffer: overdub at speed=0 does not write (freeze)", "[feedbackbuffer]")
+{
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setFeedback(1.0f);
+    fb.setMix(1.0f);
+
+    // Record a known value
+    fb.record();
+    fb.process(0.5f);
+    fb.process(0.5f);
+    fb.stop();
+
+    // Overdub at speed=0 with loud input — buffer should NOT accumulate
+    fb.setSpeed(0.0f);
+    fb.overdub();
+    for (int i = 0; i < 100; ++i)
+        fb.process(1.0f);
+    fb.stop();
+
+    // Play back — content should still be the original 0.5
+    fb.setSpeed(1.0f);
+    fb.play();
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+}
+
 TEST_CASE("FeedbackBuffer: feedback clamped to [0, 1]", "[feedbackbuffer]")
 {
     ideath::FeedbackBuffer fb;

@@ -17,7 +17,7 @@ void FeedbackBuffer::reset()
 {
     std::fill(buffer_.begin(), buffer_.end(), 0.0f);
     writePos_ = 0;
-    readPos_ = 0;
+    readPos_ = 0.0;
     loopLength_ = 0;
     mode_ = Mode::Stopped;
 }
@@ -32,6 +32,11 @@ void FeedbackBuffer::setMix(float mix)
     mix_ = std::clamp(mix, 0.0f, 1.0f);
 }
 
+void FeedbackBuffer::setSpeed(float speed)
+{
+    speed_ = std::clamp(speed, -4.0f, 4.0f);
+}
+
 void FeedbackBuffer::setCrossfade(float seconds)
 {
     crossfadeSamples_ = std::max(0, static_cast<int>(seconds * sampleRate_));
@@ -40,7 +45,7 @@ void FeedbackBuffer::setCrossfade(float seconds)
 void FeedbackBuffer::record()
 {
     writePos_ = 0;
-    readPos_ = 0;
+    readPos_ = 0.0;
     loopLength_ = 0;
     mode_ = Mode::Recording;
 }
@@ -50,14 +55,18 @@ void FeedbackBuffer::stop()
     if (mode_ == Mode::Recording)
         loopLength_ = writePos_;
     mode_ = Mode::Stopped;
-    readPos_ = 0;
+    readPos_ = 0.0;
 }
 
 void FeedbackBuffer::play()
 {
     if (loopLength_ > 0)
     {
-        readPos_ = 0;
+        // For negative speed, start at end of loop
+        if (speed_ < 0.0f)
+            readPos_ = static_cast<double>(loopLength_ - 1);
+        else
+            readPos_ = 0.0;
         mode_ = Mode::Playing;
     }
 }
@@ -66,8 +75,10 @@ void FeedbackBuffer::overdub()
 {
     if (loopLength_ > 0)
     {
-        readPos_ = 0;
-        writePos_ = 0;
+        if (speed_ < 0.0f)
+            readPos_ = static_cast<double>(loopLength_ - 1);
+        else
+            readPos_ = 0.0;
         mode_ = Mode::Overdub;
     }
 }
@@ -105,6 +116,26 @@ float FeedbackBuffer::readSample(int pos) const
     return main;
 }
 
+float FeedbackBuffer::readInterpolated(double pos) const
+{
+    double len = static_cast<double>(loopLength_);
+
+    // Wrap into [0, loopLength)
+    pos = std::fmod(pos, len);
+    if (pos < 0.0)
+        pos += len;
+
+    int i0 = static_cast<int>(pos);
+    int i1 = i0 + 1;
+    if (i1 >= loopLength_)
+        i1 = 0;
+
+    float frac = static_cast<float>(pos - std::floor(pos));
+    float s0 = readSample(i0);
+    float s1 = readSample(i1);
+    return s0 + frac * (s1 - s0);
+}
+
 float FeedbackBuffer::process(float input)
 {
     float output = 0.0f;
@@ -121,28 +152,41 @@ float FeedbackBuffer::process(float input)
         {
             loopLength_ = bufferSize_;
             mode_ = Mode::Playing;
-            readPos_ = 0;
+            readPos_ = 0.0;
         }
         return input;
 
     case Mode::Playing:
-        output = readSample(readPos_);
-        ++readPos_;
-        if (readPos_ >= loopLength_)
-            readPos_ = 0;
+        output = readInterpolated(readPos_);
+        readPos_ += static_cast<double>(speed_);
+        // Wrap
+        {
+            double len = static_cast<double>(loopLength_);
+            readPos_ = std::fmod(readPos_, len);
+            if (readPos_ < 0.0)
+                readPos_ += len;
+        }
         return input * (1.0f - mix_) + output * mix_;
 
     case Mode::Overdub:
     {
-        float existing = readSample(readPos_);
+        float existing = readInterpolated(readPos_);
         output = existing;
-        buffer_[static_cast<size_t>(writePos_)] = input + existing * feedback_;
-        ++readPos_;
-        ++writePos_;
-        if (readPos_ >= loopLength_)
-            readPos_ = 0;
-        if (writePos_ >= loopLength_)
-            writePos_ = 0;
+        double len = static_cast<double>(loopLength_);
+        // Tape-style: write at read position. Skip write when frozen (speed=0)
+        if (speed_ != 0.0f)
+        {
+            double wrappedPos = std::fmod(readPos_, len);
+            if (wrappedPos < 0.0)
+                wrappedPos += len;
+            int wp = static_cast<int>(wrappedPos);
+            buffer_[static_cast<size_t>(wp)] = input + existing * feedback_;
+        }
+        readPos_ += static_cast<double>(speed_);
+        // Wrap
+        readPos_ = std::fmod(readPos_, len);
+        if (readPos_ < 0.0)
+            readPos_ += len;
         return input * (1.0f - mix_) + output * mix_;
     }
     }

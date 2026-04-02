@@ -24,6 +24,11 @@ public:
     /// Set dry/wet mix (0 = fully dry, 1 = fully wet). Clamped to [0, 1].
     void setMix(float mix);
 
+    /// Set playback speed. 1.0 = normal, 0.5 = half speed, -1.0 = reverse.
+    /// Clamped to [-4, 4]. Uses linear interpolation for fractional positions.
+    void setSpeed(float speed);
+    float getSpeed() const { return speed_; }
+
     /// Start recording (resets loop length).
     void record();
 
@@ -47,17 +52,19 @@ public:
 
 private:
     float readSample(int pos) const;
+    float readInterpolated(double pos) const;
 
     float sampleRate_ = 44100.0f;
     std::vector<float> buffer_;
     int bufferSize_ = 0;
     int writePos_ = 0;
-    int readPos_ = 0;
+    double readPos_ = 0.0;
     int loopLength_ = 0;
     int crossfadeSamples_ = 0;
     Mode mode_ = Mode::Stopped;
     float feedback_ = 0.8f;
     float mix_ = 1.0f;
+    float speed_ = 1.0f;
 };
 
 } // namespace ideath
