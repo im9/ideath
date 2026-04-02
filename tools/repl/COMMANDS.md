@@ -177,6 +177,18 @@ Renders the master output waveform using Unicode Braille characters (2x4 dots pe
 `scope on` continuously updates in-place using ANSI cursor movement — useful for
 monitoring sequencer output or tweaking parameters in real time.
 
+### Spectrum
+
+| Command | Description |
+|---------|-------------|
+| `spectrum` | Show FFT spectrum snapshot (one-shot, Braille rendering, log freq scale) |
+| `spectrum on` | Auto-refresh spectrum every 500ms |
+| `spectrum off` | Stop auto-refresh spectrum |
+
+Renders the master output frequency spectrum using Unicode Braille characters.
+Log frequency scale (20 Hz – Nyquist), dB magnitude (auto-scaled, 90 dB range).
+Reference lines at 100 Hz, 1 kHz, 10 kHz. Can run simultaneously with `scope on`.
+
 ### System
 
 | Command | Description |

@@ -5,6 +5,7 @@
 #include "CommandParser.h"
 #include "SharedState.h"
 #include "TcpServer.h"
+#include "SpectrumRenderer.h"
 
 #include <iostream>
 #include <sstream>
@@ -16,9 +17,11 @@
 static ideath::repl::TrackManager g_tracks;
 static int g_activeTrack = 0; // command-thread only, protected by cmdMutex
 
-// --- Scope auto-refresh ---
+// --- Scope / Spectrum auto-refresh ---
 static std::atomic<bool> g_scopeAutoRunning{false};
 static std::thread g_scopeThread;
+static std::atomic<bool> g_spectrumAutoRunning{false};
+static std::thread g_spectrumThread;
 
 static void scopeAutoLoop()
 {
@@ -70,6 +73,58 @@ static void scopeAutoStop()
     if (g_scopeThread.joinable())
         g_scopeThread.join();
     g_tracks.getScope().setEnabled(false);
+}
+
+// --- Spectrum auto-refresh ---
+static void spectrumAutoLoop()
+{
+    auto& scope = g_tracks.getScope();
+    scope.setEnabled(true);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    constexpr size_t kSamples = ideath::repl::SpectrumRenderer::kFFTSize;
+    constexpr int kWidth = 72;
+    constexpr int kHeight = 14;
+    constexpr int kTotalLines = ideath::repl::SpectrumRenderer::totalLines(kHeight);
+
+    bool firstDraw = true;
+
+    while (g_spectrumAutoRunning.load(std::memory_order_relaxed))
+    {
+        float buf[kSamples];
+        size_t n = scope.snapshot(buf, kSamples);
+
+        std::string rendered = ideath::repl::SpectrumRenderer::render(
+            buf, n, 44100.0f, kWidth, kHeight);
+
+        if (!firstDraw)
+            std::cout << "\033[" << kTotalLines << "A";
+        std::cout << rendered << std::flush;
+        firstDraw = false;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+}
+
+static void spectrumAutoStart()
+{
+    if (g_spectrumAutoRunning.load(std::memory_order_relaxed))
+        return;
+    g_spectrumAutoRunning.store(true, std::memory_order_relaxed);
+    g_spectrumThread = std::thread(spectrumAutoLoop);
+}
+
+static void spectrumAutoStop()
+{
+    if (!g_spectrumAutoRunning.load(std::memory_order_relaxed))
+        return;
+    g_spectrumAutoRunning.store(false, std::memory_order_relaxed);
+    if (g_spectrumThread.joinable())
+        g_spectrumThread.join();
+    // Only disable scope if scope auto isn't also running
+    if (!g_scopeAutoRunning.load(std::memory_order_relaxed))
+        g_tracks.getScope().setEnabled(false);
 }
 
 static void audioCallback(ma_device* /*device*/, void* output, const void* /*input*/, ma_uint32 frameCount)
@@ -268,6 +323,50 @@ static bool handleScopeCommand(const std::string& line)
     return true;
 }
 
+/// Handle spectrum command. Returns true if handled.
+static bool handleSpectrumCommand(const std::string& line)
+{
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+    if (cmd != "spectrum") return false;
+
+    std::string arg;
+    if (iss >> arg)
+    {
+        if (arg == "off")
+        {
+            spectrumAutoStop();
+            std::cout << "Spectrum OFF" << std::endl;
+            return true;
+        }
+        if (arg == "on")
+        {
+            std::cout << "Spectrum ON (auto-refresh, 'spectrum off' to stop)" << std::endl;
+            spectrumAutoStart();
+            return true;
+        }
+    }
+
+    // No argument — one-shot snapshot
+    auto& scope = g_tracks.getScope();
+    scope.setEnabled(true);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    constexpr size_t kSamples = ideath::repl::SpectrumRenderer::kFFTSize;
+    float buf[kSamples];
+    size_t n = scope.snapshot(buf, kSamples);
+
+    std::cout << ideath::repl::SpectrumRenderer::render(buf, n, 44100.0f, 72, 14);
+
+    if (!g_scopeAutoRunning.load(std::memory_order_relaxed)
+        && !g_spectrumAutoRunning.load(std::memory_order_relaxed))
+        scope.setEnabled(false);
+
+    return true;
+}
+
 static void processLine(const std::string& line)
 {
     if (handleTrackCommand(line))
@@ -275,6 +374,8 @@ static void processLine(const std::string& line)
     if (handleLimiterCommand(line))
         return;
     if (handleScopeCommand(line))
+        return;
+    if (handleSpectrumCommand(line))
         return;
     ideath::repl::parseCommand(line, g_tracks.getShared(g_activeTrack));
 }
@@ -335,6 +436,7 @@ int main()
         if (line == "quit" || line == "exit")
         {
             scopeAutoStop();
+            spectrumAutoStop();
             break;
         }
         processLine(line);
