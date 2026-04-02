@@ -5,6 +5,7 @@
 #include "CommandParser.h"
 #include "SharedState.h"
 #include "TcpServer.h"
+#include "WsServer.h"
 #include "SpectrumRenderer.h"
 
 #include <iostream>
@@ -15,6 +16,7 @@
 #include <chrono>
 
 static ideath::repl::TrackManager g_tracks;
+static ideath::repl::WsServer g_wsServer(7778);
 static int g_activeTrack = 0; // command-thread only, protected by cmdMutex
 
 // --- Scope / Spectrum auto-refresh ---
@@ -133,7 +135,11 @@ static void audioCallback(ma_device* /*device*/, void* output, const void* /*inp
 
     auto* out = static_cast<float*>(output);
     for (ma_uint32 i = 0; i < frameCount; ++i)
-        out[i] = g_tracks.process();
+    {
+        float s = g_tracks.process();
+        out[i] = s;
+        g_wsServer.pushSample(s);
+    }
 }
 
 static float parseFloat(const std::string& s, float fallback)
@@ -391,6 +397,10 @@ int main()
 
     g_tracks.prepare(kSampleRate);
 
+    // --- WebSocket server for viewer ---
+    g_wsServer.setSampleRate(kSampleRate);
+    g_wsServer.start();
+
     // --- miniaudio setup ---
     ma_device_config config = ma_device_config_init(ma_device_type_playback);
     config.playback.format   = ma_format_f32;
@@ -426,6 +436,7 @@ int main()
     // --- REPL ---
     std::cout << "iDEATH REPL — type 'help' for commands, 'quit' to exit." << std::endl;
     std::cout << "       TCP listening on 127.0.0.1:7777" << std::endl;
+    std::cout << "       WS  listening on 127.0.0.1:7778 (viewer)" << std::endl;
     std::cout << "       8 tracks available (track 1-8)" << std::endl;
     std::cout << prompt() << std::flush;
 
@@ -444,6 +455,7 @@ int main()
     }
 
     tcpServer.stop();
+    g_wsServer.stop();
 
     // --- Cleanup ---
     ma_device_uninit(&device);

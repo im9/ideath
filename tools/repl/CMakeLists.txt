@@ -4,6 +4,7 @@ add_executable(ideath_repl
     CommandParser.cpp
     NoteUtils.cpp
     TcpServer.cpp
+    WsServer.cpp
     Presets.cpp
     TrackManager.cpp
 )

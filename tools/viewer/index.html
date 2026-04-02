@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iDEATH Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1a;
+    color: #999;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: #222;
+    border-bottom: 1px solid #333;
+    gap: 10px;
+  }
+  .header .title { color: #e8a838; font-weight: 600; letter-spacing: 1px; }
+  .header .status { color: #666; }
+  .header .status.connected { color: #6a6; }
+  .header .spacer { flex: 1; }
+
+  .panels {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: #333;
+  }
+
+  .panel {
+    flex: 1;
+    position: relative;
+    background: #1a1a1a;
+  }
+  .panel canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .panel-label {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    color: #555;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+  .panel-info {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    color: #555;
+    font-size: 10px;
+    pointer-events: none;
+  }
+
+  /* Guide overlay */
+  .guide-toggle {
+    cursor: pointer;
+    color: #777;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #555;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .guide-toggle:hover { color: #e8a838; border-color: #e8a838; }
+  .guide-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(20, 20, 20, 0.95);
+    z-index: 100;
+    display: none;
+    overflow-y: auto;
+    padding: 24px 32px;
+    color: #bbb;
+    font-size: 12px;
+    line-height: 1.6;
+    user-select: text;
+  }
+  .guide-overlay.visible { display: block; }
+  .guide-overlay h2 {
+    color: #e8a838;
+    font-size: 13px;
+    margin: 18px 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .guide-overlay h2:first-child { margin-top: 0; }
+  .guide-overlay table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 6px 0 12px 0;
+    table-layout: fixed;
+  }
+  .guide-overlay th, .guide-overlay td {
+    text-align: left;
+    padding: 4px 12px 4px 0;
+    border-bottom: 1px solid #262626;
+    vertical-align: top;
+  }
+  .guide-overlay th {
+    color: #888;
+    font-weight: normal;
+    border-bottom-color: #333;
+  }
+  .guide-overlay col.col-pattern { width: 30%; }
+  .guide-overlay col.col-meaning { width: 35%; }
+  .guide-overlay col.col-action  { width: 35%; }
+  .guide-overlay .ok { color: #6a6; }
+  .guide-overlay .warn { color: #e8a838; }
+  .guide-overlay .bad { color: #c55; }
+  .guide-overlay .close-hint {
+    color: #555;
+    font-size: 10px;
+    margin-top: 16px;
+  }
+  .guide-close {
+    color: #888;
+    cursor: pointer;
+    border-bottom: 1px solid #555;
+  }
+  .guide-close:hover { color: #e8a838; border-color: #e8a838; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="title">iDEATH</span>
+  <span class="status" id="status">disconnected</span>
+  <span class="spacer"></span>
+  <span class="guide-toggle" id="guideBtn">?</span>
+</div>
+
+<div class="guide-overlay" id="guide">
+  <h2>Waveform — what to look for</h2>
+  <table>
+    <colgroup><col class="col-pattern"><col class="col-meaning"><col class="col-action"></colgroup>
+    <tr><th>Pattern</th><th>Meaning</th><th>Action</th></tr>
+    <tr>
+      <td class="ok">Smooth wave</td>
+      <td>Normal signal</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="warn">Flat top/bottom (clipping)</td>
+      <td>Signal exceeds ±1</td>
+      <td>Lower vol or limiter threshold</td>
+    </tr>
+    <tr>
+      <td class="bad">Sharp vertical spikes</td>
+      <td>Click / pop (discontinuity)</td>
+      <td>Check envelope or buffer boundaries</td>
+    </tr>
+    <tr>
+      <td class="warn">Flat line at zero</td>
+      <td>Silence — no source playing</td>
+      <td>Check note/seq is running</td>
+    </tr>
+    <tr>
+      <td class="bad">Tiny noise, peak &lt; 1e-8</td>
+      <td>Possible denormals</td>
+      <td>Check flush-to-zero in DSP code</td>
+    </tr>
+  </table>
+
+  <h2>Spectrum — what to look for</h2>
+  <table>
+    <colgroup><col class="col-pattern"><col class="col-meaning"><col class="col-action"></colgroup>
+    <tr><th>Pattern</th><th>Meaning</th><th>Action</th></tr>
+    <tr>
+      <td class="ok">Fundamental + evenly spaced peaks</td>
+      <td>Normal harmonic series</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="ok">Steep rolloff after a frequency</td>
+      <td>Filter is working</td>
+      <td>Check cutoff matches expectation</td>
+    </tr>
+    <tr>
+      <td class="warn">Flat energy across all bands</td>
+      <td>Noise or excessive distortion</td>
+      <td>Reduce drive / saturation</td>
+    </tr>
+    <tr>
+      <td class="bad">Bump near 0 Hz (left edge)</td>
+      <td>DC offset</td>
+      <td>Filter bug or feedback accumulation</td>
+    </tr>
+    <tr>
+      <td class="bad">Energy at right edge (Nyquist)</td>
+      <td>Aliasing</td>
+      <td>Check anti-aliasing in oscillator</td>
+    </tr>
+    <tr>
+      <td class="ok">Non-integer harmonic spacing</td>
+      <td>FM / ring mod / inharmonic</td>
+      <td>Normal for FM synth</td>
+    </tr>
+  </table>
+
+  <h2>Quick reference</h2>
+  <table>
+    <colgroup><col class="col-pattern"><col class="col-meaning"><col class="col-action"></colgroup>
+    <tr><th>Preset</th><th>Waveform</th><th>Spectrum</th></tr>
+    <tr><td>acid</td><td>Saw-like, moving shape</td><td>Rich harmonics, filter sweep visible</td></tr>
+    <tr><td>kick</td><td>Short burst, fast decay</td><td>Low-freq energy, little above 200 Hz</td></tr>
+    <tr><td>pad</td><td>Smooth, slow envelope</td><td>Fundamental dominant, few harmonics</td></tr>
+    <tr><td>hihat</td><td>Noise burst</td><td>Flat / high-freq energy</td></tr>
+  </table>
+
+  <p class="close-hint"><span class="guide-close" id="guideClose">Close</span> or press Esc</p>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-label">Waveform</div>
+    <div class="panel-info" id="waveInfo"></div>
+    <canvas id="waveCanvas"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-label">Spectrum</div>
+    <div class="panel-info" id="specInfo"></div>
+    <canvas id="specCanvas"></canvas>
+  </div>
+</div>
+
+<script>
+// --- Guide overlay ---
+const guideEl = document.getElementById('guide');
+document.getElementById('guideBtn').addEventListener('click', () => {
+  guideEl.classList.toggle('visible');
+});
+document.getElementById('guideClose').addEventListener('click', () => {
+  guideEl.classList.remove('visible');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') guideEl.classList.remove('visible');
+});
+
+// --- Config ---
+const WS_URL = 'ws://127.0.0.1:7778';
+const WAVE_COLOR = '#e8a838';
+const WAVE_BG = '#1a1a1a';
+const GRID_COLOR = '#2a2a2a';
+const GRID_TEXT = '#444';
+const SPEC_GRADIENT_TOP = '#e8a838';
+const SPEC_GRADIENT_BOT = '#b85a00';
+const WARN_COLOR = 'rgba(232, 168, 56, 0.15)';
+const BAD_COLOR = 'rgba(204, 68, 68, 0.25)';
+const BAD_LINE = '#c54';
+
+// --- State ---
+let sampleRate = 44100;
+let waveBuffer = new Float32Array(2048);
+let waveWritePos = 0;
+let specBuffer = new Float32Array(2048);
+let connected = false;
+
+// Anomaly hold state (persist for N seconds after last detection)
+const HOLD_MS = 3000;
+const anomalyHold = {
+  clip: 0, click: 0, denorm: 0, dc: 0,
+  alias: 0, specDc: 0,
+  clickPositions: [],
+};
+function setAnomaly(key) {
+  anomalyHold[key] = performance.now() + HOLD_MS;
+}
+function isActive(key) {
+  return performance.now() < anomalyHold[key];
+}
+
+// --- WebSocket ---
+const statusEl = document.getElementById('status');
+const waveInfoEl = document.getElementById('waveInfo');
+const specInfoEl = document.getElementById('specInfo');
+
+function connect() {
+  const ws = new WebSocket(WS_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    connected = true;
+    statusEl.textContent = 'connected';
+    statusEl.className = 'status connected';
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    statusEl.textContent = 'disconnected';
+    statusEl.className = 'status';
+    setTimeout(connect, 1000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (event) => {
+    const data = new Float32Array(event.data);
+    if (data.length < 2) return;
+
+    // First float is sampleRate
+    sampleRate = data[0];
+    const samples = data.subarray(1);
+
+    // Append to ring buffer
+    for (let i = 0; i < samples.length; i++) {
+      waveBuffer[waveWritePos % waveBuffer.length] = samples[i];
+      waveWritePos++;
+    }
+  };
+}
+connect();
+
+// --- Canvas setup ---
+const waveCanvas = document.getElementById('waveCanvas');
+const specCanvas = document.getElementById('specCanvas');
+const waveCtx = waveCanvas.getContext('2d');
+const specCtx = specCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const dpr = window.devicePixelRatio || 1;
+  [waveCanvas, specCanvas].forEach(c => {
+    const ctx = c.getContext('2d');
+    const rect = c.parentElement.getBoundingClientRect();
+    c.width = rect.width * dpr;
+    c.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c._w = rect.width;
+    c._h = rect.height;
+  });
+}
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+
+// --- FFT (radix-2 Cooley-Tukey) ---
+function fft(re, im) {
+  const N = re.length;
+  // Bit-reversal
+  for (let i = 1, j = 0; i < N - 1; i++) {
+    let bit = N >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+  // Butterfly
+  for (let len = 2; len <= N; len <<= 1) {
+    const angle = -2 * Math.PI / len;
+    const wRe = Math.cos(angle), wIm = Math.sin(angle);
+    for (let i = 0; i < N; i += len) {
+      let curRe = 1, curIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const u = i + k, v = i + k + len / 2;
+        const tRe = curRe * re[v] - curIm * im[v];
+        const tIm = curRe * im[v] + curIm * re[v];
+        re[v] = re[u] - tRe;
+        im[v] = im[u] - tIm;
+        re[u] += tRe;
+        im[u] += tIm;
+        const newRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = newRe;
+      }
+    }
+  }
+}
+
+// --- Drawing ---
+function getSnapshot() {
+  // Get most recent samples from ring buffer
+  const N = waveBuffer.length;
+  const out = new Float32Array(N);
+  const start = waveWritePos - N;
+  for (let i = 0; i < N; i++) {
+    out[i] = waveBuffer[(start + i + N * 1000) % N]; // safe modulo
+  }
+  return out;
+}
+
+function drawWaveform(ctx, w, h) {
+  ctx.fillStyle = WAVE_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  const pad = { left: 32, right: 8, top: 20, bottom: 8 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  // Grid
+  ctx.strokeStyle = GRID_COLOR;
+  ctx.lineWidth = 1;
+  const midY = pad.top + plotH / 2;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, midY);
+  ctx.lineTo(pad.left + plotW, midY);
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = GRID_TEXT;
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('+1', pad.left - 4, pad.top + 9);
+  ctx.fillText(' 0', pad.left - 4, midY + 3);
+  ctx.fillText('-1', pad.left - 4, pad.top + plotH);
+
+  const samples = getSnapshot();
+
+  // --- Anomaly detection ---
+  let peak = 0;
+  let clipping = false;
+  let maxDelta = 0;
+  let dcSum = 0;
+  const clickPositions = [];
+
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]);
+    if (a > peak) peak = a;
+    if (a >= 1.0) clipping = true;
+    dcSum += samples[i];
+    if (i > 0) {
+      const delta = Math.abs(samples[i] - samples[i - 1]);
+      if (delta > maxDelta) maxDelta = delta;
+      if (delta > 0.8) clickPositions.push(i);
+    }
+  }
+  const dcOffset = Math.abs(dcSum / samples.length);
+  const silent = peak < 1e-6;
+  const denormal = !silent && peak < 1e-8;
+
+  // Update hold state
+  if (clipping) setAnomaly('clip');
+  if (clickPositions.length > 0) {
+    setAnomaly('click');
+    anomalyHold.clickPositions = clickPositions;
+  }
+  if (denormal) setAnomaly('denorm');
+  if (dcOffset > 0.01) setAnomaly('dc');
+
+  // --- Highlight clipping zones ---
+  if (isActive('clip')) {
+    ctx.fillStyle = BAD_COLOR;
+    const clipH = 6;
+    ctx.fillRect(pad.left, pad.top, plotW, clipH);
+    ctx.fillRect(pad.left, pad.top + plotH - clipH, plotW, clipH);
+  }
+
+  // --- Highlight click spikes ---
+  if (isActive('click')) {
+    ctx.strokeStyle = BAD_LINE;
+    ctx.lineWidth = 1;
+    for (const pos of anomalyHold.clickPositions) {
+      const x = pad.left + (pos / (samples.length - 1)) * plotW;
+      ctx.beginPath();
+      ctx.moveTo(x, pad.top);
+      ctx.lineTo(x, pad.top + plotH);
+      ctx.stroke();
+    }
+  }
+
+  // --- Waveform ---
+  ctx.strokeStyle = WAVE_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < samples.length; i++) {
+    const x = pad.left + (i / (samples.length - 1)) * plotW;
+    const y = pad.top + (1 - samples[i]) * 0.5 * plotH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // --- Status badges (held) ---
+  const badges = [];
+  if (isActive('clip'))   badges.push({ text: 'CLIP', color: '#c44' });
+  if (isActive('click'))  badges.push({ text: 'CLICK', color: '#c44' });
+  if (isActive('denorm')) badges.push({ text: 'DENORM', color: '#c44' });
+  if (isActive('dc'))     badges.push({ text: 'DC ' + dcOffset.toFixed(3), color: '#e8a838' });
+
+  let info = 'peak: ' + peak.toFixed(3);
+  if (maxDelta > 0.01) info += '  Δ: ' + maxDelta.toFixed(3);
+  waveInfoEl.textContent = info;
+
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'left';
+  let badgeX = pad.left + 2;
+  const badgeY = pad.top + plotH - 4;
+  for (const b of badges) {
+    const tw = ctx.measureText(b.text).width;
+    ctx.fillStyle = b.color + '33';
+    ctx.fillRect(badgeX - 2, badgeY - 9, tw + 6, 12);
+    ctx.fillStyle = b.color;
+    ctx.fillText(b.text, badgeX + 1, badgeY);
+    badgeX += tw + 10;
+  }
+}
+
+function drawSpectrum(ctx, w, h) {
+  ctx.fillStyle = WAVE_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  const pad = { left: 32, right: 8, top: 20, bottom: 20 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  const samples = getSnapshot();
+  const N = samples.length;
+
+  // Windowed FFT
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const win = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1))); // Hann
+    re[i] = samples[i] * win;
+  }
+  fft(re, im);
+
+  // Magnitude in dB
+  const numBins = N / 2;
+  const magDb = new Float32Array(numBins);
+  let peakDb = -200;
+  for (let i = 0; i < numBins; i++) {
+    const mag = Math.sqrt(re[i] * re[i] + im[i] * im[i]) / N;
+    magDb[i] = mag > 1e-10 ? 20 * Math.log10(mag) : -120;
+    if (magDb[i] > peakDb) peakDb = magDb[i];
+  }
+
+  const dbFloor = Math.max(peakDb - 90, -120);
+  const dbRange = Math.max(peakDb - dbFloor, 1);
+
+  // Log frequency mapping
+  const freqMin = 20;
+  const freqMax = sampleRate / 2;
+  const logMin = Math.log10(freqMin);
+  const logMax = Math.log10(freqMax);
+  const binWidth = sampleRate / N;
+
+  // Grid lines
+  ctx.strokeStyle = GRID_COLOR;
+  ctx.lineWidth = 1;
+  ctx.fillStyle = GRID_TEXT;
+  ctx.font = '9px monospace';
+
+  // Frequency grid
+  const freqMarkers = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+  ctx.textAlign = 'center';
+  for (const f of freqMarkers) {
+    if (f >= freqMax) continue;
+    const t = (Math.log10(f) - logMin) / (logMax - logMin);
+    const x = pad.left + t * plotW;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.top);
+    ctx.lineTo(x, pad.top + plotH);
+    ctx.stroke();
+    // Label
+    const label = f >= 1000 ? (f / 1000) + 'k' : f.toString();
+    ctx.fillText(label, x, h - 4);
+  }
+
+  // dB grid
+  ctx.textAlign = 'right';
+  const dbStep = dbRange > 60 ? 20 : dbRange > 30 ? 10 : 5;
+  for (let db = Math.ceil(dbFloor / dbStep) * dbStep; db <= peakDb; db += dbStep) {
+    const t = (db - dbFloor) / dbRange;
+    const y = pad.top + (1 - t) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + plotW, y);
+    ctx.stroke();
+    ctx.fillText(db.toFixed(0), pad.left - 4, y + 3);
+  }
+
+  // Spectrum bars (filled)
+  const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+  gradient.addColorStop(0, SPEC_GRADIENT_TOP);
+  gradient.addColorStop(1, SPEC_GRADIENT_BOT);
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top + plotH);
+
+  for (let px = 0; px < plotW; px++) {
+    const logF0 = logMin + (logMax - logMin) * px / plotW;
+    const logF1 = logMin + (logMax - logMin) * (px + 1) / plotW;
+    const f0 = Math.pow(10, logF0);
+    const f1 = Math.pow(10, logF1);
+
+    let bin0 = Math.max(1, Math.floor(f0 / binWidth));
+    let bin1 = Math.max(bin0 + 1, Math.ceil(f1 / binWidth));
+    bin1 = Math.min(bin1, numBins);
+
+    let maxDb = dbFloor;
+    for (let b = bin0; b < bin1; b++) {
+      if (magDb[b] > maxDb) maxDb = magDb[b];
+    }
+
+    const norm = Math.max(0, Math.min(1, (maxDb - dbFloor) / dbRange));
+    const y = pad.top + (1 - norm) * plotH;
+    const x = pad.left + px;
+    ctx.lineTo(x, y);
+  }
+
+  ctx.lineTo(pad.left + plotW, pad.top + plotH);
+  ctx.closePath();
+  ctx.fill();
+
+  // Spectrum line on top
+  ctx.strokeStyle = WAVE_COLOR;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let first = true;
+
+  for (let px = 0; px < plotW; px++) {
+    const logF0 = logMin + (logMax - logMin) * px / plotW;
+    const logF1 = logMin + (logMax - logMin) * (px + 1) / plotW;
+    const f0 = Math.pow(10, logF0);
+    const f1 = Math.pow(10, logF1);
+
+    let bin0 = Math.max(1, Math.floor(f0 / binWidth));
+    let bin1 = Math.max(bin0 + 1, Math.ceil(f1 / binWidth));
+    bin1 = Math.min(bin1, numBins);
+
+    let maxDb = dbFloor;
+    for (let b = bin0; b < bin1; b++) {
+      if (magDb[b] > maxDb) maxDb = magDb[b];
+    }
+
+    const norm = Math.max(0, Math.min(1, (maxDb - dbFloor) / dbRange));
+    const y = pad.top + (1 - norm) * plotH;
+    const x = pad.left + px;
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // --- Anomaly detection ---
+  // DC offset: abnormal energy in bin 0-2
+  const dcDb = Math.max(magDb[0], magDb[1], magDb[2] || -120);
+  const hasDC = dcDb > peakDb - 20 && dcDb > -40;
+
+  // Aliasing: energy near Nyquist (top 5% of bins)
+  const nyquistStart = Math.floor(numBins * 0.95);
+  let nyquistPeak = -200;
+  for (let i = nyquistStart; i < numBins; i++) {
+    if (magDb[i] > nyquistPeak) nyquistPeak = magDb[i];
+  }
+  const hasAliasing = nyquistPeak > peakDb - 30 && nyquistPeak > -60;
+
+  // Update hold state
+  if (hasDC) setAnomaly('specDc');
+  if (hasAliasing) setAnomaly('alias');
+
+  // Highlight DC zone
+  if (isActive('specDc')) {
+    const dcX = pad.left;
+    const dcW = Math.max(8, plotW * 0.03);
+    ctx.fillStyle = BAD_COLOR;
+    ctx.fillRect(dcX, pad.top, dcW, plotH);
+  }
+
+  // Highlight aliasing zone
+  if (isActive('alias')) {
+    const aliasW = Math.max(8, plotW * 0.05);
+    ctx.fillStyle = BAD_COLOR;
+    ctx.fillRect(pad.left + plotW - aliasW, pad.top, aliasW, plotH);
+  }
+
+  // Badges
+  const specBadges = [];
+  if (isActive('specDc')) specBadges.push({ text: 'DC', color: '#c44' });
+  if (isActive('alias')) specBadges.push({ text: 'ALIAS', color: '#c44' });
+
+  let specInfo = 'peak: ' + peakDb.toFixed(1) + ' dB';
+  specInfoEl.textContent = specInfo;
+
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'left';
+  let sbX = pad.left + 2;
+  const sbY = pad.top + 14;
+  for (const b of specBadges) {
+    const tw = ctx.measureText(b.text).width;
+    ctx.fillStyle = b.color + '33';
+    ctx.fillRect(sbX - 2, sbY - 9, tw + 6, 12);
+    ctx.fillStyle = b.color;
+    ctx.fillText(b.text, sbX + 1, sbY);
+    sbX += tw + 10;
+  }
+}
+
+// --- Animation loop ---
+function draw() {
+  drawWaveform(waveCtx, waveCanvas._w, waveCanvas._h);
+  drawSpectrum(specCtx, specCanvas._w, specCanvas._h);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
