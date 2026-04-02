@@ -149,6 +149,12 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] FeedbackBuffer — long circular buffer looper (record/overdub/playback, extends DelayLine concept)
 - [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
+### Robustness / Refactoring
+- [ ] ShimmerReverb — freeze crossfade phase alignment (linear blend causes tonal shift)
+- [ ] Polyphony — replace hard clip with soft saturation (tanh) for smoother multi-voice mix
+- [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
+- [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
+
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
 

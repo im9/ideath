@@ -26,7 +26,7 @@ void DelayLine::setDelay(float delaySec)
 
 void DelayLine::setFeedback(float feedback)
 {
-    feedback_ = std::clamp(feedback, -1.0f, 1.0f);
+    feedback_ = std::clamp(feedback, -0.999f, 0.999f);
 }
 
 void DelayLine::setMix(float mix)

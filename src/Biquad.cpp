@@ -1,7 +1,14 @@
 #include <ideath/Biquad.h>
 #include <cmath>
+#include <algorithm>
 
 namespace ideath {
+
+static void sanitizeParams(float& freqHz, float& q, float sampleRate)
+{
+    freqHz = std::clamp(freqHz, 10.0f, sampleRate * 0.45f);
+    q = std::max(q, 0.01f);
+}
 
 void Biquad::reset()
 {
@@ -31,6 +38,7 @@ void Biquad::setCoefficients(float b0, float b1, float b2, float a1, float a2)
 
 void Biquad::setLowpass(float freqHz, float q, float sampleRate)
 {
+    sanitizeParams(freqHz, q, sampleRate);
     const float w0 = 2.0f * static_cast<float>(M_PI) * freqHz / sampleRate;
     const float cosw0 = std::cos(w0);
     const float sinw0 = std::sin(w0);
@@ -46,6 +54,7 @@ void Biquad::setLowpass(float freqHz, float q, float sampleRate)
 
 void Biquad::setHighpass(float freqHz, float q, float sampleRate)
 {
+    sanitizeParams(freqHz, q, sampleRate);
     const float w0 = 2.0f * static_cast<float>(M_PI) * freqHz / sampleRate;
     const float cosw0 = std::cos(w0);
     const float sinw0 = std::sin(w0);
@@ -61,6 +70,7 @@ void Biquad::setHighpass(float freqHz, float q, float sampleRate)
 
 void Biquad::setBandpass(float freqHz, float q, float sampleRate)
 {
+    sanitizeParams(freqHz, q, sampleRate);
     const float w0 = 2.0f * static_cast<float>(M_PI) * freqHz / sampleRate;
     const float cosw0 = std::cos(w0);
     const float sinw0 = std::sin(w0);

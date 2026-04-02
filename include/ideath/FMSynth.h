@@ -71,7 +71,7 @@ private:
             float fb = prevOut * feedback * 3.2f;
             float out = std::sin(phase * 6.283185307f + modIn + fb) * env.process() * level;
             phase += phaseInc;
-            if (phase > 1e6f) phase -= std::floor(phase);
+            phase -= std::floor(phase);
             prevOut = out;
             return out;
         }
