@@ -29,6 +29,7 @@ add_library(ideath STATIC
     src/Wavefolder.cpp
     src/UnisonOscillator.cpp
     src/FeedbackBuffer.cpp
+    src/SVFilter.cpp
 )
 
 target_include_directories(ideath
@@ -74,6 +75,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_Wavefolder.cpp
         tests/test_UnisonOscillator.cpp
         tests/test_FeedbackBuffer.cpp
+        tests/test_SVFilter.cpp
         tests/test_AudioSafety.cpp
         tests/test_SeqClick.cpp
     )

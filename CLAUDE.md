@@ -64,6 +64,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Wavefolder** — sin(input * drive) wavefolder (West Coast timbre shaping, drive/mix)
 - **FeedbackBuffer** — Long circular buffer looper (record/overdub/playback, feedback/mix)
 - **UnisonOscillator** — Stacked detuned oscillators (voice count, detune spread in cents)
+- **SVFilter** — Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe, Cytomic TPT)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -137,7 +138,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] HallReverb — pre-delay + LFO-modulated Freeverb (port from inboil Hall flavor)
 - [x] ShimmerReverb — cross-coupled allpass network + octave pitch shift feedback (port from inboil Shimmer flavor)
 - [x] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
-- [ ] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
+- [x] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
 - [ ] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
 - [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze
 - [ ] StutterBuffer — slice repeat glitch, crossfade boundaries

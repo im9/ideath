@@ -32,6 +32,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping |
 | **FeedbackBuffer** | Long circular buffer looper (record/overdub/playback) |
 | **UnisonOscillator** | Stacked detuned oscillators (unison spread) |
+| **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
 
 ## Design Principles
 
