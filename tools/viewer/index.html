@@ -443,7 +443,7 @@ function drawWaveform(ctx, w, h) {
     if (i > 0) {
       const delta = Math.abs(samples[i] - samples[i - 1]);
       if (delta > maxDelta) maxDelta = delta;
-      if (delta > 0.8) clickPositions.push(i);
+      if (delta > 0.5) clickPositions.push(i);
     }
   }
   const dcOffset = Math.abs(dcSum / samples.length);
@@ -656,9 +656,9 @@ function drawSpectrum(ctx, w, h) {
   ctx.stroke();
 
   // --- Anomaly detection ---
-  // DC offset: abnormal energy in bin 0-2
-  const dcDb = Math.max(magDb[0], magDb[1], magDb[2] || -120);
-  const hasDC = dcDb > peakDb - 20 && dcDb > -40;
+  // DC offset: only bin 0 (true DC), must dominate the spectrum
+  const dcDb = magDb[0];
+  const hasDC = dcDb > peakDb - 6 && dcDb > -20;
 
   // Aliasing: energy near Nyquist (top 5% of bins)
   const nyquistStart = Math.floor(numBins * 0.95);
