@@ -9,7 +9,7 @@ void AudioEngine::prepare(float sampleRate)
     osc_.prepare(sampleRate);
     wt_.prepare(sampleRate);
     env_.prepare(sampleRate);
-    filter_.reset();
+    filter_.prepare(sampleRate);
     crush_.prepare(sampleRate);
     delay_.prepare(sampleRate, 2.0f); // max 2 seconds delay
     lfo_.prepare(sampleRate);
@@ -94,7 +94,9 @@ void AudioEngine::applyPendingState(SharedState& shared)
         stopped_ = false;
         baseFreq_ = params_.frequency;
         porta_.setTarget(baseFreq_);
-        gainSmoother_.setTarget(1.0f);
+        // Set gain immediately — envelope handles amplitude shaping.
+        // Ramping gain per-note caused clicks from 0→1 transients.
+        gainSmoother_.setValue(1.0f);
 
         if (params_.envelopeEnabled)
         {
@@ -157,7 +159,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
                 baseFreq_ = freq;
                 porta_.setTarget(freq);
                 seqVelocity_ = seq_.velocities[0] > 0.0f ? seq_.velocities[0] : 1.0f;
-                gainSmoother_.setTarget(seqVelocity_);
+                gainSmoother_.setValue(seqVelocity_);
 
                 if (params_.envelopeEnabled)
                 {
@@ -198,7 +200,9 @@ void AudioEngine::advanceSequencer()
     {
         env_.noteOff();
         fm_.noteOff();
-        gainSmoother_.setTarget(0.0f);
+        // Don't ramp gainSmoother to 0 here — let the ADSR release
+        // handle the fade. Ramping gain to 0 and back on retrigger
+        // causes clicks from the rapid direction change.
         seqGateOpen_ = false;
     }
 
@@ -217,7 +221,7 @@ void AudioEngine::advanceSequencer()
         baseFreq_ = freq;
         porta_.setTarget(freq);
         seqVelocity_ = seq_.velocities[seqStep_] > 0.0f ? seq_.velocities[seqStep_] : 1.0f;
-        gainSmoother_.setTarget(seqVelocity_);
+        gainSmoother_.setValue(seqVelocity_);
 
         if (params_.envelopeEnabled)
         {
@@ -238,8 +242,10 @@ void AudioEngine::advanceSequencer()
     }
     else
     {
-        // Rest: fade out
-        gainSmoother_.setTarget(0.0f);
+        // Rest: let envelope release naturally
+        env_.noteOff();
+        fm_.noteOff();
+        seqGateOpen_ = false;
     }
 }
 
@@ -263,7 +269,12 @@ float AudioEngine::process()
     delayCleared_ = false;
 
     // --- Portamento ---
-    porta_.setTime(params_.portaTime);
+    // Minimum 3ms glide for sequencer retriggers to avoid clicks
+    // from abrupt frequency changes through resonant filters.
+    float portaTime = params_.portaTime;
+    if (seq_.running && portaTime < 0.003f)
+        portaTime = 0.003f;
+    porta_.setTime(portaTime);
     porta_.setTarget(params_.frequency);
     float freq = porta_.process();
 
@@ -337,7 +348,7 @@ float AudioEngine::process()
         sample *= envVal;
     }
 
-    // --- Filter ---
+    // --- Filter (SVFilter — modulation-safe) ---
     if (params_.filterType != FilterType::Off)
     {
         float filterFreq = params_.filterFreq;
@@ -346,19 +357,18 @@ float AudioEngine::process()
         if (params_.lfoTarget == LfoTarget::Filter)
             filterFreq *= std::pow(2.0f, lfoVal * params_.lfoDepth / 1200.0f);
 
-        // Only recompute coefficients when parameters actually change
-        if (filterFreq != lastFilterFreq_ || params_.filterQ != lastFilterQ_ || params_.filterType != lastFilterType_)
+        filter_.setCutoff(filterFreq);
+        // Map Biquad Q range to SVFilter resonance (0–0.9).
+        // Q=0.707 → res=0, Q=20 → res≈0.86. Capped to avoid ringing.
+        float res = (1.0f - (0.707f / std::max(params_.filterQ, 0.707f))) * 0.9f;
+        filter_.setResonance(res);
+
+        switch (params_.filterType)
         {
-            switch (params_.filterType)
-            {
-                case FilterType::Lowpass:  filter_.setLowpass(filterFreq, params_.filterQ, sampleRate_); break;
-                case FilterType::Highpass: filter_.setHighpass(filterFreq, params_.filterQ, sampleRate_); break;
-                case FilterType::Bandpass: filter_.setBandpass(filterFreq, params_.filterQ, sampleRate_); break;
-                default: break;
-            }
-            lastFilterFreq_ = filterFreq;
-            lastFilterQ_ = params_.filterQ;
-            lastFilterType_ = params_.filterType;
+            case FilterType::Lowpass:  filter_.setMode(SVFilter::Mode::Lowpass); break;
+            case FilterType::Highpass: filter_.setMode(SVFilter::Mode::Highpass); break;
+            case FilterType::Bandpass: filter_.setMode(SVFilter::Mode::Bandpass); break;
+            default: break;
         }
 
         sample = filter_.process(sample);
@@ -460,9 +470,9 @@ float AudioEngine::process()
     // --- Master volume with gain smoothing ---
     sample *= params_.volume * gain;
 
-    // --- Hard limiter: protect speakers ---
-    if (sample > 1.0f) sample = 1.0f;
-    else if (sample < -1.0f) sample = -1.0f;
+    // --- Soft clip: avoid hard discontinuity from resonant filter peaks ---
+    // PeakLimiter on master handles final brickwall.
+    sample = Saturation::tanhDrive(sample, 1.0f);
 
     return sample;
 }

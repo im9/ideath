@@ -5,7 +5,7 @@
 #include <ideath/Wavetable.h>
 #include <ideath/Noise.h>
 #include <ideath/Envelope.h>
-#include <ideath/Biquad.h>
+#include <ideath/SVFilter.h>
 #include <ideath/BitCrusher.h>
 #include <ideath/Saturation.h>
 #include <ideath/DelayLine.h>
@@ -46,7 +46,7 @@ private:
     Wavetable wt_;
     Noise noise_;
     AdsrEnvelope env_;
-    Biquad filter_;
+    SVFilter filter_;
     BitCrusher crush_;
     DelayLine delay_;
     LFO lfo_;
@@ -62,9 +62,6 @@ private:
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;
-    float lastFilterFreq_ = -1.0f;
-    float lastFilterQ_ = -1.0f;
-    FilterType lastFilterType_ = FilterType::Off;
     bool stopped_ = true;
     bool delayCleared_ = false;
     Portamento gainSmoother_;
