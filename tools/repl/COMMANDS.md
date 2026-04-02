@@ -94,10 +94,14 @@ Any effect can be disabled with `<command> off` (e.g., `filter off`).
 | Command | Description |
 |---------|-------------|
 | `lfo <sine\|tri\|square\|saw\|sh> <rate> <pitch\|filter\|vol> <depth>` | LFO modulation |
+| `penv <semitones> <decay_sec>` | Pitch envelope sweep (e.g., `penv 36 0.04` for kicks) |
+| `penv off` | Disable pitch envelope |
 | `porta <time_sec>` | Portamento glide time |
 | `env <attack> <decay> <sustain> <release>` | ADSR envelope |
 
 LFO depth units: cents for pitch/filter targets, percentage for volume.
+Pitch envelope sweeps frequency up by N semitones at note-on, then decays back to base pitch.
+Essential for kick drums (e.g., `penv 36 0.04` = 3 octaves, 40ms decay).
 
 ### Presets
 
@@ -107,6 +111,8 @@ LFO depth units: cents for pitch/filter targets, percentage for volume.
 | `preset list` | Show available presets |
 
 Available presets: `acid`, `chiptune`, `pad`, `kick`, `perc`, `bass`, `lead`, `hihat`, `ambient`, `lofi`.
+
+`kick` uses pitch envelope (sine + 3-octave sweep + saturation).
 
 Presets set source, envelope, filter, and effects. Current volume is preserved.
 
@@ -158,6 +164,18 @@ Brickwall peak limiter on the master output (default: ON, 0 dB threshold, 5ms lo
 | `release` | Release current note (noteOff) |
 | `vol <0.0-1.0>` | Master volume (per-track) |
 | `stop` | Silence and reset all state (also stops sequencer) |
+
+### Scope
+
+| Command | Description |
+|---------|-------------|
+| `scope` | Show oscilloscope snapshot (one-shot, Braille rendering) |
+| `scope on` | Auto-refresh scope every 500ms (ANSI overwrite) |
+| `scope off` | Stop auto-refresh scope |
+
+Renders the master output waveform using Unicode Braille characters (2x4 dots per char).
+`scope on` continuously updates in-place using ANSI cursor movement — useful for
+monitoring sequencer output or tweaking parameters in real time.
 
 ### System
 
@@ -220,6 +238,10 @@ ideath[1]> seq C4 E4! G4 C5! 180
 ideath[1]> preset chiptune
 ideath[1]> seq C4 E4 G4 C5 160
 ideath[1]> seq gate 30
+
+# Visualize current waveform
+ideath[1]> osc saw 440
+ideath[1]> scope
 ```
 
 ## Note Names

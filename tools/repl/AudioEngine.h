@@ -60,6 +60,7 @@ private:
     UnisonOscillator unison_;
     FeedbackBuffer looper_;
 
+    DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;
     float lastFilterFreq_ = -1.0f;
     float lastFilterQ_ = -1.0f;

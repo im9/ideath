@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEngine.h"
+#include "ScopeBuffer.h"
 #include "SharedState.h"
 #include <ideath/PeakLimiter.h>
 #include <array>
@@ -30,6 +31,7 @@ public:
     SharedState& getShared(int trackIndex) { return shared_[trackIndex]; }
     TrackMixState& getMix(int trackIndex) { return mix_[trackIndex]; }
     PeakLimiter& getLimiter() { return limiter_; }
+    ScopeBuffer& getScope() { return scope_; }
 
     std::atomic<bool> limiterEnabled{true};
 
@@ -38,6 +40,7 @@ private:
     std::array<SharedState, kMaxTracks> shared_;
     std::array<TrackMixState, kMaxTracks> mix_;
     PeakLimiter limiter_;
+    ScopeBuffer scope_;
 };
 
 }} // namespace ideath::repl

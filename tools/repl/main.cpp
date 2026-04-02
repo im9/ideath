@@ -10,9 +10,67 @@
 #include <sstream>
 #include <string>
 #include <mutex>
+#include <thread>
+#include <chrono>
 
 static ideath::repl::TrackManager g_tracks;
 static int g_activeTrack = 0; // command-thread only, protected by cmdMutex
+
+// --- Scope auto-refresh ---
+static std::atomic<bool> g_scopeAutoRunning{false};
+static std::thread g_scopeThread;
+
+static void scopeAutoLoop()
+{
+    auto& scope = g_tracks.getScope();
+    scope.setEnabled(true);
+
+    // Let the buffer fill before first render
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    constexpr size_t kSamples = 1024;
+    constexpr int kWidth = 72;
+    constexpr int kHeight = 14;
+    // ANSI: lines to move up = kHeight + 3 (top border + rows + bottom border + stats)
+    constexpr int kTotalLines = kHeight + 3;
+
+    bool firstDraw = true;
+
+    while (g_scopeAutoRunning.load(std::memory_order_relaxed))
+    {
+        float buf[kSamples];
+        size_t n = scope.snapshot(buf, kSamples);
+
+        float gr = g_tracks.getLimiter().getGainReductionDb();
+        std::string rendered = ideath::repl::ScopeBuffer::render(buf, n, kWidth, kHeight, gr);
+
+        // Move cursor up to overwrite previous frame (except first)
+        if (!firstDraw)
+            std::cout << "\033[" << kTotalLines << "A";
+        std::cout << rendered << std::flush;
+        firstDraw = false;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+}
+
+static void scopeAutoStart()
+{
+    if (g_scopeAutoRunning.load(std::memory_order_relaxed))
+        return;
+    g_scopeAutoRunning.store(true, std::memory_order_relaxed);
+    g_scopeThread = std::thread(scopeAutoLoop);
+}
+
+static void scopeAutoStop()
+{
+    if (!g_scopeAutoRunning.load(std::memory_order_relaxed))
+        return;
+    g_scopeAutoRunning.store(false, std::memory_order_relaxed);
+    if (g_scopeThread.joinable())
+        g_scopeThread.join();
+    g_tracks.getScope().setEnabled(false);
+}
 
 static void audioCallback(ma_device* /*device*/, void* output, const void* /*input*/, ma_uint32 frameCount)
 {
@@ -165,11 +223,58 @@ static bool handleLimiterCommand(const std::string& line)
     return true;
 }
 
+/// Handle scope command. Returns true if handled.
+static bool handleScopeCommand(const std::string& line)
+{
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+    if (cmd != "scope") return false;
+
+    std::string arg;
+    if (iss >> arg)
+    {
+        if (arg == "off")
+        {
+            scopeAutoStop();
+            std::cout << "Scope OFF" << std::endl;
+            return true;
+        }
+        if (arg == "on")
+        {
+            std::cout << "Scope ON (auto-refresh, 'scope off' to stop)" << std::endl;
+            scopeAutoStart();
+            return true;
+        }
+    }
+
+    // No argument — one-shot snapshot
+    auto& scope = g_tracks.getScope();
+    scope.setEnabled(true);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    constexpr size_t kSamples = 1024;
+    float buf[kSamples];
+    size_t n = scope.snapshot(buf, kSamples);
+
+    float gr = g_tracks.getLimiter().getGainReductionDb();
+    std::cout << ideath::repl::ScopeBuffer::render(buf, n, 72, 14, gr);
+
+    // Disable capture if auto mode isn't running
+    if (!g_scopeAutoRunning.load(std::memory_order_relaxed))
+        scope.setEnabled(false);
+
+    return true;
+}
+
 static void processLine(const std::string& line)
 {
     if (handleTrackCommand(line))
         return;
     if (handleLimiterCommand(line))
+        return;
+    if (handleScopeCommand(line))
         return;
     ideath::repl::parseCommand(line, g_tracks.getShared(g_activeTrack));
 }
@@ -190,6 +295,7 @@ int main()
     config.playback.format   = ma_format_f32;
     config.playback.channels = 1;
     config.sampleRate        = static_cast<ma_uint32>(kSampleRate);
+    config.periodSizeInFrames = 1024;
     config.dataCallback      = audioCallback;
 
     ma_device device;
@@ -227,7 +333,10 @@ int main()
     {
         std::lock_guard<std::mutex> lock(cmdMutex);
         if (line == "quit" || line == "exit")
+        {
+            scopeAutoStop();
             break;
+        }
         processLine(line);
         std::cout << prompt() << std::flush;
     }

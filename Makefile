@@ -10,7 +10,11 @@ test: build
 repl:
 	cmake -B build -DCMAKE_BUILD_TYPE=Release -DTN_DSP_BUILD_REPL=ON
 	cmake --build build -j8 --target ideath_repl
-	./build/tools/repl/ideath_repl
+	@if command -v rlwrap >/dev/null 2>&1; then \
+		rlwrap ./build/tools/repl/ideath_repl; \
+	else \
+		./build/tools/repl/ideath_repl; \
+	fi
 
 clean:
 	rm -rf build

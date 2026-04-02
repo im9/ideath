@@ -96,6 +96,11 @@ struct VoiceParams
     float loopFeedback = 0.8f;
     float loopMix = 1.0f;
 
+    // Pitch envelope (for kicks/percussion)
+    bool pitchEnvEnabled = false;
+    float pitchEnvAmount = 24.0f;  // semitones
+    float pitchEnvDecay = 0.05f;   // seconds
+
     // Portamento
     float portaTime = 0.0f;
 

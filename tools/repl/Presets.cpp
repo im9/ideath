@@ -55,17 +55,22 @@ static VoiceParams makePad()
 static VoiceParams makeKick()
 {
     VoiceParams p;
-    p.source = SourceType::Oscillator;
-    p.oscWaveform = OscWaveform::Saw;
-    p.frequency = 60.0f;
+    p.source = SourceType::Wavetable;
+    p.wtShape = WtShape::Sine;
+    p.frequency = 42.0f;
     p.envelopeEnabled = true;
     p.attack = 0.001f;
     p.decay = 0.15f;
     p.sustain = 0.0f;
-    p.release = 0.05f;
+    p.release = 0.03f;
+    p.pitchEnvEnabled = true;
+    p.pitchEnvAmount = 24.0f;  // 2 octaves sweep (less clicky)
+    p.pitchEnvDecay = 0.03f;   // 30ms pitch drop (tight)
+    p.satEnabled = true;
+    p.satDrive = 3.0f;         // more harmonics for body
     p.filterType = FilterType::Lowpass;
-    p.filterFreq = 200.0f;
-    p.filterQ = 1.0f;
+    p.filterFreq = 120.0f;     // keep it subby
+    p.filterQ = 1.5f;
     return p;
 }
 
@@ -174,7 +179,7 @@ static const std::vector<PresetEntry> kPresets = {
     { "acid",     "303-style acid (saw + LP + resonance + sat)",     makeAcid()     },
     { "chiptune", "8-bit chiptune (square wt + bitcrusher)",         makeChiptune() },
     { "pad",      "soft pad (sine wt + slow ADSR + delay)",          makePad()      },
-    { "kick",     "bass drum (saw + fast decay + LP)",               makeKick()     },
+    { "kick",     "bass drum (sine + pitch sweep + saturation)",      makeKick()     },
     { "perc",     "percussive hit (noise + fast decay + HP)",        makePerc()     },
     { "bass",     "sub bass (square + LP + medium decay)",           makeBass()     },
     { "lead",     "lead synth (saw wt + LP + portamento)",           makeLead()     },

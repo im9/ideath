@@ -53,6 +53,7 @@ ideath REPL commands:
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
                                 LFO modulation (or "lfo off")
   env <A> <D> <S> <R>          Set ADSR envelope (or "env off")
+  penv <semitones> <decay>    Pitch envelope (or "penv off")
   note <C4|freq>               Trigger note (with envelope if set)
   release                      Release note
   seq <notes...> [bpm]         Step sequencer (e.g. seq C4 E4 G4! 120)
@@ -64,6 +65,9 @@ ideath REPL commands:
   seq stop                     Stop sequencer
   preset <name>                Load voice preset (or "preset list")
   limiter <threshold_dB>       Set limiter threshold (or "limiter off")
+  scope                        Show oscilloscope snapshot (Braille)
+  scope on                     Auto-refresh scope (every 500ms)
+  scope off                    Stop scope
   track <n>                    Switch active track (1-8)
   track <n> mute|solo|vol <v>  Track mixing controls
   porta <time>                 Portamento time in seconds
@@ -415,6 +419,27 @@ bool parseCommand(const std::string& line, SharedState& shared)
     if (cmd == "release")
     {
         shared.noteOffCounter.fetch_add(1, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "penv")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.pitchEnvEnabled = false;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Pitch envelope OFF" << std::endl;
+            return true;
+        }
+
+        shared.staging.pitchEnvEnabled = true;
+        if (tokens.size() > 1)
+            shared.staging.pitchEnvAmount = parseFloat(tokens[1], 24.0f);
+        if (tokens.size() > 2)
+            shared.staging.pitchEnvDecay = parseFloat(tokens[2], 0.05f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Pitch envelope: " << shared.staging.pitchEnvAmount
+                  << " semitones, decay=" << shared.staging.pitchEnvDecay << "s" << std::endl;
         return true;
     }
 

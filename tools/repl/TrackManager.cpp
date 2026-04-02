@@ -45,13 +45,19 @@ float TrackManager::process()
         sum += s;
     }
 
+    float out;
     if (limiterEnabled.load(std::memory_order_relaxed))
-        return limiter_.process(sum);
+        out = limiter_.process(sum);
+    else
+    {
+        // Fallback hard clamp when limiter is off
+        if (sum > 1.0f) sum = 1.0f;
+        else if (sum < -1.0f) sum = -1.0f;
+        out = sum;
+    }
 
-    // Fallback hard clamp when limiter is off
-    if (sum > 1.0f) sum = 1.0f;
-    else if (sum < -1.0f) sum = -1.0f;
-    return sum;
+    scope_.push(out);
+    return out;
 }
 
 }} // namespace ideath::repl

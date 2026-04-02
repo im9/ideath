@@ -22,6 +22,7 @@ void AudioEngine::prepare(float sampleRate)
     wavefolder_.prepare(sampleRate);
     unison_.prepare(sampleRate);
     looper_.prepare(sampleRate, 30.0f); // max 30 seconds loop
+    pitchEnv_.prepare(sampleRate);
     gainSmoother_.prepare(sampleRate);
     gainSmoother_.setTime(0.005f); // 5ms fade
     gainSmoother_.setValue(0.0f);
@@ -104,6 +105,13 @@ void AudioEngine::applyPendingState(SharedState& shared)
             env_.noteOn();
         }
 
+        // Pitch envelope
+        if (params_.pitchEnvEnabled)
+        {
+            pitchEnv_.setDecay(params_.pitchEnvDecay);
+            pitchEnv_.trigger(1.0f);
+        }
+
         // FM synth note on
         if (params_.source == SourceType::FM)
         {
@@ -159,6 +167,11 @@ void AudioEngine::applyPendingState(SharedState& shared)
                     env_.setRelease(params_.release);
                     env_.noteOn();
                 }
+                if (params_.pitchEnvEnabled)
+                {
+                    pitchEnv_.setDecay(params_.pitchEnvDecay);
+                    pitchEnv_.trigger(1.0f);
+                }
                 if (params_.source == SourceType::FM)
                     fm_.noteOn(freq);
                 seqGateOpen_ = true;
@@ -185,6 +198,7 @@ void AudioEngine::advanceSequencer()
     {
         env_.noteOff();
         fm_.noteOff();
+        gainSmoother_.setTarget(0.0f);
         seqGateOpen_ = false;
     }
 
@@ -213,11 +227,20 @@ void AudioEngine::advanceSequencer()
             env_.setRelease(params_.release);
             env_.noteOn();
         }
+        if (params_.pitchEnvEnabled)
+        {
+            pitchEnv_.setDecay(params_.pitchEnvDecay);
+            pitchEnv_.trigger(1.0f);
+        }
         if (params_.source == SourceType::FM)
             fm_.noteOn(freq);
         seqGateOpen_ = true;
     }
-    // freq == 0 means rest: no noteOn, gate stays closed
+    else
+    {
+        // Rest: fade out
+        gainSmoother_.setTarget(0.0f);
+    }
 }
 
 float AudioEngine::process()
@@ -243,6 +266,13 @@ float AudioEngine::process()
     porta_.setTime(params_.portaTime);
     porta_.setTarget(params_.frequency);
     float freq = porta_.process();
+
+    // --- Pitch envelope (kick/perc sweep) ---
+    if (params_.pitchEnvEnabled)
+    {
+        float pitchMod = pitchEnv_.process() * params_.pitchEnvAmount;
+        freq *= std::pow(2.0f, pitchMod / 12.0f);
+    }
 
     // --- LFO modulation ---
     float lfoVal = 0.0f;

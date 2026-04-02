@@ -75,6 +75,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_UnisonOscillator.cpp
         tests/test_FeedbackBuffer.cpp
         tests/test_AudioSafety.cpp
+        tests/test_SeqClick.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
