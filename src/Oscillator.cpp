@@ -1,4 +1,5 @@
 #include <ideath/Oscillator.h>
+#include <algorithm>
 #include <cmath>
 
 namespace ideath {
@@ -34,6 +35,7 @@ void Oscillator::reset()
 
 void Oscillator::setFrequency(float freqHz)
 {
+    freqHz = std::clamp(freqHz, 0.0f, sampleRate_ * 0.5f);
     phaseInc_ = freqHz / sampleRate_;
 }
 

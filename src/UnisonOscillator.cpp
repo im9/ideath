@@ -26,12 +26,13 @@ void UnisonOscillator::setVoiceCount(int count)
 
 void UnisonOscillator::setFrequency(float freqHz)
 {
-    frequency_ = freqHz;
+    frequency_ = std::clamp(freqHz, 0.0f, sampleRate_ * 0.5f);
     updateFrequencies();
 }
 
 void UnisonOscillator::setDetune(float cents)
 {
+    // No upper bound — extreme detune is musically valid (wide stereo, dissonance).
     detuneCents_ = std::max(0.0f, cents);
     updateFrequencies();
 }

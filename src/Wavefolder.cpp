@@ -17,6 +17,8 @@ void Wavefolder::reset()
 
 void Wavefolder::setDrive(float drive)
 {
+    // No upper bound — sin() output is inherently bounded to [-1,1]
+    // regardless of drive. Higher drive = more folds.
     drive_ = std::max(1.0f, drive);
 }
 

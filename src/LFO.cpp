@@ -1,4 +1,5 @@
 #include <ideath/LFO.h>
+#include <algorithm>
 #include <cmath>
 
 #ifndef M_PI
@@ -24,6 +25,9 @@ void LFO::reset()
 
 void LFO::setRate(float rateHz)
 {
+    // LFO rates are low but clamp to non-negative for safety.
+    // No Nyquist upper bound — LFO at audio rate is a valid use case.
+    rateHz = std::max(0.0f, rateHz);
     phaseInc_ = rateHz / sampleRate_;
 }
 

@@ -81,6 +81,9 @@ Polyphony) are excluded because the REPL itself serves that role.
 - All DSP parameters are raw physical units (Hz, seconds, dB) — normalization happens in the plugin layer
 - Header in `include/ideath/`, implementation in `src/`, test in `tests/test_<Name>.cpp`
 - No `using namespace` in headers
+- **Denormal protection** — any primitive with feedback state (filters, envelopes, delays) must guard against denormalized floats. Use tiny DC add (`1e-25f`) for linear state updates (e.g. SVFilter), flush-to-zero threshold for exponential decays (e.g. Envelope). See `eede258` for reference.
+- **Parameter clamping** — setters must clamp to valid ranges (`std::clamp`, `std::max`) before storing or computing coefficients. Frequencies to `[minHz, sampleRate * 0.45]`, Q/resonance to `[floor, ceiling]`, time values to `[small positive, max]`. Never trust caller input in `set<Param>()`.
+- **Phase wrapping** — phase accumulators must wrap via `phase -= std::floor(phase)` every sample to stay in `[0, 1)`. Prevents float precision loss over long playback. See `bd500ec` for a case where missing wrap caused drift.
 
 ## Adding a New Primitive
 

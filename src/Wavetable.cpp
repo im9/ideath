@@ -22,6 +22,7 @@ void Wavetable::reset()
 
 void Wavetable::setFrequency(float freqHz)
 {
+    freqHz = std::clamp(freqHz, 0.0f, sampleRate_ * 0.5f);
     phaseInc_ = freqHz / sampleRate_;
 }
 

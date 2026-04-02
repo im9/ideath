@@ -25,10 +25,8 @@ void BitCrusher::setBitDepth(int bits)
 
 void BitCrusher::setDownsampleRate(float rateHz)
 {
-    if (rateHz <= 0.0f || rateHz >= sampleRate_)
-        downsampleInc_ = 1.0f; // disabled
-    else
-        downsampleInc_ = rateHz / sampleRate_;
+    rateHz = std::clamp(rateHz, 1.0f, sampleRate_);
+    downsampleInc_ = rateHz / sampleRate_;
 }
 
 float BitCrusher::process(float input)
