@@ -37,6 +37,17 @@ PeakLimiter. Commands are documented in `tools/repl/COMMANDS.md`.
 Built with miniaudio (vendored in `third_party/miniaudio/`).
 CMake option: `TN_DSP_BUILD_REPL=ON`.
 
+**REPL as reference implementation:** The REPL is not just a demo — it is the reference
+audio engine for the ideath ecosystem. VST (Slothrop) and iOS (Profane) products should
+be able to use REPL output as the "correct" sound for a given set of parameters.
+Therefore REPL audio quality must be production-grade: no clicks, no artifacts, no
+audible glitches in any signal chain configuration. When a bug is heard in the REPL,
+it must be fixed at the root — not worked around.
+
+**Known issues (WIP):** Occasional click noise on sequencer note retrigger with
+resonant filter + saturation combinations. Root cause narrowed to gain/envelope
+transients; further investigation needed.
+
 **REPL exposure guideline:** Every primitive that produces or transforms audio should
 be accessible as a REPL command. Primitives that only bundle other primitives (Voice,
 Polyphony) are excluded because the REPL itself serves that role.
