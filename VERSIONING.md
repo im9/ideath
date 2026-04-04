@@ -57,7 +57,8 @@ Before creating a release:
 2. Run the full test suite.
 3. Ensure CI is green on supported platforms.
 4. Review whether docs need updates for public-facing changes.
-5. Summarize notable changes in release notes.
+5. Update [CHANGELOG.md](CHANGELOG.md) with notable changes.
+6. Summarize notable changes in release notes.
 
 ## Initial Stability Note
 

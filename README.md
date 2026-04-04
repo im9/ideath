@@ -116,6 +116,7 @@ See [ASSESSMENT.md](ASSESSMENT.md) for a candid evaluation of the project from t
 
 ## Project Docs
 
+- [CHANGELOG.md](CHANGELOG.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [VERSIONING.md](VERSIONING.md)
 - [CLAUDE.md](CLAUDE.md)
