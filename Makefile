@@ -1,4 +1,4 @@
-.PHONY: build test clean repl
+.PHONY: build test clean repl bench
 
 build:
 	cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -15,6 +15,11 @@ repl:
 	else \
 		./build/tools/repl/ideath_repl; \
 	fi
+
+bench:
+	cmake -B build -DCMAKE_BUILD_TYPE=Release -DTN_DSP_BUILD_BENCH=ON
+	cmake --build build -j8 --target ideath_bench
+	./build/ideath_bench --benchmark-samples 100
 
 clean:
 	rm -rf build

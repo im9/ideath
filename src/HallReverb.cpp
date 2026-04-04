@@ -4,6 +4,8 @@
 
 namespace ideath {
 
+static constexpr float kAntiDenormal = 1e-25f;
+
 // Same Freeverb tunings as base Reverb
 static constexpr int kCombTunings[8] = {
     1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617
@@ -114,7 +116,7 @@ float HallReverb::ModCombFilter::process(float input, float feedback,
     float output = buffer[readIdx0] * (1.0f - frac) + buffer[readIdx1] * frac;
 
     // One-pole LP in feedback path
-    filterStore = output * damp2 + filterStore * damp1;
+    filterStore = output * damp2 + filterStore * damp1 + kAntiDenormal;
 
     buffer[writeIndex] = input + filterStore * feedback;
 
@@ -143,7 +145,7 @@ float HallReverb::AllpassFilter::process(float input)
 {
     float bufOut = buffer[index];
     float output = bufOut - input;
-    buffer[index] = input + bufOut * kFeedback;
+    buffer[index] = input + bufOut * kFeedback + kAntiDenormal;
 
     if (++index >= bufSize)
         index = 0;

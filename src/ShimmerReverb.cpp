@@ -6,6 +6,7 @@ namespace ideath {
 
 static constexpr float kTwoPi = 6.283185307f;
 static constexpr float kPi = 3.141592654f;
+static constexpr float kAntiDenormal = 1e-25f;
 
 // --- ModAllpass ---
 
@@ -45,7 +46,7 @@ float ShimmerReverb::ModAllpass::process(float input, float modScale)
     float bufOut = buffer[idx0] * (1.0f - frac) + buffer[idx1] * frac;
 
     float output = bufOut - input * feedback;
-    buffer[writeIndex] = input + bufOut * feedback;
+    buffer[writeIndex] = input + bufOut * feedback + kAntiDenormal;
 
     if (++writeIndex >= bufSize)
         writeIndex = 0;
@@ -156,7 +157,7 @@ float ShimmerReverb::DcBlocker::process(float input)
 {
     float output = input - prevIn + coeff * prevOut;
     prevIn = input;
-    prevOut = output;
+    prevOut = output + kAntiDenormal;
     return output;
 }
 

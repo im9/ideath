@@ -93,7 +93,10 @@ Polyphony) are excluded because the REPL itself serves that role.
 - All DSP parameters are raw physical units (Hz, seconds, dB) — normalization happens in the plugin layer
 - Header in `include/ideath/`, implementation in `src/`, test in `tests/test_<Name>.cpp`
 - No `using namespace` in headers
-- **Denormal protection** — any primitive with feedback state (filters, envelopes, delays) must guard against denormalized floats. Use tiny DC add (`1e-25f`) for linear state updates (e.g. SVFilter), flush-to-zero threshold for exponential decays (e.g. Envelope). See `eede258` for reference.
+- **Denormal protection** — every primitive with feedback state must guard against denormalized floats. Two patterns:
+  - **DC offset** (`+ 1e-25f`): for linear feedback state (filters, delay buffers). Applied to: SVFilter, Biquad, Reverb combs/allpasses, HallReverb, ShimmerReverb, DelayLine, FeedbackBuffer.
+  - **Flush-to-zero threshold**: for exponential decays (envelopes, compressor). Applied to: DecayEnvelope, AdsrEnvelope, PeakLimiter, Compressor, Portamento.
+  - New primitives with feedback MUST use one of these patterns. See `eede258` for the original reference.
 - **Parameter clamping** — setters must clamp to valid ranges (`std::clamp`, `std::max`) before storing or computing coefficients. Frequencies to `[minHz, sampleRate * 0.45]`, Q/resonance to `[floor, ceiling]`, time values to `[small positive, max]`. Never trust caller input in `set<Param>()`.
 - **Phase wrapping** — phase accumulators must wrap via `phase -= std::floor(phase)` every sample to stay in `[0, 1)`. Prevents float precision loss over long playback. See `bd500ec` for a case where missing wrap caused drift.
 
@@ -170,6 +173,18 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [ ] Polyphony — replace hard clip with soft saturation (tanh) for smoother multi-voice mix
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
+
+### Performance / SIMD (future)
+Identified candidates, ordered by expected ROI:
+- [ ] Reverb/HallReverb comb banks — 8 independent filters, process 4 in parallel (SSE) → 3-6x
+- [ ] UnisonOscillator voice loop — up to 16 oscillators, independent phases → 3-4x
+- [ ] Polyphony voice mix — process 4 voices in parallel with active mask → 2-4x
+- [ ] ShimmerReverb allpass chains — L/R independent, process as stereo pair → 2-4x
+- [ ] Wavetable sine generation — one-time init loop, trivially vectorizable → 4-8x
+
+Prerequisites: benchmark suite (Catch2 BENCHMARK) to measure before/after.
+Approach: start with `-march=native` compiler flag + `#pragma omp simd` for
+low-hanging fruit. SoA refactoring for Polyphony/Reverb only if benchmarks justify.
 
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3

@@ -4,6 +4,8 @@
 
 namespace ideath {
 
+static constexpr float kAntiDenormal = 1e-25f;
+
 // Freeverb comb filter delay lengths (at 44100 Hz)
 static constexpr int kCombTunings[8] = {
     1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617
@@ -41,7 +43,7 @@ float Reverb::CombFilter::process(float input, float feedback, float damp1, floa
     float output = buffer[index];
 
     // One-pole lowpass in the feedback path (damping)
-    filterStore = output * damp2 + filterStore * damp1;
+    filterStore = output * damp2 + filterStore * damp1 + kAntiDenormal;
 
     buffer[index] = input + filterStore * feedback;
 
@@ -71,7 +73,7 @@ float Reverb::AllpassFilter::process(float input)
     float bufOut = buffer[index];
     float output = bufOut - input;
 
-    buffer[index] = input + bufOut * kFeedback;
+    buffer[index] = input + bufOut * kFeedback + kAntiDenormal;
 
     if (++index >= bufSize)
         index = 0;

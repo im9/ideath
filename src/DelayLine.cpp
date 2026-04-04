@@ -57,8 +57,8 @@ float DelayLine::process(float input)
     // Read from delay line first
     float wet = readDelay();
 
-    // Write input + feedback into buffer
-    buffer_[static_cast<size_t>(writePos_)] = input + wet * feedback_;
+    // Write input + feedback into buffer (DC offset prevents denormals in feedback loop)
+    buffer_[static_cast<size_t>(writePos_)] = input + wet * feedback_ + 1e-25f;
 
     // Advance write position
     ++writePos_;

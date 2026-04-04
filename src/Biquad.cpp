@@ -4,6 +4,8 @@
 
 namespace ideath {
 
+static constexpr float kAntiDenormal = 1e-25f;
+
 static void sanitizeParams(float& freqHz, float& q, float sampleRate)
 {
     freqHz = std::clamp(freqHz, 10.0f, sampleRate * 0.45f);
@@ -19,7 +21,7 @@ void Biquad::reset()
 float Biquad::process(float x)
 {
     const float y = b0_ * x + z1_;
-    z1_ = b1_ * x - a1_ * y + z2_;
+    z1_ = b1_ * x - a1_ * y + z2_ + kAntiDenormal;
     z2_ = b2_ * x - a2_ * y;
     return y;
 }

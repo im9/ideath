@@ -82,10 +82,10 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ideath
 )
 
-# --- Tests (opt-in) ----------------------------------------------------
 option(TN_DSP_BUILD_TESTS "Build unit tests" ON)
+option(TN_DSP_BUILD_BENCH "Build benchmarks" OFF)
 
-if(TN_DSP_BUILD_TESTS)
+if(TN_DSP_BUILD_TESTS OR TN_DSP_BUILD_BENCH)
     include(FetchContent)
     FetchContent_Declare(
         Catch2
@@ -93,7 +93,10 @@ if(TN_DSP_BUILD_TESTS)
         GIT_TAG        v3.7.1
     )
     FetchContent_MakeAvailable(Catch2)
+endif()
 
+# --- Tests (opt-in) ----------------------------------------------------
+if(TN_DSP_BUILD_TESTS)
     enable_testing()
 
     add_executable(ideath_tests
@@ -128,6 +131,12 @@ if(TN_DSP_BUILD_TESTS)
 
     include(Catch)
     catch_discover_tests(ideath_tests)
+endif()
+
+# --- Benchmarks (opt-in) -----------------------------------------------
+if(TN_DSP_BUILD_BENCH)
+    add_executable(ideath_bench benchmarks/bench_primitives.cpp)
+    target_link_libraries(ideath_bench PRIVATE ideath Catch2::Catch2WithMain)
 endif()
 
 # --- REPL tool (opt-in) ------------------------------------------------

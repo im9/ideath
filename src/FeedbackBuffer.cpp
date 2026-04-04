@@ -180,7 +180,7 @@ float FeedbackBuffer::process(float input)
             if (wrappedPos < 0.0)
                 wrappedPos += len;
             int wp = static_cast<int>(wrappedPos);
-            buffer_[static_cast<size_t>(wp)] = input + existing * feedback_;
+            buffer_[static_cast<size_t>(wp)] = input + existing * feedback_ + 1e-25f;
         }
         readPos_ += static_cast<double>(speed_);
         // Wrap
