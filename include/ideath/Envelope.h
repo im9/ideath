@@ -35,7 +35,7 @@ private:
 class AdsrEnvelope
 {
 public:
-    enum class Stage { Idle, Attack, Decay, Sustain, Release };
+    enum class Stage { Idle, Retrigger, Attack, Decay, Sustain, Release };
 
     AdsrEnvelope() = default;
 
@@ -63,6 +63,7 @@ private:
     float decayCoef_ = 0.0f;
     float sustainLevel_ = 0.5f;
     float releaseCoef_ = 0.0f;
+    float retriggerCoef_ = 0.0f;
     Stage stage_ = Stage::Idle;
 
     static float calcCoef(float timeSeconds, float sampleRate);

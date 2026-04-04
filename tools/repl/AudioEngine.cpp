@@ -341,14 +341,9 @@ float AudioEngine::process()
             break;
     }
 
-    // --- Envelope ---
-    if (params_.envelopeEnabled)
-    {
-        float envVal = env_.process();
-        sample *= envVal;
-    }
-
     // --- Filter (SVFilter — modulation-safe) ---
+    // Filter runs before the envelope (standard subtractive: VCO → VCF → VCA).
+    // This ensures the ADSR retrigger fade masks any filter state transients.
     if (params_.filterType != FilterType::Off)
     {
         float filterFreq = params_.filterFreq;
@@ -372,6 +367,13 @@ float AudioEngine::process()
         }
 
         sample = filter_.process(sample);
+    }
+
+    // --- Envelope (VCA — after filter so retrigger fade masks filter transients) ---
+    if (params_.envelopeEnabled)
+    {
+        float envVal = env_.process();
+        sample *= envVal;
     }
 
     // --- Compressor ---

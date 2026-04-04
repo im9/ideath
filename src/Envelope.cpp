@@ -64,6 +64,9 @@ float AdsrEnvelope::calcCoef(float timeSeconds, float sampleRate)
 void AdsrEnvelope::prepare(float sampleRate)
 {
     sampleRate_ = sampleRate;
+    // ~1ms retrigger fade: exponential decay reaching -60 dB in 1ms.
+    const float retriggerSamples = std::max(1.0f, 0.001f * sampleRate);
+    retriggerCoef_ = std::exp(-6.9078f / retriggerSamples);
     reset();
 }
 
@@ -97,7 +100,14 @@ void AdsrEnvelope::setRelease(float seconds)
 
 void AdsrEnvelope::noteOn()
 {
-    stage_ = Stage::Attack;
+    // If the envelope is still active with audible level, do a quick
+    // retrigger fade (~1ms) before starting the new attack.  This prevents
+    // clicks when the downstream signal chain (filter, saturation) carries
+    // energy from the previous note.
+    if (stage_ != Stage::Idle && level_ > 0.001f)
+        stage_ = Stage::Retrigger;
+    else
+        stage_ = Stage::Attack;
 }
 
 void AdsrEnvelope::noteOff()
@@ -110,6 +120,15 @@ float AdsrEnvelope::process()
 {
     switch (stage_)
     {
+        case Stage::Retrigger:
+            level_ *= retriggerCoef_;
+            if (level_ < 0.001f)
+            {
+                level_ = 0.0f;
+                stage_ = Stage::Attack;
+            }
+            break;
+
         case Stage::Attack:
             level_ += attackRate_;
             if (level_ >= 1.0f)

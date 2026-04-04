@@ -44,9 +44,10 @@ Therefore REPL audio quality must be production-grade: no clicks, no artifacts, 
 audible glitches in any signal chain configuration. When a bug is heard in the REPL,
 it must be fixed at the root — not worked around.
 
-**Known issues (WIP):** Occasional click noise on sequencer note retrigger with
-resonant filter + saturation combinations. Root cause narrowed to gain/envelope
-transients; further investigation needed.
+**Known issues (WIP):** Click noise on sequencer note retrigger with resonant
+filter + saturation was fixed by reordering the signal chain to standard
+subtractive routing (Osc → Filter → Envelope) and adding a ~1ms retrigger
+fade to AdsrEnvelope. Monitor for regressions in extreme parameter combos.
 
 **REPL exposure guideline:** Every primitive that produces or transforms audio should
 be accessible as a REPL command. Primitives that only bundle other primitives (Voice,
