@@ -12,7 +12,7 @@ This document is intentionally more candid than `README.md`. It is a working eva
 
 - Domain: personal DSP foundation library in pure C++17
 - Scope: reusable mono-first DSP primitives plus a real-time REPL/reference engine
-- Code size: about 12.7k LOC across `include/`, `src/`, `tests/`, and `tools/`
+- Code size: about 15.2k LOC across `include/`, `src/`, `tests/`, and `tools/`
 - Test status at time of writing: `ctest --test-dir build --output-on-failure` passed, 254/254 tests green
 - Benchmark status at time of writing: Catch2 benchmark suite present with 25 benchmark cases
 - Runtime shape: zero external runtime deps for the library itself; vendored miniaudio for the REPL tool
@@ -41,6 +41,7 @@ This document is intentionally more candid than `README.md`. It is a working eva
 - Some higher-level tests are still proxy tests. For example, parts of `Voice` and sequencer behavior are inferred indirectly rather than measured from richer observability hooks.
 - Benchmark infrastructure now exists, but benchmark evidence is not yet curated into a performance baseline or tracked history.
 - Packaging maturity has improved materially, but outside-consumer proof is still thin.
+- Public API stability is documented now, but it is still young enough that the real contract has not been stress-tested by multiple downstream consumers.
 - The worst known sequencer click path appears fixed, but difficult audio edge cases should still be treated as regression-sensitive.
 
 ### Technical Grade
@@ -70,6 +71,8 @@ As an open-source library, `ideath` is promising but still early-stage. It is us
 - Build instructions are straightforward, and the library is easy to consume through CMake `add_subdirectory`.
 - Tests are present and passing, which increases trust immediately.
 - Benchmarks now exist in-tree, which is a meaningful maturity signal for a DSP library.
+- Release and compatibility policy are documented clearly enough that external users can understand intended stability.
+- A minimal downstream integration example now exists, which removes one obvious adoption gap.
 - License is permissive (`MIT`).
 
 ### Weaknesses
@@ -77,23 +80,22 @@ As an open-source library, `ideath` is promising but still early-stage. It is us
 - Packaging and CI have been added, but are still new and lightly proven.
   - `install()`/export/config package flow exists, and CI is defined, but the process has not yet built a release track record.
 - No published performance guidance or benchmark sheet yet.
-- No examples for downstream hosts besides the REPL/reference tool.
 - Limited contributor ergonomics.
-  - Basic contribution and versioning docs now exist, but there is still no changelog/release discipline or issue template set.
+  - Contribution, versioning, and changelog discipline now exist, but there are still no issue/PR templates or broader contributor workflow conventions.
 
 ### OSS Grade
 
 - Learnability: 8/10
-- Ease of adoption: 7.5/10
+- Ease of adoption: 8/10
 - Maintainer discipline signals: 8/10
-- Ecosystem readiness: 7/10
+- Ecosystem readiness: 7.5/10
 
-OSS composite: 7.8/10
+OSS composite: 8/10
 
 ### Bottom Line
 
-`ideath` already looks like a serious repo, but it still behaves more like a private core library with source visibility than a polished public dependency. The biggest OSS gap is packaging and maintenance automation, not code quality.
-`ideath` now has the basic mechanics of a public dependency. The remaining OSS gap is track record: releases, benchmarks, examples, and maintenance discipline over time.
+`ideath` no longer looks merely like a private core library with source visibility. It now has the basic mechanics of a public dependency: package export, CI, changelog/versioning policy, and a minimal consumer example.
+The remaining OSS gap is track record: releases, benchmark reporting, broader downstream validation, and maintenance discipline over time.
 
 ## 3. Product Foundation Assessment
 
@@ -117,8 +119,8 @@ As a DSP core for products, `ideath` is one of the strongest aspects of the proj
   - The major sequencer retrigger click issue was addressed, but audio regressions remain high-cost when they escape.
 - There is still not enough evidence on CPU cost, SIMD opportunities, memory behavior under stress, or multi-platform parity.
   - The benchmark harness exists now, but measured baselines and interpretation are still missing.
-- The product layer contract is still informal.
-  - What is guaranteed stable for plugin/iOS clients versus what may evolve is not yet explicitly defined.
+- The product layer contract is more explicit than before, but still early.
+  - Public primitive stability levels are documented, but they have not yet been proven under multiple real product clients.
 - Some missing primitives are strategically important if the goal is a distinctive instrument/effects ecosystem.
   - Granular/stutter and richer distortion blocks remain likely leverage points.
 
@@ -149,8 +151,8 @@ These are the highest-value next steps, ordered by impact.
 
 - Prove the new package/export path through real downstream use.
 - Keep CI healthy across supported compilers and platforms.
-- Add release notes/changelog discipline.
 - Add issue/PR templates if outside contribution becomes active.
+- Publish one or two benchmark/performance snapshots that external users can actually reference.
 
 ### P2: Performance proof
 
@@ -190,7 +192,7 @@ What holds it back is not taste or seriousness. It is the last 20%:
 ## Scorecard
 
 - Technical quality: 8.5/10
-- OSS maturity: 7.8/10
+- OSS maturity: 8/10
 - Product-foundation value: 8.5/10
 
 Overall: strong internal platform project with increasingly credible performance and product depth, and clear headroom to become a robust public DSP library.
