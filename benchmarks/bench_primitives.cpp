@@ -4,6 +4,7 @@
 #include <ideath/Biquad.h>
 #include <ideath/BitCrusher.h>
 #include <ideath/Compressor.h>
+#include <ideath/CombFilter.h>
 #include <ideath/DelayLine.h>
 #include <ideath/Envelope.h>
 #include <ideath/FMSynth.h>
@@ -18,6 +19,7 @@
 #include <ideath/SVFilter.h>
 #include <ideath/Saturation.h>
 #include <ideath/ShimmerReverb.h>
+#include <ideath/TapeDelay.h>
 #include <ideath/UnisonOscillator.h>
 #include <ideath/Voice.h>
 #include <ideath/Wavefolder.h>
@@ -220,6 +222,48 @@ TEST_CASE("Bench: DelayLine", "[bench]")
     delay.setMix(0.5f);
 
     BENCHMARK("DelayLine::process")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += delay.process(sineAt(i));
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: CombFilter", "[bench]")
+{
+    ideath::CombFilter comb;
+    comb.prepare(kSR, 0.05f);
+    comb.setDelay(0.01f);
+    comb.setFeedback(0.9f);
+    comb.setDamp(0.3f);
+    comb.setMix(1.0f);
+
+    BENCHMARK("CombFilter::process")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += comb.process(sineAt(i));
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: TapeDelay", "[bench]")
+{
+    ideath::TapeDelay delay;
+    delay.prepare(kSR, 2.0f);
+    delay.setDelay(0.3f);
+    delay.setFeedback(0.7f);
+    delay.setMix(0.5f);
+    delay.setWowDepth(0.003f);
+    delay.setWowRate(0.4f);
+    delay.setFlutterDepth(0.0008f);
+    delay.setFlutterRate(4.0f);
+    delay.setLowpass(6000.0f);
+    delay.setHighpass(80.0f);
+    delay.setDrive(2.0f);
+
+    BENCHMARK("TapeDelay::process")
     {
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)

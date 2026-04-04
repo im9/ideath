@@ -63,6 +63,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Wavetable** — Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation)
 - **BitCrusher** — Bit depth reduction + sample rate reduction (lo-fi digital)
 - **DelayLine** — Circular buffer delay with linear interpolation, feedback, dry/wet mix
+- **TapeDelay** — Tape-style delay with wow/flutter modulation, feedback LP/HP coloring, saturation
 - **LFO** — Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot)
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
@@ -77,6 +78,8 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **FeedbackBuffer** — Long circular buffer looper (record/overdub/playback, feedback/mix)
 - **UnisonOscillator** — Stacked detuned oscillators (voice count, detune spread in cents)
 - **SVFilter** — Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe, Cytomic TPT)
+- **CombFilter** — Feedback comb filter with damping (Karplus-Strong / metallic textures)
+- **FormantFilter** — 3 parallel bandpass SVF, vowel morph A-E-I-O-U (vocal character shaping)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -157,11 +160,11 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] ShimmerReverb — cross-coupled allpass network + octave pitch shift feedback (port from inboil Shimmer flavor)
 - [x] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
 - [x] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
-- [ ] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
+- [x] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
 - [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze
 - [ ] StutterBuffer — slice repeat glitch, crossfade boundaries
-- [ ] CombFilter — feedback delay, Karplus-Strong / metallic textures
-- [ ] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
+- [x] CombFilter — feedback delay, Karplus-Strong / metallic textures
+- [x] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
 - [x] PeakLimiter — lookahead brickwall limiter
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
 - [x] Wavefolder — sin(input * drive) wavefolder (West Coast timbre shaping)

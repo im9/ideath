@@ -19,6 +19,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Wavetable** | Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation) |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
+| **TapeDelay** | Tape-style delay with wow/flutter modulation, feedback tone shaping, saturation |
 | **LFO** | Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot) |
 | **Portamento** | Exponential pitch/value glide |
 | **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
@@ -33,6 +34,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FeedbackBuffer** | Long circular buffer looper (record/overdub/playback) |
 | **UnisonOscillator** | Stacked detuned oscillators (unison spread) |
 | **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
+| **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
+| **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
 
 ## Design Principles
 

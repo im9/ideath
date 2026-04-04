@@ -33,6 +33,9 @@ add_library(ideath STATIC
     src/UnisonOscillator.cpp
     src/FeedbackBuffer.cpp
     src/SVFilter.cpp
+    src/CombFilter.cpp
+    src/TapeDelay.cpp
+    src/FormantFilter.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -123,8 +126,11 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_UnisonOscillator.cpp
         tests/test_FeedbackBuffer.cpp
         tests/test_SVFilter.cpp
+        tests/test_CombFilter.cpp
+        tests/test_TapeDelay.cpp
         tests/test_AudioSafety.cpp
         tests/test_SeqClick.cpp
+        tests/test_FormantFilter.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
