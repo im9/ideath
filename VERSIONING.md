@@ -49,6 +49,21 @@ It does not guarantee stability for:
 - REPL internals under `tools/repl/`
 - Experimental tooling under `tools/`
 
+### Primitive Stability Levels
+
+Each primitive's public API (`prepare`, `reset`, `set*`, `process`) is categorized:
+
+**Stable** — API will not change without a major version bump:
+Oscillator, Biquad, SVFilter, DecayEnvelope, AdsrEnvelope, Noise, Saturation,
+Wavetable, BitCrusher, DelayLine, LFO, Portamento, Compressor, PeakLimiter,
+Wavefolder, Reverb, HallReverb, UnisonOscillator, FeedbackBuffer
+
+**Maturing** — API is unlikely to change but may receive non-breaking additions:
+Voice, Polyphony, FMSynth, ShimmerReverb, CombFilter, TapeDelay, FormantFilter
+
+**Experimental** — API may change in minor releases:
+(none currently — new primitives start here until they ship in a product)
+
 ## Release Expectations
 
 Before creating a release:
