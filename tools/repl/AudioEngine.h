@@ -9,6 +9,8 @@
 #include <ideath/BitCrusher.h>
 #include <ideath/Saturation.h>
 #include <ideath/DelayLine.h>
+#include <ideath/TapeDelay.h>
+#include <ideath/CombFilter.h>
 #include <ideath/LFO.h>
 #include <ideath/Portamento.h>
 #include <ideath/FMSynth.h>
@@ -49,6 +51,8 @@ private:
     SVFilter filter_;
     BitCrusher crush_;
     DelayLine delay_;
+    TapeDelay tapeDelay_;
+    CombFilter comb_;
     LFO lfo_;
     Portamento porta_;
     FMSynth fm_;

@@ -49,6 +49,18 @@ struct VoiceParams
     float delayTime = 0.3f;
     float delayFeedback = 0.3f;
 
+    // TapeDelay
+    bool tapeDelayEnabled = false;
+    float tapeDelayTime = 0.35f;
+    float tapeDelayFeedback = 0.45f;
+    float tapeDelayWowDepth = 0.002f;
+    float tapeDelayWowRate = 0.3f;
+    float tapeDelayFlutterDepth = 0.0007f;
+    float tapeDelayFlutterRate = 4.0f;
+    float tapeDelayLowpass = 6000.0f;
+    float tapeDelayHighpass = 80.0f;
+    float tapeDelayDrive = 2.0f;
+
     // LFO
     LfoTarget lfoTarget = LfoTarget::Off;
     LfoWaveform lfoWaveform = LfoWaveform::Sine;
@@ -85,6 +97,13 @@ struct VoiceParams
     bool foldEnabled = false;
     float foldDrive = 1.0f;
     float foldMix = 1.0f;
+
+    // CombFilter
+    bool combEnabled = false;
+    float combDelay = 0.01f;
+    float combFeedback = 0.8f;
+    float combDamp = 0.3f;
+    float combMix = 1.0f;
 
     // Unison oscillator
     int unisonVoices = 5;

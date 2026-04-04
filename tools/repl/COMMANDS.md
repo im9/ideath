@@ -35,13 +35,15 @@ See the project wiki for VSCode / Vim integration examples.
 
 ```
 Source (osc | wt | noise | fm | unison)
+  → Filter
   → AdsrEnvelope
-  → Biquad filter
   → Compressor
   → BitCrusher
   → Saturation
   → Wavefolder
   → DelayLine
+  → TapeDelay
+  → CombFilter
   → Looper (FeedbackBuffer)
   → Reverb
   → master volume
@@ -76,6 +78,8 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `sat <drive>` | Saturation (tanh drive) |
 | `fold <drive> [mix]` | Wavefolder (sine-based, `fold off` to disable) |
 | `delay <time_sec> <feedback>` | Delay line |
+| `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
+| `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
 | `loop feedback <0-1>` | Looper overdub feedback |
 | `loop mix <0-1>` | Looper dry/wet mix |

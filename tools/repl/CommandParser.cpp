@@ -47,6 +47,10 @@ ideath REPL commands:
   sat <drive>                   Saturation (or "sat off")
   fold <drive> [mix]            Wavefolder (or "fold off")
   delay <time> <feedback>       Delay line (or "delay off")
+  tape <time> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]
+                                Tape delay (or "tape off")
+  comb <time> <feedback> [damp] [mix]
+                                Comb filter / resonator (or "comb off")
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
@@ -343,6 +347,60 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.delayTime = parseFloat(tokens[1], 0.3f);
             if (tokens.size() > 2)
                 shared.staging.delayFeedback = parseFloat(tokens[2], 0.3f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "tape")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.tapeDelayEnabled = false;
+        }
+        else
+        {
+            shared.staging.tapeDelayEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.tapeDelayTime = parseFloat(tokens[1], 0.35f);
+            if (tokens.size() > 2)
+                shared.staging.tapeDelayFeedback = parseFloat(tokens[2], 0.45f);
+            if (tokens.size() > 3)
+                shared.staging.tapeDelayWowDepth = parseFloat(tokens[3], 0.002f);
+            if (tokens.size() > 4)
+                shared.staging.tapeDelayWowRate = parseFloat(tokens[4], 0.3f);
+            if (tokens.size() > 5)
+                shared.staging.tapeDelayFlutterDepth = parseFloat(tokens[5], 0.0007f);
+            if (tokens.size() > 6)
+                shared.staging.tapeDelayFlutterRate = parseFloat(tokens[6], 4.0f);
+            if (tokens.size() > 7)
+                shared.staging.tapeDelayLowpass = parseFloat(tokens[7], 6000.0f);
+            if (tokens.size() > 8)
+                shared.staging.tapeDelayHighpass = parseFloat(tokens[8], 80.0f);
+            if (tokens.size() > 9)
+                shared.staging.tapeDelayDrive = parseFloat(tokens[9], 2.0f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "comb")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.combEnabled = false;
+        }
+        else
+        {
+            shared.staging.combEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.combDelay = parseFloat(tokens[1], 0.01f);
+            if (tokens.size() > 2)
+                shared.staging.combFeedback = parseFloat(tokens[2], 0.8f);
+            if (tokens.size() > 3)
+                shared.staging.combDamp = parseFloat(tokens[3], 0.3f);
+            if (tokens.size() > 4)
+                shared.staging.combMix = parseFloat(tokens[4], 1.0f);
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;

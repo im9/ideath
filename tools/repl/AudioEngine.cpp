@@ -12,6 +12,8 @@ void AudioEngine::prepare(float sampleRate)
     filter_.prepare(sampleRate);
     crush_.prepare(sampleRate);
     delay_.prepare(sampleRate, 2.0f); // max 2 seconds delay
+    tapeDelay_.prepare(sampleRate, 2.0f);
+    comb_.prepare(sampleRate, 0.1f);
     lfo_.prepare(sampleRate);
     porta_.prepare(sampleRate);
     fm_.prepare(sampleRate);
@@ -268,11 +270,13 @@ float AudioEngine::process()
     if (gain < 0.0001f && params_.source == SourceType::None)
     {
         // Fully faded out, safe to reset
-        if (!delayCleared_)
-        {
-            delay_.reset();
-            lfo_.reset();
-            delayCleared_ = true;
+    if (!delayCleared_)
+    {
+        delay_.reset();
+        tapeDelay_.reset();
+        comb_.reset();
+        lfo_.reset();
+        delayCleared_ = true;
         }
         return 0.0f;
     }
@@ -424,6 +428,32 @@ float AudioEngine::process()
         delay_.setFeedback(params_.delayFeedback);
         delay_.setMix(0.5f);
         sample = delay_.process(sample);
+    }
+
+    // --- TapeDelay ---
+    if (params_.tapeDelayEnabled)
+    {
+        tapeDelay_.setDelay(params_.tapeDelayTime);
+        tapeDelay_.setFeedback(params_.tapeDelayFeedback);
+        tapeDelay_.setMix(0.5f);
+        tapeDelay_.setWowDepth(params_.tapeDelayWowDepth);
+        tapeDelay_.setWowRate(params_.tapeDelayWowRate);
+        tapeDelay_.setFlutterDepth(params_.tapeDelayFlutterDepth);
+        tapeDelay_.setFlutterRate(params_.tapeDelayFlutterRate);
+        tapeDelay_.setLowpass(params_.tapeDelayLowpass);
+        tapeDelay_.setHighpass(params_.tapeDelayHighpass);
+        tapeDelay_.setDrive(params_.tapeDelayDrive);
+        sample = tapeDelay_.process(sample);
+    }
+
+    // --- CombFilter ---
+    if (params_.combEnabled)
+    {
+        comb_.setDelay(params_.combDelay);
+        comb_.setFeedback(params_.combFeedback);
+        comb_.setDamp(params_.combDamp);
+        comb_.setMix(params_.combMix);
+        sample = comb_.process(sample);
     }
 
     // --- Looper (FeedbackBuffer) ---
