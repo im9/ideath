@@ -13,7 +13,7 @@ This document is intentionally more candid than `README.md`. It is a working eva
 - Domain: personal DSP foundation library in pure C++17
 - Scope: reusable mono-first DSP primitives plus a real-time REPL/reference engine
 - Code size: about 12.7k LOC across `include/`, `src/`, `tests/`, and `tools/`
-- Test status at time of writing: `ctest --test-dir build --output-on-failure` passed, 229/229 tests green
+- Test status at time of writing: `ctest --test-dir build --output-on-failure` passed, 234/234 tests green
 - Runtime shape: zero external runtime deps for the library itself; vendored miniaudio for the REPL tool
 
 ## 1. Technical Assessment
@@ -29,6 +29,7 @@ This document is intentionally more candid than `README.md`. It is a working eva
 - Good implementation density. The project contains enough modules to prove this is a real foundation layer, not a toy.
 - Real verification culture. Tests cover behavior, bounds, resets, extreme parameters, stability, and audible-artifact concerns.
 - REPL as reference engine. This materially improves iteration speed and makes audible regressions testable in practice.
+- Recent P0 click work was handled in a technically sensible way: root-cause fixes in the signal path plus targeted regression tests.
 - Internal consistency. Naming, API shape, and directory conventions are disciplined enough that the library feels teachable.
 
 ### Weaknesses
@@ -36,7 +37,7 @@ This document is intentionally more candid than `README.md`. It is a working eva
 - Some higher-level tests are still proxy tests. For example, parts of `Voice` and sequencer behavior are inferred indirectly rather than measured from richer observability hooks.
 - There is little visible performance instrumentation. The code is written with real-time constraints in mind, but benchmark evidence is not yet part of the repo.
 - Packaging maturity is limited. The code builds cleanly as a subdirectory dependency, but install/export/package flows are still absent.
-- A few product-critical audio issues remain open, especially around click suppression in difficult retrigger/filter/saturation combinations.
+- The worst known sequencer click path appears fixed, but difficult audio edge cases should still be treated as regression-sensitive.
 
 ### Technical Grade
 
@@ -105,8 +106,8 @@ As a DSP core for products, `ideath` is one of the strongest aspects of the proj
 
 ### Risks
 
-- Product quality depends heavily on eliminating the last audible edge cases.
-  - In audio products, one click or unstable behavior can matter more than many passing unit tests.
+- Product quality still depends heavily on catching the next audible edge case early.
+  - The major sequencer retrigger click issue was addressed, but audio regressions remain high-cost when they escape.
 - There is not yet enough evidence on CPU cost, SIMD opportunities, memory behavior under stress, or multi-platform parity.
 - The product layer contract is still informal.
   - What is guaranteed stable for plugin/iOS clients versus what may evolve is not yet explicitly defined.
@@ -131,8 +132,8 @@ These are the highest-value next steps, ordered by impact.
 
 ### P0: Audio quality edge cases
 
-- Eliminate remaining click/retrigger artifacts in the REPL/reference engine.
-- Add tighter regression coverage around transitions, modulation spikes, and high-resonance chains.
+- Keep the recently fixed sequencer click paths under regression coverage.
+- Add tighter coverage around transitions, modulation spikes, and extreme parameter combinations beyond the current sequencer cases.
 - Improve observability for debugging audio discontinuities.
   - Example: optional offline render capture, per-stage meters, or debug hooks for envelope/gain/filter states.
 
