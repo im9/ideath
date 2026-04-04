@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }} / ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - name: ubuntu-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+          - name: macos-appleclang
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+        build_type: [Release]
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DTN_DSP_BUILD_REPL=OFF
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure
+
+      - name: Install
+        run: cmake --install build --prefix "${{ github.workspace }}/install"
+
+      - name: Configure package consumer
+        run: >
+          cmake -S . -B consumer-build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install"
+        working-directory: .github/workflows/package-consumer
+
+      - name: Build package consumer
+        run: cmake --build consumer-build --config ${{ matrix.build_type }} --parallel
+        working-directory: .github/workflows/package-consumer

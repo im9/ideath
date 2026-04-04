@@ -66,13 +66,20 @@ In your plugin's `CMakeLists.txt`:
 
 ```cmake
 add_subdirectory(path/to/ideath)
-target_link_libraries(MyPlugin PRIVATE ideath)
+target_link_libraries(MyPlugin PRIVATE ideath::ideath)
 ```
 
 ```cpp
 #include <ideath/Biquad.h>
 #include <ideath/Oscillator.h>
 // ...
+```
+
+Installed package usage:
+
+```cmake
+find_package(ideath CONFIG REQUIRED)
+target_link_libraries(MyPlugin PRIVATE ideath::ideath)
 ```
 
 ## Interactive REPL
@@ -102,6 +109,16 @@ src/            — implementation files
 tests/          — Catch2 v3 unit tests
 tools/repl/     — interactive REPL tool (miniaudio)
 ```
+
+## Assessment
+
+See [ASSESSMENT.md](ASSESSMENT.md) for a candid evaluation of the project from technical, OSS, and product-foundation perspectives.
+
+## Project Docs
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [VERSIONING.md](VERSIONING.md)
+- [CLAUDE.md](CLAUDE.md)
 
 ## License
 

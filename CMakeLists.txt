@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.22)
 
 project(ideath VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -32,10 +35,51 @@ add_library(ideath STATIC
     src/SVFilter.cpp
 )
 
+add_library(ideath::ideath ALIAS ideath)
+
+set_target_properties(ideath PROPERTIES
+    EXPORT_NAME ideath
+)
+
 target_include_directories(ideath
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+)
+
+install(TARGETS ideath
+    EXPORT ideathTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/ideathConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ideathConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ideathConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/ideath"
+)
+
+install(EXPORT ideathTargets
+    FILE ideathTargets.cmake
+    NAMESPACE ideath::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ideath
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/ideathConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/ideathConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ideath
 )
 
 # --- Tests (opt-in) ----------------------------------------------------
