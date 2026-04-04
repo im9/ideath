@@ -200,9 +200,12 @@ void AudioEngine::advanceSequencer()
     {
         env_.noteOff();
         fm_.noteOff();
-        // Don't ramp gainSmoother to 0 here — let the ADSR release
-        // handle the fade. Ramping gain to 0 and back on retrigger
-        // causes clicks from the rapid direction change.
+        // When envelope is on, the ADSR release handles the fade —
+        // don't ramp gain to avoid direction-change clicks.
+        // When envelope is off, the gain smoother is the only amplitude
+        // control, so it must ramp down on gate-off.
+        if (!params_.envelopeEnabled)
+            gainSmoother_.setTarget(0.0f);
         seqGateOpen_ = false;
     }
 
@@ -221,7 +224,12 @@ void AudioEngine::advanceSequencer()
         baseFreq_ = freq;
         porta_.setTarget(freq);
         seqVelocity_ = seq_.velocities[seqStep_] > 0.0f ? seq_.velocities[seqStep_] : 1.0f;
-        gainSmoother_.setValue(seqVelocity_);
+        // With envelope: set gain immediately (ADSR retrigger fade handles
+        // the transition). Without envelope: ramp to avoid gain-step clicks.
+        if (params_.envelopeEnabled)
+            gainSmoother_.setValue(seqVelocity_);
+        else
+            gainSmoother_.setTarget(seqVelocity_);
 
         if (params_.envelopeEnabled)
         {
@@ -245,6 +253,8 @@ void AudioEngine::advanceSequencer()
         // Rest: let envelope release naturally
         env_.noteOff();
         fm_.noteOff();
+        if (!params_.envelopeEnabled)
+            gainSmoother_.setTarget(0.0f);
         seqGateOpen_ = false;
     }
 }

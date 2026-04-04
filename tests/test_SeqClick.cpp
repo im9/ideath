@@ -322,3 +322,103 @@ TEST_CASE("Sequencer retrigger with high resonance has no clicks", "[seqclick]")
     INFO("Max envelope delta at note transitions (high res): " << maxDelta);
     REQUIRE(maxDelta < 0.02f);
 }
+
+TEST_CASE("Sequencer retrigger no clicks with envelope off + filter + saturation", "[seqclick]")
+{
+    // Regression: envelope disabled means no retrigger fade.
+    // The gain smoother + portamento must keep transitions clean on their own.
+    constexpr float kSR = 44100.0f;
+    constexpr float kBPM = 140.0f;
+    constexpr int kSamplesPerStep = static_cast<int>(kSR * 60.0f / kBPM);
+    constexpr int kGateSamples = kSamplesPerStep * 80 / 100;
+
+    const float kC3 = 130.81f;
+    const float kEb3 = 155.56f;
+    const float kG3 = 196.00f;
+    float seqFreqs[] = {kC3, kG3, 0.0f, kEb3, kC3, kG3, 0.0f, kC3};
+    constexpr int kNumSteps = 8;
+
+    Oscillator osc;
+    osc.prepare(kSR);
+    osc.setFrequency(kC3);
+
+    // No AdsrEnvelope — envelope is off.
+
+    SVFilter filter;
+    filter.prepare(kSR);
+    filter.setCutoff(500.0f);
+    // Moderate-high resonance: Q=10 → (1 - 0.707/10) * 0.9 ≈ 0.84
+    filter.setResonance((1.0f - (0.707f / 10.0f)) * 0.9f);
+    filter.setMode(SVFilter::Mode::Lowpass);
+
+    // Portamento with minimum 3ms glide (matches REPL sequencer floor)
+    Portamento porta;
+    porta.prepare(kSR);
+    porta.setTime(0.003f);
+    porta.setValue(kC3);
+    porta.setTarget(kC3);
+
+    Portamento gainSmoother;
+    gainSmoother.prepare(kSR);
+    gainSmoother.setTime(0.005f);
+    gainSmoother.setValue(0.0f);
+    gainSmoother.setTarget(0.0f);
+
+    int step = 0;
+    int sampleCounter = 0;
+    bool gateOpen = false;
+
+    int totalSamples = kSamplesPerStep * kNumSteps * 2;
+    std::vector<float> output(totalSamples);
+
+    // Trigger first note
+    porta.setTarget(seqFreqs[0]);
+    gainSmoother.setTarget(0.7f);
+    gateOpen = true;
+
+    for (int i = 0; i < totalSamples; ++i)
+    {
+        if (gateOpen && sampleCounter >= kGateSamples)
+        {
+            gainSmoother.setTarget(0.0f);
+            gateOpen = false;
+        }
+
+        ++sampleCounter;
+        if (sampleCounter >= kSamplesPerStep)
+        {
+            sampleCounter = 0;
+            step = (step + 1) % kNumSteps;
+
+            float f = seqFreqs[step];
+            if (f > 0.0f)
+            {
+                porta.setTarget(f);
+                // Without envelope, gain smoother must ramp (not jump)
+                // to avoid clicks at retrigger boundaries.
+                gainSmoother.setTarget(0.7f);
+                gateOpen = true;
+            }
+            else
+            {
+                gainSmoother.setTarget(0.0f);
+                gateOpen = false;
+            }
+        }
+
+        float gain = gainSmoother.process();
+        float freq = porta.process();
+        osc.setFrequency(freq);
+        float sample = osc.process(1.0f);
+
+        // Osc → Filter → Saturation (no envelope)
+        sample = filter.process(sample);
+        sample = Saturation::tanhDrive(sample, 2.5f);
+        output[i] = sample * gain * 0.5f;
+    }
+
+    float maxDelta = measureClickDelta(output, seqFreqs, kNumSteps,
+                                       kSamplesPerStep, 2, kSR);
+    INFO("Max envelope delta at note transitions (no env): " << maxDelta);
+    REQUIRE(maxDelta < 0.02f);
+}
