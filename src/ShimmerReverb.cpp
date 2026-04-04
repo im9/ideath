@@ -320,15 +320,16 @@ void ShimmerReverb::updateParams()
 {
     if (freeze_)
     {
-        // Freeze: high feedback, no damping
-        feedback_ = 0.35f;
+        // Freeze: keep shimmer path alive during crossfade to Freeverb
+        feedback_ = 0.93f;
         dampCoeff_ = 0.0f;
     }
     else
     {
-        // Shimmer controls pitch-shifted feedback (0–0.35)
-        // Size also contributes to feedback for longer decay
-        feedback_ = shimmer_ * 0.35f + size_ * 0.05f;
+        // Shimmer drives feedback into the typical shimmer range (0.7–0.95)
+        // Base reverb tail (0.25) + shimmer contribution + size contribution
+        feedback_ = 0.25f + shimmer_ * 0.50f + size_ * 0.20f;
+        feedback_ = std::min(feedback_, 0.93f);
         // Damp coefficient: 0–0.995
         dampCoeff_ = 0.005f + damp_ * 0.99f;
     }

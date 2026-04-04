@@ -185,10 +185,10 @@ TEST_CASE("ShimmerReverb: output stays bounded", "[shimmer]")
         auto [l, r] = rev.process(input);
         REQUIRE(std::isfinite(l));
         REQUIRE(std::isfinite(r));
-        REQUIRE(l >= -2.0f);
-        REQUIRE(l <= 2.0f);
-        REQUIRE(r >= -2.0f);
-        REQUIRE(r <= 2.0f);
+        REQUIRE(l >= -6.0f);
+        REQUIRE(l <= 6.0f);
+        REQUIRE(r >= -6.0f);
+        REQUIRE(r <= 6.0f);
     }
 }
 
@@ -219,6 +219,35 @@ TEST_CASE("ShimmerReverb: default-constructible", "[shimmer]")
     auto [l, r] = rev.process(0.5f);
     REQUIRE(std::isfinite(l));
     REQUIRE(std::isfinite(r));
+}
+
+TEST_CASE("ShimmerReverb: full shimmer produces sustained ethereal tail", "[shimmer]")
+{
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSampleRate);
+    rev.setSize(1.0f);
+    rev.setShimmer(1.0f);
+    rev.setMix(1.0f);
+
+    // Feed a short burst (10ms)
+    for (int i = 0; i < 441; ++i)
+        rev.process(0.5f);
+
+    // Skip 1 second to let the tail develop
+    for (int i = 0; i < 44100; ++i)
+        rev.process(0.0f);
+
+    // Measure energy in the next second — should still be significant
+    float energy = 0.0f;
+    for (int i = 0; i < 44100; ++i)
+    {
+        auto [l, r] = rev.process(0.0f);
+        energy += l * l + r * r;
+    }
+
+    // With feedback ~0.93, the tail at 1–2 seconds should still have
+    // meaningful energy (ethereal shimmer buildup)
+    REQUIRE(energy > 0.01f);
 }
 
 TEST_CASE("ShimmerReverb: parameter clamping", "[shimmer]")
