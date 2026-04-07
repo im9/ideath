@@ -179,4 +179,81 @@ float AdsrEnvelope::process()
     return level_;
 }
 
+// ---- AREnvelope ----
+
+void AREnvelope::prepare(float sampleRate)
+{
+    sampleRate_ = sampleRate;
+    reset();
+}
+
+void AREnvelope::reset()
+{
+    level_ = 0.0f;
+    stage_ = Stage::Idle;
+}
+
+void AREnvelope::setAttack(float seconds)
+{
+    // Linear rise from 0 to 1 in `seconds`, matching AdsrEnvelope's attack shape.
+    const float samples = std::max(1.0f, seconds * sampleRate_);
+    attackRate_ = 1.0f / samples;
+}
+
+void AREnvelope::setRelease(float seconds)
+{
+    // Exponential decay reaching ~-60 dB in `seconds`.
+    const float samples = std::max(1.0f, seconds * sampleRate_);
+    releaseCoef_ = std::exp(-6.9078f / samples);
+}
+
+void AREnvelope::noteOn()
+{
+    stage_ = Stage::Attack;
+}
+
+void AREnvelope::noteOff()
+{
+    if (stage_ != Stage::Idle)
+        stage_ = Stage::Release;
+}
+
+float AREnvelope::process()
+{
+    switch (stage_)
+    {
+        case Stage::Attack:
+            level_ += attackRate_;
+            if (level_ >= 1.0f)
+            {
+                level_ = 1.0f;
+                stage_ = Stage::Sustain;
+            }
+            break;
+
+        case Stage::Sustain:
+            level_ = 1.0f;
+            break;
+
+        case Stage::Release:
+            if (level_ < 1e-5f)
+            {
+                level_ = 0.0f;
+                stage_ = Stage::Idle;
+            }
+            else
+            {
+                level_ *= releaseCoef_;
+            }
+            break;
+
+        case Stage::Idle:
+        default:
+            level_ = 0.0f;
+            break;
+    }
+
+    return level_;
+}
+
 } // namespace ideath

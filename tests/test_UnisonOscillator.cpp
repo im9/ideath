@@ -136,6 +136,106 @@ TEST_CASE("UnisonOscillator: reset clears phase", "[unison]")
     REQUIRE_THAT(a, WithinAbs(b, 0.05f));
 }
 
+TEST_CASE("UnisonOscillator: drift defaults to zero (regression)", "[unison][drift]")
+{
+    // With drift untouched (default 0), output must be bit-identical to a
+    // fresh instance that never knew about drift.
+    ideath::UnisonOscillator a, b;
+    a.prepare(kSampleRate);
+    b.prepare(kSampleRate);
+    a.setVoiceCount(4);
+    b.setVoiceCount(4);
+    a.setFrequency(220.0f);
+    b.setFrequency(220.0f);
+    a.setDetune(15.0f);
+    b.setDetune(15.0f);
+
+    // a never touches drift; b explicitly sets it to 0 — both should match.
+    b.setDriftAmount(0.0f);
+
+    for (int i = 0; i < 2048; ++i)
+    {
+        float oa = a.process(1.0f);
+        float ob = b.process(1.0f);
+        REQUIRE_THAT(oa, WithinAbs(ob, 1e-6f));
+    }
+
+    // And drift cents should be exactly zero when amount is zero.
+    REQUIRE_THAT(b.getVoiceDriftCents(0), WithinAbs(0.0f, 1e-6f));
+    REQUIRE_THAT(b.getVoiceDriftCents(3), WithinAbs(0.0f, 1e-6f));
+}
+
+TEST_CASE("UnisonOscillator: drift varies voice frequency over time", "[unison][drift]")
+{
+    ideath::UnisonOscillator uni;
+    uni.prepare(kSampleRate);
+    uni.setVoiceCount(4);
+    uni.setFrequency(440.0f);
+    uni.setDetune(10.0f);
+    uni.setDriftAmount(5.0f);
+    uni.setDriftRate(2.0f); // 2 Hz so the drift moves a noticeable amount in 100ms
+
+    float dStart = uni.getVoiceDriftCents(0);
+
+    // Process ~100ms — at 2 Hz that's a fifth of a cycle, plenty of motion.
+    for (int i = 0; i < 4410; ++i)
+        uni.process(1.0f);
+
+    float dLater = uni.getVoiceDriftCents(0);
+
+    // Same voice should have moved measurably over time.
+    REQUIRE(std::fabs(dLater - dStart) > 0.1f);
+    // And the drift must stay within the configured peak deviation.
+    REQUIRE(std::fabs(dLater) <= 5.0f + 1e-4f);
+}
+
+TEST_CASE("UnisonOscillator: drift is independent per voice", "[unison][drift]")
+{
+    ideath::UnisonOscillator uni;
+    uni.prepare(kSampleRate);
+    uni.setVoiceCount(4);
+    uni.setFrequency(440.0f);
+    uni.setDetune(10.0f);
+    uni.setDriftAmount(5.0f);
+    uni.setDriftRate(0.3f);
+
+    // Run a bit so each voice's LFO advances.
+    for (int i = 0; i < 1024; ++i)
+        uni.process(1.0f);
+
+    float d0 = uni.getVoiceDriftCents(0);
+    float d1 = uni.getVoiceDriftCents(1);
+    float d2 = uni.getVoiceDriftCents(2);
+    float d3 = uni.getVoiceDriftCents(3);
+
+    // No two voices should be reading exactly the same drift value —
+    // independent phases (and per-voice rate jitter) guarantee this.
+    REQUIRE(std::fabs(d0 - d1) > 1e-4f);
+    REQUIRE(std::fabs(d0 - d2) > 1e-4f);
+    REQUIRE(std::fabs(d0 - d3) > 1e-4f);
+    REQUIRE(std::fabs(d1 - d2) > 1e-4f);
+    REQUIRE(std::fabs(d2 - d3) > 1e-4f);
+}
+
+TEST_CASE("UnisonOscillator: drift produces finite, bounded output", "[unison][drift]")
+{
+    ideath::UnisonOscillator uni;
+    uni.prepare(kSampleRate);
+    uni.setVoiceCount(7);
+    uni.setFrequency(440.0f);
+    uni.setDetune(20.0f);
+    uni.setDriftAmount(3.0f);
+    uni.setDriftRate(0.3f);
+
+    for (int i = 0; i < 8192; ++i)
+    {
+        float out = uni.process(1.0f);
+        REQUIRE(std::isfinite(out));
+        REQUIRE(out >= -3.0f);
+        REQUIRE(out <= 3.0f);
+    }
+}
+
 TEST_CASE("UnisonOscillator: square waveform works", "[unison]")
 {
     ideath::UnisonOscillator uni;

@@ -58,6 +58,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Oscillator** — Phase accumulator, saw/square/morph
 - **DecayEnvelope** — Trigger → exponential decay (drums, percussive)
 - **AdsrEnvelope** — Attack/Decay/Sustain/Release (sustained sounds)
+- **AREnvelope** — Attack/Sustain/Release (slow per-layer fades, gates)
 - **Noise** — xorshift32 white noise generator
 - **Saturation** — tanh drive + polynomial soft clip
 - **Wavetable** — Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation)

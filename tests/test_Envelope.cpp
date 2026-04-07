@@ -229,6 +229,114 @@ TEST_CASE("ADSR: retrigger from idle skips fade", "[env][adsr]")
     REQUIRE(env.getStage() == ideath::AdsrEnvelope::Stage::Attack);
 }
 
+// ---- AREnvelope ----
+
+TEST_CASE("AR: starts idle and outputs zero", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Idle);
+    REQUIRE_FALSE(env.isActive());
+    REQUIRE_THAT(env.process(), WithinAbs(0.0f, 1e-6f));
+}
+
+TEST_CASE("AR: attack rises to 1.0 then enters sustain", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.01f);   // 10ms
+    env.setRelease(0.05f);
+    env.noteOn();
+
+    float peak = 0.0f;
+    for (int i = 0; i < 4410; ++i) // 100ms — way more than 10ms attack
+    {
+        float v = env.process();
+        if (v > peak) peak = v;
+    }
+
+    REQUIRE(peak > 0.95f);
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Sustain);
+}
+
+TEST_CASE("AR: sustain holds at 1.0", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.001f);
+    env.setRelease(0.1f);
+    env.noteOn();
+
+    for (int i = 0; i < 4410; ++i)
+        env.process();
+
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Sustain);
+    for (int i = 0; i < 1000; ++i)
+        REQUIRE_THAT(env.process(), WithinAbs(1.0f, 1e-6f));
+}
+
+TEST_CASE("AR: release decays to zero and returns to idle", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.001f);
+    env.setRelease(0.01f);
+
+    env.noteOn();
+    for (int i = 0; i < 2000; ++i)
+        env.process();
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Sustain);
+
+    env.noteOff();
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Release);
+
+    float last = 0.0f;
+    for (int i = 0; i < 4410; ++i)
+        last = env.process();
+
+    REQUIRE(last < 0.001f);
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Idle);
+    REQUIRE_FALSE(env.isActive());
+}
+
+TEST_CASE("AR: isActive tracks stage transitions", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.005f);
+    env.setRelease(0.005f);
+
+    REQUIRE_FALSE(env.isActive());
+    env.noteOn();
+    REQUIRE(env.isActive());
+
+    for (int i = 0; i < 1000; ++i)
+        env.process();
+    REQUIRE(env.isActive());
+
+    env.noteOff();
+    REQUIRE(env.isActive());
+
+    for (int i = 0; i < 4410; ++i)
+        env.process();
+    REQUIRE_FALSE(env.isActive());
+}
+
+TEST_CASE("AR: reset returns to idle", "[env][ar]")
+{
+    ideath::AREnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.05f);
+    env.setRelease(0.05f);
+    env.noteOn();
+    for (int i = 0; i < 500; ++i)
+        env.process();
+
+    env.reset();
+    REQUIRE(env.getStage() == ideath::AREnvelope::Stage::Idle);
+    REQUIRE_THAT(env.getValue(), WithinAbs(0.0f, 1e-6f));
+}
+
 TEST_CASE("ADSR: retrigger output is continuous (no jumps)", "[env][adsr]")
 {
     ideath::AdsrEnvelope env;

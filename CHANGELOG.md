@@ -18,6 +18,13 @@ The format is based on Keep a Changelog, adapted for the project's current stage
 - Catch2 benchmark executable and `make bench` workflow for primitive and reference-chain timing
 - New primitives: `TapeDelay`, `CombFilter`, and `FormantFilter`
 - REPL commands for `TapeDelay` and `CombFilter`
+- `AREnvelope` — attack/sustain/release envelope for slow per-layer fades
+  (added alongside `DecayEnvelope` and `AdsrEnvelope` in `ideath/Envelope.h`)
+- `UnisonOscillator` analog drift: `setDriftAmount(cents)` and
+  `setDriftRate(hz)`. Each voice gets an independent slow sine LFO with
+  per-voice rate jitter so voices wander uncorrelated. Default amount is
+  `0.0` cents — pre-existing call sites are bit-identical
+  (`getVoiceDriftCents()` exposed for tests/debug)
 
 ### Changed
 

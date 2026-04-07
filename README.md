@@ -14,6 +14,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Oscillator** | Phase accumulator, saw/square/morph |
 | **DecayEnvelope** | Trigger → exponential decay (drums, percussive) |
 | **AdsrEnvelope** | Attack/Decay/Sustain/Release (sustained sounds) |
+| **AREnvelope** | Attack/Sustain/Release (slow per-layer fades, gates) |
 | **Noise** | xorshift32 white noise generator |
 | **Saturation** | tanh drive + polynomial soft clip |
 | **Wavetable** | Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation) |
@@ -32,7 +33,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Compressor** | Peak envelope compressor (threshold/ratio/attack/release/makeup/knee) |
 | **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping |
 | **FeedbackBuffer** | Long circular buffer looper (record/overdub/playback) |
-| **UnisonOscillator** | Stacked detuned oscillators (unison spread) |
+| **UnisonOscillator** | Stacked detuned oscillators with optional analog pitch drift (unison spread) |
 | **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
 | **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |

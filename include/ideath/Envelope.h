@@ -69,4 +69,36 @@ private:
     static float calcCoef(float timeSeconds, float sampleRate);
 };
 
+/// Attack/Release envelope for slow fade in/out (per-layer swells, gates).
+/// Sustains at 1.0 between noteOn and noteOff.
+class AREnvelope
+{
+public:
+    enum class Stage { Idle, Attack, Sustain, Release };
+
+    AREnvelope() = default;
+
+    void prepare(float sampleRate);
+    void reset();
+
+    void setAttack(float seconds);
+    void setRelease(float seconds);
+
+    void noteOn();
+    void noteOff();
+
+    float process();
+
+    bool isActive() const { return stage_ != Stage::Idle; }
+    Stage getStage() const { return stage_; }
+    float getValue() const { return level_; }
+
+private:
+    float sampleRate_ = 44100.0f;
+    float level_ = 0.0f;
+    float attackRate_ = 0.0f;
+    float releaseCoef_ = 0.0f;
+    Stage stage_ = Stage::Idle;
+};
+
 } // namespace ideath
