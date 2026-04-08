@@ -114,9 +114,22 @@ void AdsrEnvelope::noteOn()
     // clicks when the downstream signal chain (filter, saturation) carries
     // energy from the previous note.
     if (stage_ != Stage::Idle && level_ > 0.001f)
+    {
+        // Curve-aware retrigger: reuse the release-curve normalisation so
+        // the fade stays continuous with the previous segment regardless
+        // of curve_.  When we're already in Release we keep the existing
+        // releaseStartLevel_ from noteOff (the release branch's reference
+        // point) — overwriting it would break continuity with the curved
+        // release.  From any other stage we capture the current level_
+        // as the new reference.
+        if (stage_ != Stage::Release)
+            releaseStartLevel_ = level_;
         stage_ = Stage::Retrigger;
+    }
     else
+    {
         stage_ = Stage::Attack;
+    }
 }
 
 void AdsrEnvelope::noteOff()
@@ -212,12 +225,20 @@ float AdsrEnvelope::process()
         // standard upward-bent attack family.
         return std::pow(level_, curveExponent_);
     }
-    if (stage_ == Stage::Release && releaseStartLevel_ > 0.0f)
+    if ((stage_ == Stage::Release || stage_ == Stage::Retrigger)
+        && releaseStartLevel_ > 0.0f)
     {
-        // Normalise: at the start of release level_ == releaseStartLevel_
-        // so output == releaseStartLevel_ (continuous with sustain).  As
-        // level_ → 0 the output also → 0.  exponent > 1 → faster end,
-        // exponent < 1 → longer tail.
+        // Normalise: at the start of release/retrigger level_ ==
+        // releaseStartLevel_ so output == releaseStartLevel_ (continuous
+        // with the previous segment).  As level_ → 0 the output also → 0.
+        // exponent > 1 → faster end, exponent < 1 → longer tail.
+        //
+        // Retrigger uses the same formula because it is also an
+        // exponential decay toward zero (just with a much faster
+        // coefficient).  Without this branch, a noteOn during a curved
+        // release would jump from `releaseStartLevel_ * pow(...)` back
+        // up to the bare `level_`, producing exactly the click the
+        // retrigger fade is supposed to suppress.
         const float ratio = level_ / releaseStartLevel_;
         return releaseStartLevel_ * std::pow(ratio, curveExponent_);
     }

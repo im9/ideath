@@ -117,6 +117,59 @@ TEST_CASE("FMSynth: all 8 algorithms produce output", "[fmsynth]")
     }
 }
 
+TEST_CASE("FMSynth: every algorithm has a distinct routing", "[fmsynth]")
+{
+    // Regression: algorithms 5 and 6 used to be byte-identical (same
+    // routing, different comments).  Verify all 8 algorithms produce
+    // distinguishable output for the same operator settings.
+    auto runAlgo = [](int algo) {
+        ideath::FMSynth fm;
+        fm.prepare(kSampleRate);
+        fm.setAlgorithm(algo);
+        for (int op = 0; op < 4; ++op)
+        {
+            fm.setAttack(op, 0.001f);
+            fm.setDecay(op, 0.5f);
+            fm.setSustain(op, 1.0f);
+            fm.setRelease(op, 0.1f);
+            fm.setRatio(op, 1.0f + static_cast<float>(op));
+            fm.setLevel(op, 1.0f);
+        }
+        fm.noteOn(220.0f);
+
+        constexpr int N = 4410;
+        std::vector<float> buf(N);
+        for (int i = 0; i < N; ++i)
+            buf[static_cast<size_t>(i)] = fm.process();
+        return buf;
+    };
+
+    std::vector<std::vector<float>> outputs;
+    for (int algo = 0; algo < ideath::FMSynth::kNumAlgorithms; ++algo)
+        outputs.push_back(runAlgo(algo));
+
+    // Compare every pair: their RMS-difference must be non-trivial.
+    auto rmsDiff = [](const std::vector<float>& a, const std::vector<float>& b) {
+        double s = 0.0;
+        for (size_t i = 0; i < a.size(); ++i)
+        {
+            const double d = static_cast<double>(a[i] - b[i]);
+            s += d * d;
+        }
+        return std::sqrt(s / static_cast<double>(a.size()));
+    };
+
+    for (int i = 0; i < ideath::FMSynth::kNumAlgorithms; ++i)
+    {
+        for (int j = i + 1; j < ideath::FMSynth::kNumAlgorithms; ++j)
+        {
+            const double d = rmsDiff(outputs[i], outputs[j]);
+            INFO("rms diff between algo " << i << " and " << j << " = " << d);
+            REQUIRE(d > 0.01);
+        }
+    }
+}
+
 TEST_CASE("FMSynth: modulator changes timbre", "[fmsynth]")
 {
     // Algorithm 0: OP4→OP3→OP2→OP1→out (serial chain)

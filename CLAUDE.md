@@ -175,7 +175,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
 ### Robustness / Refactoring
 - [ ] ShimmerReverb — freeze crossfade phase alignment (linear blend causes tonal shift)
-- [ ] Polyphony — replace hard clip with soft saturation (tanh) for smoother multi-voice mix
+- [ ] Voice — migrate from Biquad to SVFilter to match REPL reference and reduce high-Q retrigger ringing
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
 

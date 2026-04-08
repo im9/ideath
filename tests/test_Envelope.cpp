@@ -464,6 +464,55 @@ TEST_CASE("ADSR: Curve does not introduce a release jump", "[env][adsr][adr009]"
     REQUIRE_THAT(first, WithinAbs(prev, 0.05f));
 }
 
+TEST_CASE("ADSR: retrigger during curved release stays continuous", "[env][adsr][adr009]")
+{
+    // Regression: the curve shaping originally only branched on Attack and
+    // Release, leaving Retrigger to return raw level_.  When a noteOn fired
+    // during a curved release the output jumped from
+    // `releaseStartLevel * pow(level/releaseStartLevel, exp)` back up to
+    // bare `level`, producing a click of up to ~0.25 at curve=+1.  Fixed
+    // by sharing the release-curve normalisation with Retrigger.
+    for (float curve : { -1.0f, -0.5f, 0.5f, 1.0f })
+    {
+        ideath::AdsrEnvelope env;
+        env.prepare(kSampleRate);
+        env.setAttack(0.005f);
+        env.setDecay(0.05f);
+        env.setSustain(0.6f);
+        env.setRelease(0.20f);
+        env.setCurve(curve);
+
+        env.noteOn();
+        // Run through attack + decay into sustain
+        for (int i = 0; i < 4410; ++i)
+            env.process();
+        REQUIRE(env.getStage() == ideath::AdsrEnvelope::Stage::Sustain);
+
+        // Enter release and let it run a few hundred samples so the
+        // curved tail has noticeably diverged from the linear path.
+        env.noteOff();
+        for (int i = 0; i < 800; ++i)
+            env.process();
+
+        // Sample the last release output, then trigger and check the
+        // first retrigger sample is close to it.
+        float beforeRetrigger = env.process();
+        env.noteOn();
+        REQUIRE(env.getStage() == ideath::AdsrEnvelope::Stage::Retrigger);
+        float afterRetrigger = env.process();
+
+        INFO("curve=" << curve
+             << " before=" << beforeRetrigger
+             << " after=" << afterRetrigger);
+        // The retrigger fade is itself a fast (~1ms) exponential decay, so
+        // a single per-sample drop of up to ~5% of current level is normal
+        // and *not* a click.  The bug we're guarding against produced jumps
+        // of 0.2+ in this same setup, so 0.06 cleanly distinguishes them.
+        REQUIRE_THAT(afterRetrigger,
+                     WithinAbs(beforeRetrigger, 0.06f));
+    }
+}
+
 TEST_CASE("ADSR: retrigger output is continuous (no jumps)", "[env][adsr]")
 {
     ideath::AdsrEnvelope env;

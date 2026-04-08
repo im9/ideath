@@ -188,11 +188,19 @@ float FMSynth::process()
         }
         case 6:
         {
-            // OP4→OP3→out, OP2→out, OP1→out (OP1 with feedback emphasis)
+            // OP4 → (OP3, OP2, OP1) — single shared modulator drives three
+            // carriers in parallel.  YM2612-style "1 modulator into 3
+            // carriers" topology, musically distinct from algo 5 (which is
+            // a 2-op stack plus two plain sines).
+            //
+            // Historical note: this slot used to contain an exact copy of
+            // algo 5 with only a stale comment ("OP1 with feedback
+            // emphasis") suggesting otherwise.  Users got 7 distinct FM
+            // routings instead of the documented 8 until that was found.
             float o4 = op4.tick(0.0f);
             float o3 = op3.tick(o4);
-            float o2 = op2.tick(0.0f);
-            float o1 = op1.tick(0.0f);
+            float o2 = op2.tick(o4);
+            float o1 = op1.tick(o4);
             out = o3 + o2 + o1;
             carrierCount = 3;
             break;

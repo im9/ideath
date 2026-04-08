@@ -130,7 +130,9 @@ TEST_CASE("Polyphony: output is in [-1, 1] range", "[poly]")
     ideath::Polyphony poly;
     poly.prepare(kSampleRate, 8);
     poly.setAttack(0.001f);
-    poly.setSustain(0.3f); // lower sustain to avoid clipping when summing
+    // Sustain at full level — the soft-saturated mix bus must keep the
+    // chord under unity without us having to baby the envelope.
+    poly.setSustain(1.0f);
 
     // Play a chord
     poly.noteOn(261.63f, 0.5f);
@@ -144,6 +146,58 @@ TEST_CASE("Polyphony: output is in [-1, 1] range", "[poly]")
         REQUIRE(s >= -1.0f);
         REQUIRE(s <= 1.0f);
     }
+}
+
+TEST_CASE("Polyphony: heavy chord saturates softly without flat-topping", "[poly]")
+{
+    // Regression: the mix bus used to hard-clip the raw voice sum to
+    // [-1, 1], producing flat-topped output (many consecutive samples
+    // pinned at exactly ±1) and harsh harmonics.  After switching to a
+    // tanh soft saturator the output should still be bounded but should
+    // never sit pinned at the rail.
+    ideath::Polyphony poly;
+    poly.prepare(kSampleRate, 8);
+    poly.setAttack(0.001f);
+    poly.setSustain(1.0f);
+
+    // 8-voice chord — each voice is a saw at velocity 1.0, summed sum
+    // would peak around ±5..6 before saturation.
+    const float freqs[8] = { 130.81f, 164.81f, 196.00f, 246.94f,
+                              261.63f, 329.63f, 392.00f, 493.88f };
+    for (float f : freqs)
+        poly.noteOn(f, 1.0f);
+
+    // Skip the attack window
+    for (int i = 0; i < 2048; ++i)
+        poly.process();
+
+    constexpr int N = 8192;
+    int exactRailHits = 0;
+    int flatRunPairs = 0;
+    float prev = poly.process();
+    for (int i = 1; i < N; ++i)
+    {
+        float s = poly.process();
+        REQUIRE(s >= -1.0f);
+        REQUIRE(s <= 1.0f);
+        // Hard clip emits the literal value 1.0f (or -1.0f) for every
+        // sample whose pre-clip sum is outside [-1, 1].  tanh approaches
+        // ±1 asymptotically but, for the float magnitudes summed here
+        // (~5..6), never produces the *exact* IEEE 1.0f.
+        if (s == 1.0f || s == -1.0f)
+            ++exactRailHits;
+        // Hard clip also flattens consecutive samples whenever the input
+        // stays clipped — the derivative goes to zero.  tanh's derivative
+        // never reaches zero for finite input, so consecutive identical
+        // floats are essentially impossible on a non-trivial waveform.
+        if (s == prev)
+            ++flatRunPairs;
+        prev = s;
+    }
+    INFO("exact rail hits: " << exactRailHits
+         << "  flat-run pairs: " << flatRunPairs << " / " << N);
+    REQUIRE(exactRailHits == 0);
+    REQUIRE(flatRunPairs < 4);
 }
 
 TEST_CASE("Polyphony: reset clears all voices", "[poly]")

@@ -170,13 +170,22 @@ float Voice::process()
             break;
     }
 
-    // Envelope
-    float envVal = env_.process();
-    sample *= envVal * velocity_;
+    // Standard subtractive routing: Osc → Filter → Envelope (VCO → VCF → VCA).
+    // The filter must run *before* the envelope so the AdsrEnvelope's
+    // ~1ms retrigger fade can mask any filter state transients carrying over
+    // from the previous note.  This was fixed in the REPL audio engine in
+    // commit 3b939e7 ("eliminate sequencer retrigger clicks with resonant
+    // filter + saturation") but Voice.cpp was missed at the time, so any
+    // plugin building on Voice (rather than the REPL) was still hearing the
+    // exact retrigger click that the commit claimed to fix.
 
     // Filter
     if (filterType_ != FilterType::Off)
         sample = filter_.process(sample);
+
+    // Envelope (VCA stage)
+    float envVal = env_.process();
+    sample *= envVal * velocity_;
 
     // BitCrusher (passthrough if default settings)
     sample = crush_.process(sample);

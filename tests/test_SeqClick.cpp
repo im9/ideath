@@ -10,6 +10,7 @@
 #include <ideath/SVFilter.h>
 #include <ideath/Portamento.h>
 #include <ideath/Saturation.h>
+#include <ideath/Voice.h>
 
 using namespace ideath;
 
@@ -54,6 +55,70 @@ static float measureClickDelta(const std::vector<float>& output,
         }
     }
     return maxDelta;
+}
+
+TEST_CASE("Voice signal chain order matches REPL reference", "[seqclick][voice]")
+{
+    // Regression for the Voice signal chain order bug.  Voice.cpp used to
+    // run the envelope BEFORE the filter; commit 3b939e7 fixed this in
+    // the REPL audio engine but missed Voice.cpp itself.  We can't easily
+    // measure clicks here because Voice still uses Biquad (not SVFilter
+    // like the REPL), so absolute click magnitude is not comparable.
+    //
+    // Instead we directly compare Voice's output against an offline
+    // replica of the REPL's reference chain (Osc → Filter → Envelope).
+    // If Voice's order is wrong, the two outputs diverge wildly; if it's
+    // correct, they track within rounding (and the small differences
+    // attributable to Biquad vs SVFilter).
+    constexpr float kSR = 44100.0f;
+    constexpr int kN   = 4096;
+
+    Voice voice;
+    voice.prepare(kSR);
+    voice.setSource(Voice::Source::Oscillator);
+    voice.setOscWaveform(1.0f);
+    voice.setAttack(0.005f);
+    voice.setDecay(0.05f);
+    voice.setSustain(0.5f);
+    voice.setRelease(0.1f);
+    voice.setFilter(Voice::FilterType::Lowpass, 1000.0f, 4.0f);
+
+    // Offline reference using the same Biquad mapping Voice uses internally
+    Oscillator refOsc;
+    refOsc.prepare(kSR);
+    refOsc.setFrequency(220.0f);
+    AdsrEnvelope refEnv;
+    refEnv.prepare(kSR);
+    refEnv.setAttack(0.005f);
+    refEnv.setDecay(0.05f);
+    refEnv.setSustain(0.5f);
+    refEnv.setRelease(0.1f);
+    Biquad refFilter;
+    refFilter.setLowpass(1000.0f, 4.0f, kSR);
+
+    voice.noteOn(220.0f, 1.0f);
+    refEnv.noteOn();
+
+    double sumSqDiff = 0.0;
+    for (int i = 0; i < kN; ++i)
+    {
+        // Offline: Osc → Filter → Envelope (the documented order)
+        float src = refOsc.process(1.0f);
+        src = refFilter.process(src);
+        src *= refEnv.process();
+
+        float v = voice.process();
+        const double d = static_cast<double>(v - src);
+        sumSqDiff += d * d;
+    }
+
+    const double rmsDiff = std::sqrt(sumSqDiff / static_cast<double>(kN));
+    INFO("Voice vs offline-Osc→Filter→Env RMS diff: " << rmsDiff);
+    // If Voice still ran Env before Filter, the divergence would be ~0.1
+    // (the resonant filter would shape a fundamentally different waveform).
+    // With the corrected order the only differences come from float
+    // rounding and possibly a one-sample phase offset.
+    REQUIRE(rmsDiff < 0.01);
 }
 
 TEST_CASE("Sequencer note transitions have no clicks (saw, no envelope)", "[seqclick]")

@@ -82,11 +82,18 @@ float Polyphony::process()
             mix += v.process();
     }
 
-    // Soft limit to [-1, 1]
-    if (mix > 1.0f) mix = 1.0f;
-    else if (mix < -1.0f) mix = -1.0f;
-
-    return mix;
+    // Soft saturation via tanh.  The previous implementation hard-clipped
+    // the raw voice sum to [-1, 1], which caused asymmetric harmonic
+    // distortion whenever more than ~3 voices played simultaneously at
+    // sustain.  Tests had to manually drop sustain to 0.3 to avoid the
+    // resulting harshness — that's a hint that the mix stage was wrong,
+    // not that the test was demanding too much.
+    //
+    // tanh(x) is ≈ x for |x| ≪ 1 (so a single quiet voice passes through
+    // essentially untouched), saturates smoothly toward ±1 as the sum
+    // grows, and never produces a hard discontinuity.  Listed in CLAUDE.md
+    // backlog as "replace hard clip with soft saturation".
+    return std::tanh(mix);
 }
 
 // --- Voice configuration (applied to all voices) ---
