@@ -105,7 +105,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Parameter clamping** — setters must clamp to valid ranges (`std::clamp`, `std::max`) before storing or computing coefficients. Frequencies to `[minHz, sampleRate * 0.45]`, Q/resonance to `[floor, ceiling]`, time values to `[small positive, max]`. Never trust caller input in `set<Param>()`.
 - **Phase wrapping** — phase accumulators must wrap via `phase -= std::floor(phase)` every sample to stay in `[0, 1)`. Prevents float precision loss over long playback. See `bd500ec` for a case where missing wrap caused drift.
 
-## Adding a New Primitive
+## Adding or Changing a Primitive
 
 1. Create `include/ideath/Foo.h` with the interface
 2. Create `tests/test_Foo.cpp` with tests (must fail initially)
@@ -113,6 +113,10 @@ Polyphony) are excluded because the REPL itself serves that role.
 4. Add source files to `CMakeLists.txt` (`target_sources` for lib, `add_executable` for tests)
 5. `make test` — all green
 6. Update Primitives list in `CLAUDE.md` and `README.md`
+7. **Run `/audit` (the audit skill)** — required for any new primitive or non-trivial change to an existing one.  History has shown narrow per-file review misses entire bug classes (canonical-reference omissions, reversed signs that match a correct comment, switch/case copy-paste, fixes that were applied to the REPL but not the library).  The audit skill at `.claude/skills/audit.md` is structured around the bug families that have actually shown up here.
+8. **Run `make bench`** — required for any new primitive or change that touches a hot loop / `process()` body.  The bench suite at `benchmarks/bench_primitives.cpp` exists to catch performance regressions before they reach Slothrop / iOS targets where headroom is tight.
+
+Steps 7 and 8 are not optional polish — they are part of the definition of "done" for primitive work.  Skipping them is how we got the bugs that prompted this checklist.  When in doubt about whether a change qualifies as "non-trivial", run them anyway; they're cheap compared to debugging a regression in the plugin layer.
 
 ## Testing Conventions
 
