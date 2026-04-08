@@ -288,9 +288,10 @@ std::pair<float, float> HallReverb::process(float input)
         outR = allpassR_[i].process(outR);
     }
 
-    // Dry/wet mix
+    // Dry/wet mix.  Same canonical-Freeverb wet scale as Reverb — see the
+    // comment in Reverb::process for the rationale.
     float dry = 1.0f - mix_;
-    float wet = mix_;
+    float wet = mix_ * kWetScale;
 
     float left  = input * dry + outL * wet;
     float right = input * dry + outR * wet;

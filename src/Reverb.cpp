@@ -152,8 +152,10 @@ void Reverb::updateParams()
     }
     else
     {
-        // Map size 0–1 to feedback 0.6–0.96
-        feedback_ = 0.6f + size_ * 0.36f;
+        // Map size 0–1 to feedback 0.7–0.98 (canonical Freeverb:
+        //   roomsize = size * scaleroom + offsetroom, with
+        //   scaleroom = 0.28 and offsetroom = 0.7).
+        feedback_ = 0.7f + size_ * 0.28f;
         // Damp: damp1 is the LP coefficient, damp2 = 1 - damp1
         damp1_ = damp_ * 0.4f;
         damp2_ = 1.0f - damp1_;
@@ -181,9 +183,15 @@ std::pair<float, float> Reverb::process(float input)
         outR = allpassR_[i].process(outR);
     }
 
-    // Dry/wet mix
+    // Dry/wet mix.
+    //
+    // Canonical Freeverb multiplies the comb-bank output by `scalewet = 3`
+    // before mixing it against the dry signal.  Without this scale the wet
+    // bus is roughly a third of the level a Freeverb user expects, which
+    // makes the effect feel dramatically weaker than it should at any given
+    // mix value.  We were missing this — fixed by `kWetScale`.
     float dry = 1.0f - mix_;
-    float wet = mix_;
+    float wet = mix_ * kWetScale;
 
     float left  = input * dry + outL * wet;
     float right = input * dry + outR * wet;

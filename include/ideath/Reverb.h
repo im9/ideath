@@ -38,7 +38,8 @@ public:
 private:
     static constexpr int kNumCombs = 8;
     static constexpr int kNumAllpasses = 4;
-    static constexpr float kInputGain = 0.015f;
+    static constexpr float kInputGain = 0.015f;   // canonical Freeverb fixedgain
+    static constexpr float kWetScale  = 3.0f;     // canonical Freeverb scalewet
     static constexpr int kStereoSpread = 23; // samples offset for R channel
 
     float sampleRate_ = 44100.0f;
