@@ -47,6 +47,11 @@ public:
     void setSustain(float level);   // 0.0–1.0
     void setRelease(float seconds);
 
+    /// Bend the attack and release segment shapes.  -1 = log (fast start,
+    /// long tail), 0 = linear / current behaviour, +1 = exponential (slow
+    /// start, fast end).  Decay and sustain are unaffected.  Default 0.
+    void setCurve(float curve);
+
     void noteOn();
     void noteOff();
 
@@ -65,6 +70,11 @@ private:
     float releaseCoef_ = 0.0f;
     float retriggerCoef_ = 0.0f;
     Stage stage_ = Stage::Idle;
+
+    // ADR 009 / Phase 9b1 — curve shaping for attack & release segments.
+    float curve_ = 0.0f;          // user-facing [-1, +1]
+    float curveExponent_ = 1.0f;  // 2^curve_, used as pow() exponent
+    float releaseStartLevel_ = 0.0f;
 
     static float calcCoef(float timeSeconds, float sampleRate);
 };

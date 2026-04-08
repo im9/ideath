@@ -15,6 +15,7 @@ add_library(ideath STATIC
     src/Oscillator.cpp
     src/Envelope.cpp
     src/Noise.cpp
+    src/BandlimitedNoise.cpp
     src/Saturation.cpp
     src/Wavetable.cpp
     src/BitCrusher.cpp
@@ -108,6 +109,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_Oscillator.cpp
         tests/test_Envelope.cpp
         tests/test_Noise.cpp
+        tests/test_BandlimitedNoise.cpp
         tests/test_Saturation.cpp
         tests/test_Wavetable.cpp
         tests/test_BitCrusher.cpp

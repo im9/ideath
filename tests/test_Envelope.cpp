@@ -337,6 +337,133 @@ TEST_CASE("AR: reset returns to idle", "[env][ar]")
     REQUIRE_THAT(env.getValue(), WithinAbs(0.0f, 1e-6f));
 }
 
+// ---------------------------------------------------------------------------
+// ADR 009 / Phase 9b1 — AdsrEnvelope curve shaping
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Run an ADSR with the given curve and capture the level at the midpoint
+// of the attack segment.
+float midAttackLevel(float curve)
+{
+    ideath::AdsrEnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.1f);    // 100ms — 4410 samples
+    env.setDecay(0.5f);
+    env.setSustain(0.5f);
+    env.setRelease(0.1f);
+    env.setCurve(curve);
+    env.noteOn();
+
+    // Sample at i=2200 (~halfway through attack)
+    float v = 0.0f;
+    for (int i = 0; i < 2200; ++i)
+        v = env.process();
+    return v;
+}
+
+} // namespace
+
+TEST_CASE("ADSR: Curve=0 preserves linear attack midpoint", "[env][adsr][adr009]")
+{
+    // Halfway through a 100ms attack, the linear ramp should be ~0.5.
+    REQUIRE_THAT(midAttackLevel(0.0f), WithinAbs(0.5f, 0.05f));
+}
+
+TEST_CASE("ADSR: Curve=-1 raises attack midpoint", "[env][adsr][adr009]")
+{
+    // Logarithmic shape → fast initial rise → midpoint level higher than linear.
+    const float linear = midAttackLevel(0.0f);
+    const float log = midAttackLevel(-1.0f);
+    REQUIRE(log > linear + 0.05f);
+}
+
+TEST_CASE("ADSR: Curve=+1 lowers attack midpoint", "[env][adsr][adr009]")
+{
+    // Exponential shape → slow initial rise → midpoint level lower than linear.
+    const float linear = midAttackLevel(0.0f);
+    const float exp = midAttackLevel(1.0f);
+    REQUIRE(exp < linear - 0.05f);
+}
+
+TEST_CASE("ADSR: Curve clamps out-of-range input", "[env][adsr][adr009]")
+{
+    ideath::AdsrEnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.01f);
+    env.setDecay(0.05f);
+    env.setSustain(0.5f);
+    env.setRelease(0.05f);
+
+    env.setCurve(-99.0f);  // clamp to -1
+    env.noteOn();
+    for (int i = 0; i < 4410; ++i)
+        REQUIRE(std::isfinite(env.process()));
+
+    env.reset();
+    env.setCurve(99.0f);   // clamp to +1
+    env.noteOn();
+    for (int i = 0; i < 4410; ++i)
+        REQUIRE(std::isfinite(env.process()));
+}
+
+TEST_CASE("ADSR: Curve still reaches peak and zero", "[env][adsr][adr009]")
+{
+    for (float curve : { -1.0f, -0.5f, 0.0f, 0.5f, 1.0f })
+    {
+        ideath::AdsrEnvelope env;
+        env.prepare(kSampleRate);
+        env.setAttack(0.01f);
+        env.setDecay(0.001f);
+        env.setSustain(0.6f);
+        env.setRelease(0.02f);
+        env.setCurve(curve);
+
+        env.noteOn();
+        float peak = 0.0f;
+        for (int i = 0; i < 4410; ++i)
+        {
+            float v = env.process();
+            if (v > peak) peak = v;
+        }
+        // For curve > 0 (slow attack -> fast end), peak gets close to 1
+        // but doesn't quite hit it because the attack stage exits the moment
+        // the *internal* level crosses 1 — by then the curved output may
+        // still be slightly below.  0.85 is a comfortable floor.
+        REQUIRE(peak > 0.85f);
+
+        env.noteOff();
+        float last = 0.0f;
+        for (int i = 0; i < 8820; ++i)
+            last = env.process();
+        REQUIRE(last < 0.001f);
+    }
+}
+
+TEST_CASE("ADSR: Curve does not introduce a release jump", "[env][adsr][adr009]")
+{
+    // The release branch normalises against the level at noteOff so
+    // sustain → release stays continuous regardless of curve.
+    ideath::AdsrEnvelope env;
+    env.prepare(kSampleRate);
+    env.setAttack(0.005f);
+    env.setDecay(0.005f);
+    env.setSustain(0.4f);
+    env.setRelease(0.1f);
+    env.setCurve(1.0f);
+
+    env.noteOn();
+    for (int i = 0; i < 4410; ++i)
+        env.process();
+
+    REQUIRE(env.getStage() == ideath::AdsrEnvelope::Stage::Sustain);
+    float prev = env.process();
+    env.noteOff();
+    float first = env.process();
+    REQUIRE_THAT(first, WithinAbs(prev, 0.05f));
+}
+
 TEST_CASE("ADSR: retrigger output is continuous (no jumps)", "[env][adsr]")
 {
     ideath::AdsrEnvelope env;

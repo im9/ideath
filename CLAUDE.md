@@ -57,15 +57,16 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Biquad** — Direct Form II Transposed (LP/HP/BP, RBJ cookbook)
 - **Oscillator** — Phase accumulator, saw/square/morph
 - **DecayEnvelope** — Trigger → exponential decay (drums, percussive)
-- **AdsrEnvelope** — Attack/Decay/Sustain/Release (sustained sounds)
+- **AdsrEnvelope** — Attack/Decay/Sustain/Release (sustained sounds, optional curve bend on attack/release)
 - **AREnvelope** — Attack/Sustain/Release (slow per-layer fades, gates)
 - **Noise** — xorshift32 white noise generator
+- **BandlimitedNoise** — xorshift32 noise + one-pole LP (Bandwidth: white → pink-ish → brown → random walk)
 - **Saturation** — tanh drive + polynomial soft clip
 - **Wavetable** — Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation)
 - **BitCrusher** — Bit depth reduction + sample rate reduction (lo-fi digital)
 - **DelayLine** — Circular buffer delay with linear interpolation, feedback, dry/wet mix
 - **TapeDelay** — Tape-style delay with wow/flutter modulation, feedback LP/HP coloring, saturation
-- **LFO** — Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot)
+- **LFO** — Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot, Shape/Curve/Quantize morph)
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
 - **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)

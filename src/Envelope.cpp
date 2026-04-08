@@ -98,6 +98,15 @@ void AdsrEnvelope::setRelease(float seconds)
     releaseCoef_ = calcCoef(seconds, sampleRate_);
 }
 
+void AdsrEnvelope::setCurve(float curve)
+{
+    curve_ = std::clamp(curve, -1.0f, 1.0f);
+    // Map -1 → 0.5, 0 → 1.0, +1 → 2.0 (exponential family).  Curve == 0
+    // yields exponent 1.0 so pow(x, 1) is a no-op and the legacy linear
+    // attack / exponential release shape is preserved bit-for-bit.
+    curveExponent_ = std::pow(2.0f, curve_);
+}
+
 void AdsrEnvelope::noteOn()
 {
     // If the envelope is still active with audible level, do a quick
@@ -113,7 +122,13 @@ void AdsrEnvelope::noteOn()
 void AdsrEnvelope::noteOff()
 {
     if (stage_ != Stage::Idle)
+    {
+        // Capture the level at the moment release begins so the curve
+        // shaper can normalise around it (avoids a discontinuity at the
+        // sustain→release boundary when curve_ != 0).
+        releaseStartLevel_ = level_;
         stage_ = Stage::Release;
+    }
 }
 
 float AdsrEnvelope::process()
@@ -176,6 +191,36 @@ float AdsrEnvelope::process()
             break;
     }
 
+    // --- Curve shaping (ADR 009 / Phase 9b1) ---
+    //
+    // The internal `level_` state is left untouched (so the existing linear
+    // attack ramp + exponential release timing are preserved exactly when
+    // curve_ == 0).  Curve only reshapes the *output* of the attack and
+    // release segments via a power law, with the release branch normalised
+    // against the level captured at noteOff so the segment boundary stays
+    // continuous regardless of curve.
+    //
+    // Implementation choice (option A from the spec): a simple pow() shaper
+    // is the cheapest path that integrates with the existing calcCoef-based
+    // engine without disturbing any of its timing math.
+    if (curve_ == 0.0f)
+        return level_;
+
+    if (stage_ == Stage::Attack)
+    {
+        // level_ rises 0 → 1 linearly, so pow(level_, exponent) gives the
+        // standard upward-bent attack family.
+        return std::pow(level_, curveExponent_);
+    }
+    if (stage_ == Stage::Release && releaseStartLevel_ > 0.0f)
+    {
+        // Normalise: at the start of release level_ == releaseStartLevel_
+        // so output == releaseStartLevel_ (continuous with sustain).  As
+        // level_ → 0 the output also → 0.  exponent > 1 → faster end,
+        // exponent < 1 → longer tail.
+        const float ratio = level_ / releaseStartLevel_;
+        return releaseStartLevel_ * std::pow(ratio, curveExponent_);
+    }
     return level_;
 }
 
