@@ -2,10 +2,77 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/ShimmerReverb.h>
 #include <cmath>
+#include <vector>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using Catch::Matchers::WithinAbs;
 
 static constexpr float kSampleRate = 44100.0f;
+
+// Goertzel single-bin power: returns |X(f)|² for `targetHz` over the
+// supplied buffer.  Used to verify the shimmer feedback is actually
+// pitch-shifting input energy up by an octave (vs. just smearing it).
+static double goertzelPower(const float* x, int n, float targetHz, float sr)
+{
+    const double w = 2.0 * M_PI * static_cast<double>(targetHz) / static_cast<double>(sr);
+    const double cw = std::cos(w);
+    const double coeff = 2.0 * cw;
+    double s0 = 0.0, s1 = 0.0, s2 = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        s0 = static_cast<double>(x[i]) + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+}
+
+TEST_CASE("ShimmerReverb: feedback path produces octave-up content", "[shimmer]")
+{
+    // Feed a pure 220 Hz sine into the reverb.  A working shimmer should
+    // build measurable energy at 440 Hz (octave up) in the wet output as
+    // the pitch-shifted feedback path accumulates.  A broken pitch shifter
+    // (no shifting at all) leaves wet energy concentrated at the input
+    // frequency and any nearby smearing — never at the octave.
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSampleRate);
+    rev.setSize(0.7f);
+    rev.setDamp(0.0f);
+    rev.setShimmer(1.0f);
+    rev.setMix(1.0f);
+
+    constexpr int kSettle = 8192;
+    constexpr int kAnalyse = 16384;
+
+    const float fIn = 220.0f;
+    const float wIn = 2.0f * static_cast<float>(M_PI) * fIn / kSampleRate;
+
+    // Settle
+    for (int i = 0; i < kSettle; ++i)
+        rev.process(0.5f * std::sin(wIn * static_cast<float>(i)));
+
+    // Capture wet output
+    std::vector<float> outL(kAnalyse);
+    for (int i = 0; i < kAnalyse; ++i)
+    {
+        auto [l, r] = rev.process(0.5f * std::sin(wIn * static_cast<float>(kSettle + i)));
+        outL[i] = l;
+    }
+
+    const double powIn = goertzelPower(outL.data(), kAnalyse, 220.0f, kSampleRate);
+    const double powOct = goertzelPower(outL.data(), kAnalyse, 440.0f, kSampleRate);
+
+    INFO("input bin = " << powIn << "  octave bin = " << powOct);
+    // Octave-up content must be a non-trivial fraction of the input bin.
+    // With a working pitch shifter the ratio is typically > 0.05; with the
+    // earlier broken implementation it was effectively zero (octave content
+    // sub-1e-3 of input).
+    REQUIRE(powOct > 0.0);
+    REQUIRE(powOct > powIn * 0.02);
+}
 
 TEST_CASE("ShimmerReverb: silence in produces silence out", "[shimmer]")
 {

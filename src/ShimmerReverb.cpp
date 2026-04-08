@@ -101,12 +101,23 @@ float ShimmerReverb::PitchShifter::process(float input)
 {
     buffer[writeIndex] = input;
 
-    // +12 semitones = 2× speed → read pointer advances 2× as fast
-    // Implemented as decreasing delay: phase advances at (ratio - 1) / windowSize
-    float phaseInc = 1.0f / static_cast<float>(kWindowSize); // ratio=2, speed=1 extra
+    // +12 semitones = 2× speed → read pointer advances 2× as fast as the
+    // write pointer.  Equivalently the delay (write − read) must *decrease*
+    // by one sample per sample.  We parameterise that by sweeping `delay`
+    // from kWindowSize down to 0 over kWindowSize samples, then wrapping
+    // back to kWindowSize, with a second tap 50% out of phase + Hann
+    // crossfade to hide the wrap discontinuity.
+    //
+    // Earlier this code computed `delay = phase * kWindowSize` (delay
+    // *increasing*), which made readPos = writeIndex − delay stay
+    // stationary — the tap read the same buffer cell for an entire window
+    // cycle (~46 ms).  No actual pitch shift was happening; the shimmer
+    // path was just a 46 ms sample-and-hold of the input through the
+    // Hann envelopes, which is why the shimmer never sounded like shimmer.
+    float phaseInc = 1.0f / static_cast<float>(kWindowSize);
 
-    // Tap 1
-    float delay1 = phase1 * static_cast<float>(kWindowSize);
+    // Tap 1 — delay decreases linearly from kWindowSize to 0
+    float delay1 = (1.0f - phase1) * static_cast<float>(kWindowSize);
     float readPos1 = static_cast<float>(writeIndex) - delay1;
     while (readPos1 < 0.0f) readPos1 += static_cast<float>(bufSize);
     int ri1 = static_cast<int>(readPos1) % bufSize;
@@ -116,7 +127,7 @@ float ShimmerReverb::PitchShifter::process(float input)
     float env1 = 0.5f - 0.5f * std::cos(kTwoPi * phase1); // Hann window
 
     // Tap 2 (50% offset)
-    float delay2 = phase2 * static_cast<float>(kWindowSize);
+    float delay2 = (1.0f - phase2) * static_cast<float>(kWindowSize);
     float readPos2 = static_cast<float>(writeIndex) - delay2;
     while (readPos2 < 0.0f) readPos2 += static_cast<float>(bufSize);
     int ri2 = static_cast<int>(readPos2) % bufSize;
