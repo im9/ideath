@@ -37,6 +37,7 @@ add_library(ideath STATIC
     src/CombFilter.cpp
     src/TapeDelay.cpp
     src/FormantFilter.cpp
+    src/HarmonicWavetable.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -133,6 +134,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_AudioSafety.cpp
         tests/test_SeqClick.cpp
         tests/test_FormantFilter.cpp
+        tests/test_HarmonicWavetable.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)

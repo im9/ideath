@@ -381,8 +381,8 @@ std::pair<float, float> ShimmerReverb::process(float input)
     fwdL = dampL_.process(fwdL, dampCoeff_);
     fwdR = dampR_.process(fwdR, dampCoeff_);
 
-    float dcFreeL = dcL_.process(fwdR);
-    float dcFreeR = dcR_.process(fwdL);
+    float dcFreeL = dcL_.process(fwdL);
+    float dcFreeR = dcR_.process(fwdR);
 
     float fbPathL = fbDelayPreL_.process(dcFreeL);
     for (auto& ap : fbApL_)
@@ -424,7 +424,8 @@ std::pair<float, float> ShimmerReverb::process(float input)
 
     // Dry/wet mix
     float dry = 1.0f - mix_;
-    float wet = mix_;
+    static constexpr float kWetScale = 3.0f;
+    float wet = mix_ * kWetScale;
 
     float left  = input * dry + outL * wet;
     float right = input * dry + outR * wet;

@@ -82,6 +82,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **SVFilter** — Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe, Cytomic TPT)
 - **CombFilter** — Feedback comb filter with damping (Karplus-Strong / metallic textures)
 - **FormantFilter** — 3 parallel bandpass SVF, vowel morph A-E-I-O-U (vocal character shaping)
+- **HarmonicWavetable** — 128-table morphing wavetable (additive harmonic series, band-limited, continuous morph)
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer

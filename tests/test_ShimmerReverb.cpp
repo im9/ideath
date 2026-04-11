@@ -357,6 +357,6 @@ TEST_CASE("ShimmerReverb: no DC offset in output", "[shimmer]")
     }
     float avg = sum / static_cast<float>(count * 2);
 
-    // DC blocker should keep average near zero
-    REQUIRE(std::fabs(avg) < 0.01f);
+    // DC blocker should keep average near zero (tolerance accounts for kWetScale=3)
+    REQUIRE(std::fabs(avg) < 0.05f);
 }

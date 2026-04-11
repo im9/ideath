@@ -38,6 +38,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
 | **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
+| **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
 
 ## Design Principles
 

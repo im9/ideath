@@ -90,7 +90,7 @@ void AdsrEnvelope::setDecay(float seconds)
 
 void AdsrEnvelope::setSustain(float level)
 {
-    sustainLevel_ = level;
+    sustainLevel_ = std::clamp(level, 0.0f, 1.0f);
 }
 
 void AdsrEnvelope::setRelease(float seconds)
