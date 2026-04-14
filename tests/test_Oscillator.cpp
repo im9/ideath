@@ -59,12 +59,11 @@ TEST_CASE("Oscillator: saw has correct frequency (zero crossings)", "[osc]")
         prev = s;
     }
 
-    // Saw wave: ~2 zero crossings per cycle (up-cross + down at wrap).
-    // Expect roughly 440 * 2 = 880, but saw wraps give ~440 crossings.
-    // Actually a naive saw crosses zero once per period at the ramp midpoint.
-    // Allow ±5% tolerance.
-    REQUIRE(zeroCrossings >= 400);
-    REQUIRE(zeroCrossings <= 920);
+    // Saw ramps from -1 to +1: one zero crossing at mid-ramp (phase=0.5),
+    // plus one at the PolyBLEP-smoothed wrap (phase≈0, descends through zero).
+    // 2 crossings/cycle × 440 Hz = 880/sec. Allow ±5%.
+    REQUIRE(zeroCrossings >= 836);
+    REQUIRE(zeroCrossings <= 924);
 }
 
 TEST_CASE("Oscillator: produces nonzero output", "[osc]")

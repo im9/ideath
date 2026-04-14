@@ -130,6 +130,10 @@ Steps 7 and 8 are not optional polish — they are part of the definition of "do
 - Use absolute assertions: `REQUIRE`, `REQUIRE_THAT(x, WithinAbs(y, tol))`
 - Tag all tests with the primitive name: `[osc]`, `[wavetable]`, `[delay]`, etc.
 - No allocation in test loops (mirrors real-time constraint)
+- **Threshold justification** — every numeric threshold (tolerance, bounds, RMS, timing) must have a derivation in the adjacent comment: physics formula, mathematical identity, or spec value. "Allow ±5%" requires stating what the 5% is relative to and why 5% and not 1% or 20%. Setting a threshold by running the implementation and using the observed value is prohibited — that is fitting the test to the code, not specifying behavior.
+- **Parameter boundary behavior** — test that clamped extremes produce musically/physically correct results, not just "no crash". Examples: cutoff at 0 Hz → near-silence, cutoff at Nyquist → near-passthrough, feedback at 0.0 → no recirculation, Q at minimum → flat response.
+- **Long-run stability** — primitives with feedback or phase accumulators must be tested for at least 10 seconds of continuous processing to catch precision drift and denormal accumulation that 1-second tests miss.
+- **Extreme parameter combinations** — test pairs or triples of extreme parameters together (high Q × high cutoff × hot input, max feedback × max delay × max drive, etc.). Individual-parameter edge cases are necessary but not sufficient for a shared DSP library.
 
 ## Primitive API Conventions
 
@@ -184,6 +188,19 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
 
+### Performance baseline
+Minimum target: **iPhone 14 (A15), 128 samples @ 44.1kHz** (≈2.9ms buffer).
+ideath must deliver performance that fits this budget. The ns/sample baseline
+for each primitive is measured by `make bench` and recorded in
+`benchmarks/BASELINE.md`. The actual ns/sample ceiling per primitive will be
+established from A15 real-device profiling (TODO) and becomes a fixed library
+constraint once set.
+
+Rules:
+- Any new primitive or change to a `process()` hot path must update the baseline.
+- A regression of **>20% ns/sample** vs baseline is a blocking issue — investigate before merging. (20% is a provisional threshold before A15 profiling; revisit once the per-primitive ceiling is established.)
+- The baseline is measured on the development machine; absolute values are not portable, but relative changes are meaningful.
+
 ### Performance / SIMD (future)
 Identified candidates, ordered by expected ROI:
 - [ ] Reverb/HallReverb comb banks — 8 independent filters, process 4 in parallel (SSE) → 3-6x
@@ -195,6 +212,44 @@ Identified candidates, ordered by expected ROI:
 Prerequisites: benchmark suite (Catch2 BENCHMARK) to measure before/after.
 Approach: start with `-march=native` compiler flag + `#pragma omp simd` for
 low-hanging fruit. SoA refactoring for Polyphony/Reverb only if benchmarks justify.
+
+### Test threshold audit
+Each test file's numeric thresholds (tolerances, bounds, RMS values) must have
+a physical or mathematical justification. A threshold without a reason is a
+threshold that might have been fitted to a broken implementation.
+
+Review one file at a time. For each threshold, document why that value is correct
+or fix it. Mark done only after every threshold in the file is justified.
+
+- [x] test_Oscillator — zero-crossing range tightened from [400,920] to [836,924] (2/cycle × 440Hz ±5%)
+- [ ] test_Wavetable — 4-bit normalization values, frequency correctness margins
+- [ ] test_HarmonicWavetable — aliasing bounds, morph continuity tolerance
+- [ ] test_UnisonOscillator — gain compensation bounds (±3.0), RMS thresholds
+- [ ] test_Biquad — dB attenuation tolerances, frequency response margins
+- [ ] test_SVFilter — resonance peak bounds, cutoff accuracy
+- [ ] test_CombFilter — Karplus-Strong decay thresholds
+- [ ] test_FormantFilter — vowel energy ratios, resonance bounds
+- [ ] test_Envelope — decay convergence (1e-4), retrigger delta (0.05), curve shape
+- [ ] test_LFO — DC offset tolerance (0.01), waveform bounds
+- [ ] test_Portamento — convergence tolerance, glide timing
+- [ ] test_Noise — uniformity bounds
+- [ ] test_BandlimitedNoise — bandwidth cutoff tolerances
+- [ ] test_Saturation — drive headroom bounds
+- [ ] test_BitCrusher — quantization step accuracy
+- [ ] test_Wavefolder — drive/mix output bounds
+- [ ] test_DelayLine — delay accuracy (sample-level), feedback bounds
+- [ ] test_TapeDelay — wow/flutter depth, coloring filter tolerances
+- [ ] test_FeedbackBuffer — crossfade smoothness, loop length accuracy
+- [ ] test_Compressor — gain reduction accuracy, attack/release timing
+- [ ] test_PeakLimiter — ceiling overshoot tolerance
+- [ ] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
+- [ ] test_HallReverb — pre-delay accuracy, modulation depth
+- [ ] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
+- [ ] test_FMSynth — algorithm distinctness criteria, output bounds
+- [ ] test_Voice — RMS thresholds, filter energy reduction ratio
+- [ ] test_Polyphony — voice mixing levels, steal behavior
+- [ ] test_SeqClick — chain matching tolerance, click delta threshold
+- [ ] test_AudioSafety — denormal bounds, long-run stability
 
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
