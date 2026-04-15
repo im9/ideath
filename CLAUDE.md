@@ -91,6 +91,17 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **No mod matrix** — modulation routing is the plugin layer's responsibility. Primitives just expose per-sample-safe setters; the plugin calls `set<Param>()` each sample with base + mod values
 - **Testable** — every primitive has Catch2 tests with absolute-level assertions
 - **Namespace** — everything lives under `ideath::`
+- **Output levels** — most primitives output ±1.0 for ±1.0 input, but resonant filters and reverbs can exceed this significantly. The plugin layer MUST place a PeakLimiter after the signal chain. Per-primitive output ceilings for ±1.0 input:
+
+  | Primitive | Max output | Cause |
+  |-----------|-----------|-------|
+  | Reverb / HallReverb | ±1.5 | kWetScale=3, multi-comb sum |
+  | ShimmerReverb | ±6.0 | pitch-shift feedback regeneration + kWetScale=3 |
+  | FormantFilter | ±Q (up to ±10) | 3 parallel BPs, Q=1/k at max resonance |
+  | SVFilter | ±Q (up to ±5) | resonant peak at cutoff, Q=1/(2−2×resonance) |
+  | Biquad | ±Q | resonant peak, Q passed directly |
+  | UnisonOscillator | ±√N (up to ±4) | N voices in-phase, gain comp ÷√N |
+  | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions
 

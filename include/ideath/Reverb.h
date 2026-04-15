@@ -9,6 +9,8 @@ namespace ideath {
 /// Freeverb-style stereo reverb.
 /// 8 parallel comb filters + 4 series allpass filters.
 /// Mono in, stereo out (mono-first exception for inherently stereo algorithm).
+/// Output can reach ±1.5 for ±1.0 input (kWetScale=3, multi-comb summation).
+/// Place a PeakLimiter downstream in the signal chain.
 class Reverb
 {
 public:

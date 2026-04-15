@@ -9,6 +9,8 @@ namespace ideath {
 /// Hall-style stereo reverb with pre-delay and LFO-modulated comb filters.
 /// Produces a lush, evolving tail suited for large spaces.
 /// Mono in, stereo out.
+/// Output can reach ±1.5 for ±1.0 input (same Freeverb gain structure).
+/// Place a PeakLimiter downstream in the signal chain.
 class HallReverb
 {
 public:

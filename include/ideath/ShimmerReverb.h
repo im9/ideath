@@ -11,6 +11,8 @@ namespace ideath {
 /// pitch feedback. Produces ethereal, metallic, evolving tails.
 /// Ported from inboil's ShimmerReverb (Faust shimmer.dsp lineage).
 /// Mono in, stereo out.
+/// Output can reach ±6.0 for ±1.0 input (pitch-shift feedback regeneration
+/// + kWetScale=3). Place a PeakLimiter downstream in the signal chain.
 class ShimmerReverb
 {
 public:
