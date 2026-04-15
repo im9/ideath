@@ -249,7 +249,7 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [ ] test_Voice — RMS thresholds, filter energy reduction ratio
 - [ ] test_Polyphony — voice mixing levels, steal behavior
 - [ ] test_SeqClick — chain matching tolerance, click delta threshold
-- [ ] test_AudioSafety — denormal bounds, long-run stability
+- [x] test_AudioSafety — denormal bounds, long-run stability
 
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3
