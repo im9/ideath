@@ -225,10 +225,10 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [x] test_Wavetable — 4-bit normalization values, frequency correctness margins
 - [x] test_HarmonicWavetable — aliasing bounds, morph continuity tolerance
 - [x] test_UnisonOscillator — gain compensation bounds (±3.0), RMS thresholds
-- [ ] test_Biquad — dB attenuation tolerances, frequency response margins
-- [ ] test_SVFilter — resonance peak bounds, cutoff accuracy
-- [ ] test_CombFilter — Karplus-Strong decay thresholds
-- [ ] test_FormantFilter — vowel energy ratios, resonance bounds
+- [x] test_Biquad — dB attenuation tolerances, frequency response margins
+- [x] test_SVFilter — resonance peak bounds, cutoff accuracy
+- [x] test_CombFilter — Karplus-Strong decay thresholds
+- [x] test_FormantFilter — vowel energy ratios, resonance bounds
 - [ ] test_Envelope — decay convergence (1e-4), retrigger delta (0.05), curve shape
 - [ ] test_LFO — DC offset tolerance (0.01), waveform bounds
 - [ ] test_Portamento — convergence tolerance, glide timing
