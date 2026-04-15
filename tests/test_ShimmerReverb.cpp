@@ -80,11 +80,13 @@ TEST_CASE("ShimmerReverb: silence in produces silence out", "[shimmer]")
     rev.prepare(kSampleRate);
     rev.setMix(1.0f);
 
+    // Zero input, zeroed state. Anti-denormal (1e-25) in allpass/delay
+    // paths stays at ~1e-24 level.
     for (int i = 0; i < 4410; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::fabs(l) < 0.001f);
-        REQUIRE(std::fabs(r) < 0.001f);
+        REQUIRE(std::fabs(l) < 1e-6f);
+        REQUIRE(std::fabs(r) < 1e-6f);
     }
 }
 
@@ -106,8 +108,10 @@ TEST_CASE("ShimmerReverb: impulse produces stereo tail", "[shimmer]")
         if (std::fabs(r) > maxR) maxR = std::fabs(r);
     }
 
-    REQUIRE(maxL > 0.001f);
-    REQUIRE(maxR > 0.001f);
+    // Impulse through cross-coupled allpass network + pitch shift feedback.
+    // Allpass chains diffuse the impulse; kWetScale=3 amplifies the wet bus.
+    REQUIRE(maxL > 0.01f);
+    REQUIRE(maxR > 0.01f);
 }
 
 TEST_CASE("ShimmerReverb: stereo output differs L/R", "[shimmer]")
@@ -124,7 +128,9 @@ TEST_CASE("ShimmerReverb: stereo output differs L/R", "[shimmer]")
     for (int i = 0; i < 22050; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        if (std::fabs(l - r) > 0.0001f)
+        // Cross-coupled paths (L feeds R, R feeds L) with different allpass
+        // delay lengths produce distinct L/R outputs.
+        if (std::fabs(l - r) > 0.001f)
         {
             differ = true;
             break;
@@ -222,9 +228,11 @@ TEST_CASE("ShimmerReverb: freeze holds tail", "[shimmer]")
         energy2 += l * l + r * r;
     }
 
+    // After 200ms crossfade, Freeverb freeze (fb=1.0) is fully active.
+    // Energy should be well preserved. 0.95 allows for crossfade residual
+    // effects (shimmer→Freeverb transition isn't perfectly energy-neutral).
     REQUIRE(energy1 > 0.0f);
-    // After crossfade, Freeverb freeze should hold energy well
-    REQUIRE(energy2 > energy1 * 0.9f);
+    REQUIRE(energy2 > energy1 * 0.95f);
 }
 
 TEST_CASE("ShimmerReverb: dry/wet mix", "[shimmer]")
@@ -233,9 +241,10 @@ TEST_CASE("ShimmerReverb: dry/wet mix", "[shimmer]")
     rev.prepare(kSampleRate);
     rev.setMix(0.0f);
 
+    // mix=0: dry=1.0, wet=0. Output = input × 1.0 + 0 = input. Exact.
     auto [l, r] = rev.process(0.8f);
-    REQUIRE_THAT(l, WithinAbs(0.8f, 0.01f));
-    REQUIRE_THAT(r, WithinAbs(0.8f, 0.01f));
+    REQUIRE_THAT(l, WithinAbs(0.8f, 1e-6f));
+    REQUIRE_THAT(r, WithinAbs(0.8f, 1e-6f));
 }
 
 TEST_CASE("ShimmerReverb: output stays bounded", "[shimmer]")
@@ -252,6 +261,11 @@ TEST_CASE("ShimmerReverb: output stays bounded", "[shimmer]")
         auto [l, r] = rev.process(input);
         REQUIRE(std::isfinite(l));
         REQUIRE(std::isfinite(r));
+        // Cross-coupled allpass network + pitch-shifted feedback can build
+        // higher internal levels than vanilla Freeverb. kWetScale=3 amplifies.
+        // With shimmer=1.0, regenerated octave energy accumulates across
+        // multiple feedback passes. ±6.0 = 2× the kWetScale × peak allpass
+        // output, accounting for pitch-shift energy regeneration.
         REQUIRE(l >= -6.0f);
         REQUIRE(l <= 6.0f);
         REQUIRE(r >= -6.0f);
@@ -272,11 +286,12 @@ TEST_CASE("ShimmerReverb: reset clears all state", "[shimmer]")
 
     rev.reset();
 
+    // After reset, all allpass/delay/pitch-shifter buffers zeroed.
     for (int i = 0; i < 100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        REQUIRE_THAT(l, WithinAbs(0.0f, 0.001f));
-        REQUIRE_THAT(r, WithinAbs(0.0f, 0.001f));
+        REQUIRE_THAT(l, WithinAbs(0.0f, 1e-6f));
+        REQUIRE_THAT(r, WithinAbs(0.0f, 1e-6f));
     }
 }
 
@@ -357,6 +372,33 @@ TEST_CASE("ShimmerReverb: no DC offset in output", "[shimmer]")
     }
     float avg = sum / static_cast<float>(count * 2);
 
-    // DC blocker should keep average near zero (tolerance accounts for kWetScale=3)
+    // DC blocker in the allpass network keeps average near zero.
+    // Tolerance 0.05 accounts for kWetScale=3 amplifying any residual DC
+    // from the pitch shifter's window function.
     REQUIRE(std::fabs(avg) < 0.05f);
+}
+
+// --- Long-run stability ---
+
+TEST_CASE("ShimmerReverb: long-run stability (10 seconds)", "[shimmer]")
+{
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSampleRate);
+    rev.setSize(0.8f);
+    rev.setShimmer(0.7f);
+    rev.setDamp(0.3f);
+    rev.setMix(1.0f);
+
+    // 0.1s signal then 10s silence. Tests cross-coupled allpass network,
+    // pitch shifter window, and anti-denormal over 441k samples.
+    for (int i = 0; i < 4410; ++i)
+        rev.process(0.5f);
+
+    constexpr int N = 441000;
+    for (int i = 0; i < N; ++i)
+    {
+        auto [l, r] = rev.process(0.0f);
+        REQUIRE(std::isfinite(l));
+        REQUIRE(std::isfinite(r));
+    }
 }

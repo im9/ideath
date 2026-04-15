@@ -242,9 +242,9 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [ ] test_FeedbackBuffer — crossfade smoothness, loop length accuracy
 - [ ] test_Compressor — gain reduction accuracy, attack/release timing
 - [ ] test_PeakLimiter — ceiling overshoot tolerance
-- [ ] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
-- [ ] test_HallReverb — pre-delay accuracy, modulation depth
-- [ ] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
+- [x] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
+- [x] test_HallReverb — pre-delay accuracy, modulation depth
+- [x] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
 - [ ] test_FMSynth — algorithm distinctness criteria, output bounds
 - [ ] test_Voice — RMS thresholds, filter energy reduction ratio
 - [ ] test_Polyphony — voice mixing levels, steal behavior
