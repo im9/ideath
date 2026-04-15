@@ -89,7 +89,6 @@ void LFO::reset()
 {
     phase_ = 0.0f;
     phase2_ = 0.0f;
-    phaseInc_ = 0.0f;
     finished_ = false;
     holdValue_ = 0.0f;
     quantizeHold_ = 0.0f;

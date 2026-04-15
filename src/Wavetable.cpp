@@ -17,7 +17,6 @@ void Wavetable::prepare(float sampleRate)
 void Wavetable::reset()
 {
     phase_ = 0.0f;
-    phaseInc_ = 0.0f;
 }
 
 void Wavetable::setFrequency(float freqHz)

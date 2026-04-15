@@ -163,3 +163,31 @@ TEST_CASE("Oscillator: reset returns phase to zero", "[osc]")
     osc.reset();
     REQUIRE_THAT(osc.getPhase(), WithinAbs(0.0f, 1e-6f));
 }
+
+TEST_CASE("Oscillator: reset preserves frequency", "[osc]")
+{
+    // reset() clears runtime state (phase) but must preserve parameter-derived
+    // state (phaseInc). This matches Biquad/SVFilter/ADSR convention: reset
+    // returns to zero-phase, not to unconfigured.
+    ideath::Oscillator osc;
+    osc.prepare(kSampleRate);
+    osc.setFrequency(440.0f);
+
+    for (int i = 0; i < 500; ++i)
+        osc.process(1.0f);
+
+    osc.reset();
+
+    // After reset, output should match a fresh oscillator at the same frequency.
+    // If phaseInc is preserved, the first sample advances phase by 440/44100.
+    ideath::Oscillator fresh;
+    fresh.prepare(kSampleRate);
+    fresh.setFrequency(440.0f);
+
+    for (int i = 0; i < 16; ++i)
+    {
+        float a = osc.process(1.0f);
+        float b = fresh.process(1.0f);
+        REQUIRE_THAT(a, WithinAbs(b, 1e-6f));
+    }
+}

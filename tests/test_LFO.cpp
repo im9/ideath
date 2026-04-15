@@ -143,6 +143,33 @@ TEST_CASE("LFO: trigger resets phase", "[lfo]")
     REQUIRE_THAT(lfo.getPhase(), WithinAbs(0.0f, 1e-6f));
 }
 
+TEST_CASE("LFO: reset preserves rate", "[lfo]")
+{
+    // reset() clears phase/hold state but must preserve phaseInc (rate setting).
+    // Matches filter/envelope convention: reset = zero state, not unconfigured.
+    ideath::LFO lfo;
+    lfo.prepare(kSampleRate);
+    lfo.setRate(5.0f);
+    lfo.setWaveform(ideath::LFO::Waveform::Sine);
+
+    for (int i = 0; i < 10000; ++i)
+        lfo.process();
+
+    lfo.reset();
+
+    ideath::LFO fresh;
+    fresh.prepare(kSampleRate);
+    fresh.setRate(5.0f);
+    fresh.setWaveform(ideath::LFO::Waveform::Sine);
+
+    for (int i = 0; i < 16; ++i)
+    {
+        float a = lfo.process();
+        float b = fresh.process();
+        REQUIRE_THAT(a, WithinAbs(b, 1e-6f));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ADR 009 / Phase 9b1 — Shape, Curve, Quantize
 // ---------------------------------------------------------------------------

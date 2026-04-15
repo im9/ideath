@@ -30,7 +30,6 @@ void Oscillator::prepare(float sampleRate)
 void Oscillator::reset()
 {
     phase_ = 0.0f;
-    phaseInc_ = 0.0f;
 }
 
 void Oscillator::setFrequency(float freqHz)

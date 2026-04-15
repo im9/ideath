@@ -222,9 +222,9 @@ Review one file at a time. For each threshold, document why that value is correc
 or fix it. Mark done only after every threshold in the file is justified.
 
 - [x] test_Oscillator — zero-crossing range tightened from [400,920] to [836,924] (2/cycle × 440Hz ±5%)
-- [ ] test_Wavetable — 4-bit normalization values, frequency correctness margins
-- [ ] test_HarmonicWavetable — aliasing bounds, morph continuity tolerance
-- [ ] test_UnisonOscillator — gain compensation bounds (±3.0), RMS thresholds
+- [x] test_Wavetable — 4-bit normalization values, frequency correctness margins
+- [x] test_HarmonicWavetable — aliasing bounds, morph continuity tolerance
+- [x] test_UnisonOscillator — gain compensation bounds (±3.0), RMS thresholds
 - [ ] test_Biquad — dB attenuation tolerances, frequency response margins
 - [ ] test_SVFilter — resonance peak bounds, cutoff accuracy
 - [ ] test_CombFilter — Karplus-Strong decay thresholds
