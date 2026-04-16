@@ -40,9 +40,17 @@ static constexpr float kSampleRate = 44100.0f;
 // exact scalar multiples of each other (bit-for-bit up to the ULP of
 // the final float-multiplication step).
 //
-// Biquad LP with RBJ Q = 1/√2 is the 2nd-order Butterworth prototype.
-// |H(f)|² ≈ 1 / (1 + (f/fc)⁴) (close enough below Nyquist/2).  Used in
-// the "filter affects timbre" derivation.
+// Filter is SVFilter (TPT, Cytomic) — see src/SVFilter.cpp.  The public
+// Voice::setFilter(type, fc, q) maps the Biquad-style Q input to
+// SVFilter resonance via the REPL reference mapping
+//     res = (1 − 0.707 / max(q, 0.707)) · 0.9
+// so q = 0.707 → res = 0 (k = 2, Q_svf = 1/k = 0.5, overdamped),
+// q = 2.0   → res ≈ 0.582 (k ≈ 0.836, Q_svf ≈ 1.20),
+// q = 8.0   → res ≈ 0.821 (k ≈ 0.359, Q_svf ≈ 2.79),
+// q → ∞     → res = 0.9  (k = 0.2, Q_svf = 5, cap).
+// SVFilter LP transfer magnitude:
+//     |H_LP(f/fc)|² = 1 / ((1 − (f/fc)²)² + (f/(fc·Q_svf))²)
+// Used in the "filter affects timbre" derivation below.
 
 static float rms(const float* buf, int n)
 {
@@ -241,19 +249,23 @@ TEST_CASE("Voice: different sources produce output", "[voice]")
 
 TEST_CASE("Voice: filter affects timbre", "[voice]")
 {
-    // Saw at f₀ = 440 Hz through 2nd-order Butterworth LP at fc = 200
-    // Hz, Q = 1/√2.  RBJ LP with Q=1/√2 implements the Butterworth
-    // prototype, |H(f)|² ≈ 1/(1 + (f/fc)⁴).
+    // Saw at f₀ = 440 Hz through SVFilter LP at fc = 200 Hz, q = 0.707.
+    // The Q→resonance mapping at q = 0.707 gives res = 0, so k = 2 and
+    // Q_svf = 0.5 (overdamped — more attenuation than RBJ Butterworth).
     //
-    // Saw harmonic amplitudes: a_n = 2/(nπ), RMS² per harmonic = a_n²/2.
-    // Filtered RMS² =  Σ |H(n·f₀)|² · a_n²/2
-    //              =  0.203·|H(440)|² + 0.0507·|H(880)|² + …
-    //              ≈  0.203·0.041   + 0.0507·0.00266   + …
-    //              ≈  0.00845     ⇒ RMS_filt ≈ 0.092
+    // SVFilter LP: |H(f/fc)|² = 1 / ((1 − (f/fc)²)² + (f/(fc·Q_svf))²).
+    // Saw harmonic amplitudes: a_n = 2/(nπ), harmonic RMS² = a_n²/2.
+    // Per-harmonic response at f_n = n·440, f/fc = 2.2·n:
+    //   n=1 (440 Hz, f/fc = 2.2): |H|² = 1/(14.75 + 19.36) = 0.0293
+    //   n=2 (880 Hz, f/fc = 4.4): |H|² = 1/(336.8 + 77.4) = 0.00241
+    //   n=3 (1320 Hz, f/fc = 6.6): |H|² = 1/(1811 + 174) ≈ 5.0e−4
+    // Filtered RMS² = 0.2026·0.0293 + 0.0507·0.00241 + 0.0225·5e−4 + …
+    //              ≈ 0.00594 + 1.22e−4 + 1.13e−5 + … ≈ 6.07e−3
+    //              ⇒ RMS_filt ≈ 0.078
     // Unfiltered RMS² = 1/3 ⇒ RMS_unfilt ≈ 0.577.
     //
-    // Expected ratio RMS_filt / RMS_unfilt ≈ 0.16 (~ −16 dB).
-    // Threshold < 0.5 gives 3× headroom above the expected ratio and
+    // Expected ratio RMS_filt / RMS_unfilt ≈ 0.135 (~ −17.4 dB).
+    // Threshold < 0.5 gives 3.7× headroom above the expected ratio and
     // catches any regression that leaves the filter bypassed.
     ideath::Voice unfiltered;
     unfiltered.prepare(kSampleRate);
@@ -318,14 +330,17 @@ TEST_CASE("Voice: 10-second stability across sources and filter types", "[voice]
     // CLAUDE.md testing convention: "primitives with feedback or phase
     // accumulators must be tested for at least 10 seconds of continuous
     // processing to catch precision drift and denormal accumulation".
-    // Voice contains: oscillator phase accumulator, Biquad feedback
-    // state, LFO phase, Portamento exp state, envelope state.
+    // Voice contains: oscillator phase accumulator, SVFilter integrator
+    // state (ic1eq_, ic2eq_), LFO phase, Portamento exp state, envelope
+    // state.
     //
     // Drive each source × a non-trivial filter configuration for 10 s
     // and verify output stays finite and bounded within a primitive-
-    // appropriate range.  Q = 2 gives a modest resonant peak; per the
-    // CLAUDE.md output-ceiling table Biquad can reach ±Q = ±2, so we
-    // assert |s| ≤ 2.5 (1.25× Q safety margin).
+    // appropriate range.  q = 2 maps to res ≈ 0.582 → Q_svf ≈ 1.20.
+    // Per the SVFilter ceiling table (|s| ≤ Q_svf steady-state, up to
+    // ~2·Q_svf during modulation transients), the 10-s bound |s| ≤ 2.5
+    // sits just above that (2.5 / 1.20 ≈ 2.08×).  Bound survives both
+    // Biquad (pre-migration, ±q = ±2) and SVFilter topologies.
     struct Config {
         ideath::Voice::Source src;
         ideath::Voice::FilterType filterType;
@@ -365,15 +380,66 @@ TEST_CASE("Voice: 10-second stability across sources and filter types", "[voice]
     }
 }
 
+TEST_CASE("Voice: stable under per-sample cutoff modulation at high Q", "[voice]")
+{
+    // Regression guard for filter modulation stability.  SVFilter (TPT /
+    // Cytomic) is modulation-safe by construction: rapid per-sample
+    // coefficient changes do not inject state transients beyond the
+    // steady-state resonant peak, because the trapezoidal integration
+    // updates state consistently with the new coefficients each sample.
+    // Biquad DF-II-Transposed is not formally modulation-safe, though at
+    // moderate mod rates (20 Hz here) and q = 8 it happens to stay
+    // bounded — so this test passes under both topologies.  It fails if
+    // a future refactor replaces the filter with something genuinely
+    // unsafe (e.g. Direct Form I at high Q) or loses the q clamping.
+    //
+    // Sweeps cutoff sinusoidally at 20 Hz across 200 Hz – 4 kHz
+    // (per-sample setFilter() calls) on a saw source, q = 8 → Q_svf ≈
+    // 2.79 via the REPL reference mapping.
+    //
+    // Rationale for the ±6 bound: Q_svf = 2.79 is the steady-state
+    // resonant peak.  Cytomic TPT's state-update invariant bounds
+    // modulation transients at ~2·Q_svf ≈ 5.58 (see the SVFilter test
+    // "stable under fast cutoff modulation", which uses Q_svf = 2.5 and
+    // a 2·Q bound).  ±6 adds 0.42 margin on top.
+    ideath::Voice v;
+    v.prepare(kSampleRate);
+    v.setAttack(0.001f);
+    v.setSustain(1.0f);
+    v.setRelease(0.1f);
+    v.noteOn(440.0f, 1.0f);
+
+    constexpr int N = 44100; // 1 s
+    bool allFinite = true;
+    bool allBounded = true;
+    for (int i = 0; i < N; ++i)
+    {
+        // 20 Hz cutoff LFO between 200 Hz and 4000 Hz.
+        const float phase = 2.0f * static_cast<float>(M_PI) * 20.0f
+                          * static_cast<float>(i) / kSampleRate;
+        const float fc = 200.0f + 3800.0f * (0.5f + 0.5f * std::sin(phase));
+        v.setFilter(ideath::Voice::FilterType::Lowpass, fc, 8.0f);
+
+        const float s = v.process();
+        if (!std::isfinite(s)) { allFinite = false; break; }
+        if (s < -6.0f || s > 6.0f) { allBounded = false; break; }
+    }
+    REQUIRE(allFinite);
+    REQUIRE(allBounded);
+}
+
 TEST_CASE("Voice: extreme parameter combination stays finite", "[voice]")
 {
     // CLAUDE.md: "test pairs or triples of extreme parameters together".
     // Combine high-Q resonant filter × saw (harmonic-rich source) × LFO
-    // pitch modulation × BitCrusher × full velocity.  Per the CLAUDE.md
-    // output-ceiling table, Biquad at Q = 8 can reach ±Q = ±8 on pure
-    // tone at resonance; we allow ±10 as a finite-signal sanity bound
-    // (no runaway, no NaN).  The primitive contract does not clamp
-    // output — the plugin layer places a PeakLimiter downstream.
+    // pitch modulation × BitCrusher × full velocity.  q = 8 maps to
+    // res ≈ 0.821 → Q_svf ≈ 2.79, so SVFilter steady-state peak is
+    // ~2.79 on a tone at resonance, with transients up to ~2× that
+    // under LFO + BitCrusher jitter.  We allow ±10 as a finite-signal
+    // sanity bound (no runaway, no NaN).  The primitive contract does
+    // not clamp output — the plugin layer places a PeakLimiter
+    // downstream.  Bound survives both Biquad (Q_biquad = 8) and
+    // SVFilter topologies.
     ideath::Voice v;
     v.prepare(kSampleRate);
     v.setAttack(0.001f);

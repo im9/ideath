@@ -11,10 +11,10 @@ void Voice::prepare(float sampleRate)
     wt_ = Wavetable::sawTable();
     wt_.prepare(sampleRate);
     env_.prepare(sampleRate);
+    filter_.prepare(sampleRate);
     lfo_.prepare(sampleRate);
     porta_.prepare(sampleRate);
     crush_.prepare(sampleRate);
-    filter_.reset();
     reset();
 }
 
@@ -96,19 +96,23 @@ void Voice::setFilter(FilterType type, float freqHz, float q)
     filterFreq_ = freqHz;
     filterQ_ = q;
 
+    if (type == FilterType::Off)
+        return;
+
+    filter_.setCutoff(freqHz);
+
+    // Map Biquad-style Q to SVFilter resonance.  Reference: REPL
+    // AudioEngine.cpp (filter block).  q = 0.707 → res = 0 (no
+    // resonance), q → ∞ → res = 0.9 (cap to avoid ringing).
+    const float res = (1.0f - (0.707f / std::max(q, 0.707f))) * 0.9f;
+    filter_.setResonance(res);
+
     switch (type)
     {
-        case FilterType::Off:
-            break;
-        case FilterType::Lowpass:
-            filter_.setLowpass(freqHz, q, sampleRate_);
-            break;
-        case FilterType::Highpass:
-            filter_.setHighpass(freqHz, q, sampleRate_);
-            break;
-        case FilterType::Bandpass:
-            filter_.setBandpass(freqHz, q, sampleRate_);
-            break;
+        case FilterType::Off: break; // unreachable (early-out above)
+        case FilterType::Lowpass:  filter_.setMode(SVFilter::Mode::Lowpass);  break;
+        case FilterType::Highpass: filter_.setMode(SVFilter::Mode::Highpass); break;
+        case FilterType::Bandpass: filter_.setMode(SVFilter::Mode::Bandpass); break;
     }
 }
 

@@ -4,7 +4,7 @@
 #include "Wavetable.h"
 #include "Noise.h"
 #include "Envelope.h"
-#include "Biquad.h"
+#include "SVFilter.h"
 #include "LFO.h"
 #include "Portamento.h"
 #include "BitCrusher.h"
@@ -81,7 +81,7 @@ private:
     Wavetable wt_;
     Noise noise_;
     AdsrEnvelope env_;
-    Biquad filter_;
+    SVFilter filter_;
     LFO lfo_;
     Portamento porta_;
     BitCrusher crush_;

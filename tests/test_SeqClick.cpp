@@ -117,15 +117,13 @@ TEST_CASE("Voice signal chain order matches REPL reference", "[seqclick][voice]"
 {
     // Regression for the Voice signal chain order bug.  Voice.cpp used to
     // run the envelope BEFORE the filter; commit 3b939e7 fixed this in
-    // the REPL audio engine but missed Voice.cpp itself.  We can't easily
-    // measure clicks here because Voice still uses Biquad (not SVFilter
-    // like the REPL), so absolute click magnitude is not comparable.
-    //
-    // Instead we directly compare Voice's output against an offline
-    // replica of the REPL's reference chain (Osc → Filter → Envelope).
-    // If Voice's order is wrong, the two outputs diverge wildly; if it's
-    // correct, they track within rounding (and the small differences
-    // attributable to Biquad vs SVFilter).
+    // the REPL audio engine but missed Voice.cpp itself.  The subsequent
+    // Voice → SVFilter migration brought Voice's filter into alignment
+    // with the REPL, so we can now compare against the REPL reference
+    // chain (Osc → SVFilter → Envelope) with the same Q→resonance
+    // mapping Voice uses internally.  If Voice's order is wrong, the two
+    // outputs diverge wildly; if it's correct, they track bit-exactly
+    // modulo BitCrusher 32-bit quantisation.
     //
     // See header comment (C) for the threshold 0.01 derivation: 10×
     // below the observed wrong-order divergence of ≈ 0.1 and 10^5 above
@@ -143,7 +141,8 @@ TEST_CASE("Voice signal chain order matches REPL reference", "[seqclick][voice]"
     voice.setRelease(0.1f);
     voice.setFilter(Voice::FilterType::Lowpass, 1000.0f, 4.0f);
 
-    // Offline reference using the same Biquad mapping Voice uses internally
+    // Offline reference using the same SVFilter Q→resonance mapping
+    // Voice uses internally (see src/Voice.cpp::setFilter).
     Oscillator refOsc;
     refOsc.prepare(kSR);
     refOsc.setFrequency(220.0f);
@@ -153,8 +152,12 @@ TEST_CASE("Voice signal chain order matches REPL reference", "[seqclick][voice]"
     refEnv.setDecay(0.05f);
     refEnv.setSustain(0.5f);
     refEnv.setRelease(0.1f);
-    Biquad refFilter;
-    refFilter.setLowpass(1000.0f, 4.0f, kSR);
+    SVFilter refFilter;
+    refFilter.prepare(kSR);
+    refFilter.setCutoff(1000.0f);
+    const float refQ = 4.0f;
+    refFilter.setResonance((1.0f - (0.707f / std::max(refQ, 0.707f))) * 0.9f);
+    refFilter.setMode(SVFilter::Mode::Lowpass);
 
     voice.noteOn(220.0f, 1.0f);
     refEnv.noteOn();
