@@ -80,13 +80,17 @@ TEST_CASE("ShimmerReverb: silence in produces silence out", "[shimmer]")
     rev.prepare(kSampleRate);
     rev.setMix(1.0f);
 
-    // Zero input, zeroed state. Anti-denormal (1e-25) in allpass/delay
-    // paths stays at ~1e-24 level.
+    // Zero input, zeroed state.  Each ModAllpass write adds
+    // kAntiDenormal (1e−25) on every sample; steady-state buffer DC
+    // ≈ 1e−25 / (1 − kFeedback=0.5) = 2e−25.  Cross-coupled network
+    // and pitch-shifter feedback path amplify by at most kWetScale(3)
+    // and a few multiplicative factors, so output stays in the
+    // 1e−24..1e−23 range — 14+ orders below the 1e−9 bound.
     for (int i = 0; i < 4410; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::fabs(l) < 1e-6f);
-        REQUIRE(std::fabs(r) < 1e-6f);
+        REQUIRE(std::fabs(l) < 1e-9f);
+        REQUIRE(std::fabs(r) < 1e-9f);
     }
 }
 
@@ -241,10 +245,11 @@ TEST_CASE("ShimmerReverb: dry/wet mix", "[shimmer]")
     rev.prepare(kSampleRate);
     rev.setMix(0.0f);
 
-    // mix=0: dry=1.0, wet=0. Output = input × 1.0 + 0 = input. Exact.
+    // mix=0: dry = 1.0, wet = 0.  Output = input · 1.0 bit-for-bit
+    // (multiply by 1.0 is exact, wet branch masked by 0 multiply).
     auto [l, r] = rev.process(0.8f);
-    REQUIRE_THAT(l, WithinAbs(0.8f, 1e-6f));
-    REQUIRE_THAT(r, WithinAbs(0.8f, 1e-6f));
+    REQUIRE_THAT(l, WithinAbs(0.8f, 1e-9f));
+    REQUIRE_THAT(r, WithinAbs(0.8f, 1e-9f));
 }
 
 TEST_CASE("ShimmerReverb: output stays bounded", "[shimmer]")
@@ -287,11 +292,13 @@ TEST_CASE("ShimmerReverb: reset clears all state", "[shimmer]")
     rev.reset();
 
     // After reset, all allpass/delay/pitch-shifter buffers zeroed.
+    // Same kAntiDenormal analysis as silence-in: reads return 0, the
+    // 1e−25 per-sample injection is 16+ orders below the 1e−9 bound.
     for (int i = 0; i < 100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        REQUIRE_THAT(l, WithinAbs(0.0f, 1e-6f));
-        REQUIRE_THAT(r, WithinAbs(0.0f, 1e-6f));
+        REQUIRE_THAT(l, WithinAbs(0.0f, 1e-9f));
+        REQUIRE_THAT(r, WithinAbs(0.0f, 1e-9f));
     }
 }
 
