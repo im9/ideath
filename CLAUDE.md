@@ -248,7 +248,7 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [x] test_Saturation — tanh near-linear tolerance derived from Taylor remainder (x³/3); softClip range tightened [-1,1]→[-2/3,2/3]; closed-form cubic matched to 1e-6; +monotonic/odd/asymptotic tests
 - [x] test_BitCrusher — 32-bit passthrough tol derived from float ULP (1e-6); 1-bit exactly {−1,+1}; 4-bit exactly 16 levels verified on {2k/15 − 1} lattice; downsample hold count derived via float32 sim (899±3); +stability test
 - [x] test_Wavefolder — sin Taylor bound (x³/6) for near-linear; output ±1 bound derived from convex combination; fold count at drive=8 derived from sin(8x) extrema analytics (8 decreases); mix=0 bit-exact dry, mix=1 matches std::sin; +monotonic/odd/clamp/stateless tests
-- [ ] test_DelayLine — delay accuracy (sample-level), feedback bounds
+- [x] test_DelayLine — impulse bit-exact at integer delay; fractional delay matches analytical (1−f, f) to 1e-6; feedback cascade bit-exact fb^n; mix formula bit-exact; setDelay(0) bypass verified; delay/fb/mix clamp ranges; +stability. Fixes in impl: (1) sub-sample delay bypasses to avoid stale-slot read, (2) readDelay uses int-index + small-magnitude fraction to avoid ULP loss at buffer-size magnitude
 - [ ] test_TapeDelay — wow/flutter depth, coloring filter tolerances
 - [ ] test_FeedbackBuffer — crossfade smoothness, loop length accuracy
 - [x] test_Compressor — DC steady-state gainDb matches -(L−T)(1−1/R) to 0.01 dB; below-threshold bit-exact passthrough; makeup gain ratio matches 10^(dB/20); sine peak bounded by 10^(gr/20)·[0.7, 1.5] ripple envelope; release/attack ratio ≥ 10× verified; +stability test

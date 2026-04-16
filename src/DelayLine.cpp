@@ -36,26 +36,33 @@ void DelayLine::setMix(float mix)
 
 float DelayLine::readDelay() const
 {
-    // Read position with linear interpolation
-    float readPos = static_cast<float>(writePos_) - delaySamples_;
-    if (readPos < 0.0f)
-        readPos += static_cast<float>(bufferSize_);
+    // Decompose delaySamples into integer index and sub-sample fraction.
+    // Keeping the fraction at its native small magnitude avoids the float
+    // ULP loss that would occur if we computed (writePos - delaySamples)
+    // and wrapped by adding bufferSize (~2^12 scale ULP ≈ 5e-4 would mask
+    // a ~0.5 fractional offset).
+    const int delayInt = static_cast<int>(delaySamples_);
+    const float frac   = delaySamples_ - static_cast<float>(delayInt);
 
-    int i0 = static_cast<int>(readPos);
-    int i1 = i0 + 1;
-    if (i0 >= bufferSize_) i0 -= bufferSize_;
-    if (i1 >= bufferSize_) i1 -= bufferSize_;
+    int idxRecent = writePos_ - delayInt;
+    if (idxRecent < 0) idxRecent += bufferSize_;
+    int idxOlder = idxRecent - 1;
+    if (idxOlder < 0) idxOlder += bufferSize_;
 
-    float frac = readPos - std::floor(readPos);
-
-    return buffer_[static_cast<size_t>(i0)]
-         + frac * (buffer_[static_cast<size_t>(i1)] - buffer_[static_cast<size_t>(i0)]);
+    // Linear interp at position delayInt + frac samples ago:
+    //   wet = (1 − frac) · buf[delayInt samples ago] + frac · buf[delayInt+1 samples ago]
+    const float a = buffer_[static_cast<size_t>(idxRecent)];
+    const float b = buffer_[static_cast<size_t>(idxOlder)];
+    return a + frac * (b - a);
 }
 
 float DelayLine::process(float input)
 {
-    // Read from delay line first
-    float wet = readDelay();
+    // Read from delay line first. When the delay is below one sample, the
+    // circular-buffer read would pick up the stale value about to be
+    // overwritten (equivalent to a full-buffer-size delay), so treat that
+    // case as a bypass — wet mirrors the live input.
+    float wet = (delaySamples_ < 1.0f) ? input : readDelay();
 
     // Write input + feedback into buffer (DC offset prevents denormals in feedback loop)
     buffer_[static_cast<size_t>(writePos_)] = input + wet * feedback_ + 1e-25f;
