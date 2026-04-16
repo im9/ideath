@@ -116,6 +116,7 @@ Polyphony) are excluded because the REPL itself serves that role.
   - New primitives with feedback MUST use one of these patterns. See `eede258` for the original reference.
 - **Parameter clamping** — setters must clamp to valid ranges (`std::clamp`, `std::max`) before storing or computing coefficients. Frequencies to `[minHz, sampleRate * 0.45]`, Q/resonance to `[floor, ceiling]`, time values to `[small positive, max]`. Never trust caller input in `set<Param>()`.
 - **Phase wrapping** — phase accumulators must wrap via `phase -= std::floor(phase)` every sample to stay in `[0, 1)`. Prevents float precision loss over long playback. See `bd500ec` for a case where missing wrap caused drift.
+- **Crossfades between decorrelated signals** — use equal-power (`cos²+sin²=1`), not linear. A linear crossfade between two uncorrelated signals produces a ~3 dB RMS dip at the midpoint; equal-power keeps the summed RMS constant. Applies to ShimmerReverb freeze blend (`src/ShimmerReverb.cpp`) and FeedbackBuffer loop-seam (`src/FeedbackBuffer.cpp`); a lookup table is OK for real-time paths that can't afford `cos` / `sin` per sample. See commits `c924a7f`, `87d001c`.
 
 ## Adding or Changing a Primitive
 
@@ -194,11 +195,8 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
 ### Robustness / Refactoring
-- [x] ShimmerReverb — freeze crossfade linear → equal-power (c924a7f). Decorrelated shimmer/Freverb caused ~3 dB midpoint RMS dip; equal-power keeps summed RMS constant
-- [x] ShimmerReverb — freeze + continuous input runaway fixed (c924a7f). Freverb comb fb=1.0 accumulated added input linearly (290× in 5 s); now fed silence once frozen
-- [x] FeedbackBuffer — loop-seam crossfade linear → equal-power (87d001c). Same RMS-dip class as ShimmerReverb; LUT keeps playback free of libm calls
 - [ ] ShimmerReverb — Freverb is processed every sample even when freeze is inactive (pure CPU waste for sessions that never touch freeze). Naive skip breaks the "capture current tail on freeze press" semantic (Freverb would hold stale/empty state); needs either (a) a pre-warm window right before freeze engages, or (b) an explicit API to opt out of freeze support. Scope ~30–60 min + test
-- [x] Voice — migrated from Biquad to SVFilter, matches REPL reference. Q→resonance mapping `(1 − 0.707 / max(q, 0.707)) · 0.9` so q=0.707 → res=0 (overdamped, k=2, Q_svf=0.5) and q→∞ → res=0.9 (cap, Q_svf=5). Test derivations in test_Voice.cpp rewritten for SVFilter |H_LP|² = 1/((1−(f/fc)²)² + (f/(fc·Q_svf))²); new modulation-safety regression guard ("stable under per-sample cutoff modulation at high Q"). test_SeqClick's Voice-signal-chain reference now uses SVFilter with the same mapping so it compares bit-exact modulo BitCrusher 32-bit quantisation
+- [x] Voice — migrated from Biquad to SVFilter, matches REPL reference (c692fd6). Q→resonance mapping `(1 − 0.707 / max(q, 0.707)) · 0.9` so q=0.707 → res=0 (k=2, Q_svf=0.5) and q→∞ → res=0.9 (cap, Q_svf=5). Inline comments in `src/Voice.cpp::setFilter` and derivations in `tests/test_Voice.cpp` header carry the full rationale
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
 - [ ] REPL help text drift — `tools/repl/CommandParser.cpp:45` still says "Biquad filter" even though REPL AudioEngine has been using SVFilter for a while and Voice just followed. One-line doc fix; no code change
