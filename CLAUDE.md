@@ -194,7 +194,10 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
 ### Robustness / Refactoring
-- [x] ShimmerReverb — freeze crossfade switched from linear to equal-power (sin/cos). Linear `(1−x)·S + x·F` between decorrelated shimmer/Freeverb caused ~3 dB midpoint RMS dip; equal-power (`cos(πx/2)·S + sin(πx/2)·F`, `a²+b²=1`) keeps summed RMS constant. Test: `ShimmerReverb: freeze crossfade preserves RMS (no midpoint dip)` bounds rmsMid ≥ 0.85× qmean(endpoints), separating equal-power (≈1.0) from linear (≈0.707)
+- [x] ShimmerReverb — freeze crossfade linear → equal-power (c924a7f). Decorrelated shimmer/Freverb caused ~3 dB midpoint RMS dip; equal-power keeps summed RMS constant
+- [x] ShimmerReverb — freeze + continuous input runaway fixed (c924a7f). Freverb comb fb=1.0 accumulated added input linearly (290× in 5 s); now fed silence once frozen
+- [x] FeedbackBuffer — loop-seam crossfade linear → equal-power (87d001c). Same RMS-dip class as ShimmerReverb; LUT keeps playback free of libm calls
+- [ ] ShimmerReverb — Freverb is processed every sample even when freeze is inactive (pure CPU waste for sessions that never touch freeze). Naive skip breaks the "capture current tail on freeze press" semantic (Freverb would hold stale/empty state); needs either (a) a pre-warm window right before freeze engages, or (b) an explicit API to opt out of freeze support. Scope ~30–60 min + test
 - [ ] Voice — migrate from Biquad to SVFilter to match REPL reference and reduce high-Q retrigger ringing
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
