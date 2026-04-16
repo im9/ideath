@@ -256,10 +256,10 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [x] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
 - [x] test_HallReverb — pre-delay accuracy, modulation depth
 - [x] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
-- [ ] test_FMSynth — algorithm distinctness criteria, output bounds
-- [ ] test_Voice — RMS thresholds, filter energy reduction ratio
-- [ ] test_Polyphony — voice mixing levels, steal behavior
-- [ ] test_SeqClick — chain matching tolerance, click delta threshold
+- [x] test_FMSynth — bounds bit-exact via hard-limit; single-carrier RMS derived from 0.85/√2 ≈ 0.6; velocity ratio bit-exact 10/3; pitch ratio from 2·f·Δt crossings (±2 boundary); distinct-routing threshold from (1−J₀(M)) RMS floor; +10s stability across all 8 algos and extreme-params combo
+- [x] test_Voice — bounds bit-exact via polyBLEP saw ∈ [−1,1]; produces-sound RMS derived from 1/√3 · env_rms ≈ 0.48; velocity ratio bit-exact 10/3; sources RMS ≈ 0.575 each (1/√3); filter ratio from 2nd-order Butterworth |H|²=1/(1+(f/fc)⁴) giving ~0.16 expected, threshold 0.5; +10s stability across source×filter and high-Q extreme-combo
+- [x] test_Polyphony — silent/reset bit-exact via tanh(0)=0; single-voice RMS derived from <tanh²(saw)>=1−tanh(1)≈0.238; chord/single ratio from CLT Gaussian σ=1 giving ≈1.29 (threshold 1.1); rail threshold from arctanh(1−ULP/2)≈8.7; +explicit steal-oldest semantic test and 10s stability with resonant filter
+- [x] test_SeqClick — Voice-vs-offline RMS tol derived from BitCrusher 32-bit quantisation (≈6e−8) vs wrong-order divergence (~0.1); click-delta 0.02 derived from envAttack≈0.107 follower response: clean ramp Δ_env≈1e−3, hard click ≈0.037, SVFilter-ring ≈4e−3–7e−3 per Q/drive case
 - [x] test_AudioSafety — denormal bounds, long-run stability
 
 ### Other
