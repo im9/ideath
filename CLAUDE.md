@@ -245,9 +245,9 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [x] test_Portamento — convergence tolerances derived from exp(−5N/samples), float-ULP plateau near ±1 documented, +monotonic-convergence/extreme tests
 - [x] test_Noise — mean/RMS tolerances derived from uniform [-1,1] σ=1/√3, histogram bucket bound from √(Np(1−p)), +histogram/stability/seed-diversity tests
 - [x] test_BandlimitedNoise — hfRMS derived from α·σ·√(2/(2−α)) at each bandwidth, log-mapped fc formula, +stability and LP-settling tests
-- [ ] test_Saturation — drive headroom bounds
-- [ ] test_BitCrusher — quantization step accuracy
-- [ ] test_Wavefolder — drive/mix output bounds
+- [x] test_Saturation — tanh near-linear tolerance derived from Taylor remainder (x³/3); softClip range tightened [-1,1]→[-2/3,2/3]; closed-form cubic matched to 1e-6; +monotonic/odd/asymptotic tests
+- [x] test_BitCrusher — 32-bit passthrough tol derived from float ULP (1e-6); 1-bit exactly {−1,+1}; 4-bit exactly 16 levels verified on {2k/15 − 1} lattice; downsample hold count derived via float32 sim (899±3); +stability test
+- [x] test_Wavefolder — sin Taylor bound (x³/6) for near-linear; output ±1 bound derived from convex combination; fold count at drive=8 derived from sin(8x) extrema analytics (8 decreases); mix=0 bit-exact dry, mix=1 matches std::sin; +monotonic/odd/clamp/stateless tests
 - [ ] test_DelayLine — delay accuracy (sample-level), feedback bounds
 - [ ] test_TapeDelay — wow/flutter depth, coloring filter tolerances
 - [ ] test_FeedbackBuffer — crossfade smoothness, loop length accuracy
