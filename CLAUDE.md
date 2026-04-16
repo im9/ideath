@@ -251,8 +251,8 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [ ] test_DelayLine — delay accuracy (sample-level), feedback bounds
 - [ ] test_TapeDelay — wow/flutter depth, coloring filter tolerances
 - [ ] test_FeedbackBuffer — crossfade smoothness, loop length accuracy
-- [ ] test_Compressor — gain reduction accuracy, attack/release timing
-- [ ] test_PeakLimiter — ceiling overshoot tolerance
+- [x] test_Compressor — DC steady-state gainDb matches -(L−T)(1−1/R) to 0.01 dB; below-threshold bit-exact passthrough; makeup gain ratio matches 10^(dB/20); sine peak bounded by 10^(gr/20)·[0.7, 1.5] ripple envelope; release/attack ratio ≥ 10× verified; +stability test
+- [x] test_PeakLimiter — below-threshold bit-exact passthrough; overshoot bound 2e-3 abs (≈ 10× sim-observed practical overshoot, well under 1/α_r^N worst case); gain recovery matches exp(-10) residual at 10τ; lookahead delay verified bit-exact at N−1; threshold/lookahead clamp; +stability test
 - [x] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
 - [x] test_HallReverb — pre-delay accuracy, modulation depth
 - [x] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
