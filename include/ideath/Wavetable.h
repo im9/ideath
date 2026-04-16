@@ -23,11 +23,16 @@ public:
     void setFrequency(float freqHz);
     void setInterpolation(Interpolation mode);
 
-    /// Load a wavetable from 4-bit values (0-15), normalized to [-1, 1].
+    /// Load a wavetable from 4-bit integer values passed as floats in [0, 15].
+    /// Values are linearly mapped to [-1, 1] via (x / 7.5 - 1): 0 → -1, 7.5 → 0, 15 → +1.
+    /// Inputs outside [0, 15] are NOT clamped and will produce out-of-range table entries.
     /// Copies up to kMaxTableSize samples; size clamped to [1, kMaxTableSize].
     void setTable(const float* data, int size);
 
-    /// Load already-normalized data (expected range [-1, 1]).
+    /// Load already-normalized data, expected range [-1, 1].
+    /// Inputs are copied verbatim with no clamping — feeding values beyond [-1, 1]
+    /// will produce table entries beyond [-1, 1] and propagate through process().
+    /// Copies up to kMaxTableSize samples; size clamped to [1, kMaxTableSize].
     void setTableNormalized(const float* data, int size);
 
     float process();

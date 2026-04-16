@@ -178,30 +178,15 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 ## Next Steps
 
 ### Primitives — Effects (port from inboil)
-- [x] Reverb (Freeverb) — 8 comb + 4 allpass, size/damp/freeze, stereo out (mono-first exception)
-- [x] HallReverb — pre-delay + LFO-modulated Freeverb (port from inboil Hall flavor)
-- [x] ShimmerReverb — cross-coupled allpass network + octave pitch shift feedback (port from inboil Shimmer flavor)
-- [x] Compressor — peak envelope follower, threshold/ratio/makeup/attack/release
-- [x] SVFilter — trapezoidal integrated SVF (LP/HP/BP/Notch)
-- [x] TapeDelay — wow/flutter LFO + LP/HP feedback coloring + saturation
+Shipped primitives are listed in the **Primitives** section at the top of this
+file. Outstanding ports:
 - [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze
 - [ ] StutterBuffer — slice repeat glitch, crossfade boundaries
-- [x] CombFilter — feedback delay, Karplus-Strong / metallic textures
-- [x] FormantFilter — 3 parallel bandpass, vowel morph (A-E-I-O-U)
-- [x] PeakLimiter — lookahead brickwall limiter
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
-- [x] Wavefolder — sin(input * drive) wavefolder (West Coast timbre shaping)
-- [x] FeedbackBuffer — long circular buffer looper (record/overdub/playback, extends DelayLine concept)
-- [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
 ### Robustness / Refactoring
 - [ ] ShimmerReverb — Freverb is processed every sample even when freeze is inactive (pure CPU waste for sessions that never touch freeze). Naive skip breaks the "capture current tail on freeze press" semantic (Freverb would hold stale/empty state); needs either (a) a pre-warm window right before freeze engages, or (b) an explicit API to opt out of freeze support. Scope ~30–60 min + test
-- [x] Voice — migrated from Biquad to SVFilter, matches REPL reference (c692fd6). Q→resonance mapping `(1 − 0.707 / max(q, 0.707)) · 0.9` so q=0.707 → res=0 (k=2, Q_svf=0.5) and q→∞ → res=0.9 (cap, Q_svf=5). Inline comments in `src/Voice.cpp::setFilter` and derivations in `tests/test_Voice.cpp` header carry the full rationale
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
-- [ ] Wavetable — document expected input range for 4-bit vs normalized data paths
-- [ ] REPL help text drift — `tools/repl/CommandParser.cpp:45` still says "Biquad filter" even though REPL AudioEngine has been using SVFilter for a while and Voice just followed. One-line doc fix; no code change
-- [ ] `benchmarks/BASELINE.md` missing — CLAUDE.md's performance-baseline rules reference a file that does not exist, so the "20 % ns/sample regression is blocking" rule has no anchor. Either generate and commit BASELINE.md from a clean `make bench` run, or rewrite the rule to not depend on a file
-- [ ] Voice bench doesn't exercise the filter path — `benchmarks/bench_primitives.cpp` "Bench: Voice" runs with `FilterType::Off`, so SVFilter vs Biquad (and future filter changes) are invisible to `make bench`. Add a filter-on variant (e.g. LP at 1 kHz, Q=4)
 - [ ] Library-wide NaN hardening of setters — every primitive's `set<Param>` uses `std::clamp` / `std::max` for finite-range enforcement, but all of these propagate NaN per IEEE 754 (`std::max(NaN, x)` → NaN, `std::clamp(NaN, …)` → NaN). A single NaN from an upstream modulation source corrupts filter coefficients / delay indices / envelope state permanently. Decide policy: (a) add an `isfinite`-guarded front door at each setter, (b) rely on the plugin layer to sanitise, or (c) treat NaN as user error and document it. Current behaviour matches Biquad's pre-migration behaviour (not a regression), but worth a deliberate decision
 
 ### Performance baseline
@@ -230,42 +215,19 @@ Approach: start with `-march=native` compiler flag + `#pragma omp simd` for
 low-hanging fruit. SoA refactoring for Polyphony/Reverb only if benchmarks justify.
 
 ### Test threshold audit
-Each test file's numeric thresholds (tolerances, bounds, RMS values) must have
-a physical or mathematical justification. A threshold without a reason is a
-threshold that might have been fitted to a broken implementation.
+Every numeric threshold (tolerances, bounds, RMS, timing) in the test suite
+must have a physical or mathematical justification. A threshold without a
+reason is a threshold that might have been fitted to a broken implementation.
 
-Review one file at a time. For each threshold, document why that value is correct
-or fix it. Mark done only after every threshold in the file is justified.
+Audit cadence: review one file at a time. A file is marked audited only after
+every threshold in it has a stated derivation. Per-file audit status and a
+compressed summary of each file's key derivations live in
+[tests/AUDIT.md](tests/AUDIT.md) — consult that index when a test fails with
+an unexpected delta and you need to know where a bound came from.
 
-- [x] test_Oscillator — zero-crossing range tightened from [400,920] to [836,924] (2/cycle × 440Hz ±5%)
-- [x] test_Wavetable — 4-bit normalization values, frequency correctness margins
-- [x] test_HarmonicWavetable — aliasing bounds, morph continuity tolerance
-- [x] test_UnisonOscillator — gain compensation bounds (±3.0), RMS thresholds
-- [x] test_Biquad — dB attenuation tolerances, frequency response margins
-- [x] test_SVFilter — resonance peak bounds, cutoff accuracy
-- [x] test_CombFilter — Karplus-Strong decay thresholds
-- [x] test_FormantFilter — vowel energy ratios, resonance bounds
-- [x] test_Envelope — -60 dB coef convention, peak/sustain tightened to bit-exact, curve midpoints derived from pow(), retrigger timing/delta derived from retriggerCoef ≈ 0.8549
-- [x] test_LFO — analytical waveform bounds tightened to [-1, 1] + 1 ULP, DC tolerance 0.01→5e-4, saw/square/quantize counts derived from analytical cycle structure, +stability/extreme tests
-- [x] test_Portamento — convergence tolerances derived from exp(−5N/samples), float-ULP plateau near ±1 documented, +monotonic-convergence/extreme tests
-- [x] test_Noise — mean/RMS tolerances derived from uniform [-1,1] σ=1/√3, histogram bucket bound from √(Np(1−p)), +histogram/stability/seed-diversity tests
-- [x] test_BandlimitedNoise — hfRMS derived from α·σ·√(2/(2−α)) at each bandwidth, log-mapped fc formula, +stability and LP-settling tests
-- [x] test_Saturation — tanh near-linear tolerance derived from Taylor remainder (x³/3); softClip range tightened [-1,1]→[-2/3,2/3]; closed-form cubic matched to 1e-6; +monotonic/odd/asymptotic tests
-- [x] test_BitCrusher — 32-bit passthrough tol derived from float ULP (1e-6); 1-bit exactly {−1,+1}; 4-bit exactly 16 levels verified on {2k/15 − 1} lattice; downsample hold count derived via float32 sim (899±3); +stability test
-- [x] test_Wavefolder — sin Taylor bound (x³/6) for near-linear; output ±1 bound derived from convex combination; fold count at drive=8 derived from sin(8x) extrema analytics (8 decreases); mix=0 bit-exact dry, mix=1 matches std::sin; +monotonic/odd/clamp/stateless tests
-- [x] test_DelayLine — impulse bit-exact at integer delay; fractional delay matches analytical (1−f, f) to 1e-6; feedback cascade bit-exact fb^n; mix formula bit-exact; setDelay(0) bypass verified; delay/fb/mix clamp ranges; +stability. Fixes in impl: (1) sub-sample delay bypasses to avoid stale-slot read, (2) readDelay uses int-index + small-magnitude fraction to avoid ULP loss at buffer-size magnitude
-- [x] test_TapeDelay — dry-mix bit-exact; pre-delay silence < 1e-20 (Biquad has 1e-25 anti-denormal drift); impulse window peak derived from RBJ coef analytics; dark-vs-bright RMS strictly less with 2× margin; |out| ≤ 1+ULP via tanh bound; +clamped-wow and 10s stability. Fixes in impl: (1) readDelay int-index + small-fraction (parallel DelayLine fix), (2) tape coloring moved to playback path so first echo is filtered (physically correct; output sound shifts from old bright-first to uniform tape character)
-- [x] test_FeedbackBuffer — stopped/play/overdub integer-position outputs bit-exact; lerp tol tightened to 1e-7 (from 1e-5) with derivation from float ULP; mix/feedback formulas bit-exact; speed clamp bit-exact; crossfade smoothness now < 0.1 jump for any signal (strict); +10s stability. Impl fix: readSample was using off-by-(cf−1) wrap indices that only worked for signals with matching loop-end/start values — rewritten to head-tail blend with effective playback length = loopLength − cf, making wrap seamless for arbitrary signals
-- [x] test_Compressor — DC steady-state gainDb matches -(L−T)(1−1/R) to 0.01 dB; below-threshold bit-exact passthrough; makeup gain ratio matches 10^(dB/20); sine peak bounded by 10^(gr/20)·[0.7, 1.5] ripple envelope; release/attack ratio ≥ 10× verified; +stability test
-- [x] test_PeakLimiter — below-threshold bit-exact passthrough; overshoot bound 2e-3 abs (≈ 10× sim-observed practical overshoot, well under 1/α_r^N worst case); gain recovery matches exp(-10) residual at 10τ; lookahead delay verified bit-exact at N−1; threshold/lookahead clamp; +stability test
-- [x] test_Reverb — energy decay ratio (0.9), wet level, DC offset (0.01)
-- [x] test_HallReverb — pre-delay accuracy, modulation depth
-- [x] test_ShimmerReverb — octave content ratio (0.02), energy bounds (±6.0), DC (0.05)
-- [x] test_FMSynth — bounds bit-exact via hard-limit; single-carrier RMS derived from 0.85/√2 ≈ 0.6; velocity ratio bit-exact 10/3; pitch ratio from 2·f·Δt crossings (±2 boundary); distinct-routing threshold from (1−J₀(M)) RMS floor; +10s stability across all 8 algos and extreme-params combo
-- [x] test_Voice — bounds bit-exact via polyBLEP saw ∈ [−1,1]; produces-sound RMS derived from 1/√3 · env_rms ≈ 0.48; velocity ratio bit-exact 10/3; sources RMS ≈ 0.575 each (1/√3); filter ratio from 2nd-order Butterworth |H|²=1/(1+(f/fc)⁴) giving ~0.16 expected, threshold 0.5; +10s stability across source×filter and high-Q extreme-combo
-- [x] test_Polyphony — silent/reset bit-exact via tanh(0)=0; single-voice RMS derived from <tanh²(saw)>=1−tanh(1)≈0.238; chord/single ratio from CLT Gaussian σ=1 giving ≈1.29 (threshold 1.1); rail threshold from arctanh(1−ULP/2)≈8.7; +explicit steal-oldest semantic test and 10s stability with resonant filter
-- [x] test_SeqClick — Voice-vs-offline RMS tol derived from BitCrusher 32-bit quantisation (≈6e−8) vs wrong-order divergence (~0.1); click-delta 0.02 derived from envAttack≈0.107 follower response: clean ramp Δ_env≈1e−3, hard click ≈0.037, SVFilter-ring ≈4e−3–7e−3 per Q/drive case
-- [x] test_AudioSafety — denormal bounds, long-run stability
+When a new test file is committed, add it to the **Unaudited** section of
+`tests/AUDIT.md` and graduate it to the main table once its derivations are
+documented.
 
 ### Other
 - [ ] Plugin project — JUCE VST3/AU or iOS AUv3

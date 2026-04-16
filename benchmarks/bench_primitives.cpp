@@ -468,6 +468,27 @@ TEST_CASE("Bench: Voice", "[bench]")
     };
 }
 
+TEST_CASE("Bench: Voice (LP filter, Q=4)", "[bench]")
+{
+    ideath::Voice voice;
+    voice.prepare(kSR);
+    voice.setSource(ideath::Voice::Source::Oscillator);
+    voice.setAttack(0.005f);
+    voice.setDecay(0.1f);
+    voice.setSustain(0.5f);
+    voice.setRelease(0.2f);
+    voice.setFilter(ideath::Voice::FilterType::Lowpass, 1000.0f, 4.0f);
+    voice.noteOn(440.0f);
+
+    BENCHMARK("Voice::process (LP filter)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += voice.process();
+        return acc;
+    };
+}
+
 TEST_CASE("Bench: FeedbackBuffer", "[bench]")
 {
     ideath::FeedbackBuffer buffer;

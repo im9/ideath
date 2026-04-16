@@ -42,7 +42,7 @@ ideath REPL commands:
   fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
   unison <saw|square> <freq> [voices] [detune_cents]
                                 Unison oscillator source
-  filter <lp|hp|bp> <freq> <Q>  Biquad filter (or "filter off")
+  filter <lp|hp|bp> <freq> <Q>  SVFilter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
   fold <drive> [mix]            Wavefolder (or "fold off")
