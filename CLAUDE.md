@@ -240,11 +240,11 @@ or fix it. Mark done only after every threshold in the file is justified.
 - [x] test_SVFilter — resonance peak bounds, cutoff accuracy
 - [x] test_CombFilter — Karplus-Strong decay thresholds
 - [x] test_FormantFilter — vowel energy ratios, resonance bounds
-- [ ] test_Envelope — decay convergence (1e-4), retrigger delta (0.05), curve shape
-- [ ] test_LFO — DC offset tolerance (0.01), waveform bounds
-- [ ] test_Portamento — convergence tolerance, glide timing
-- [ ] test_Noise — uniformity bounds
-- [ ] test_BandlimitedNoise — bandwidth cutoff tolerances
+- [x] test_Envelope — -60 dB coef convention, peak/sustain tightened to bit-exact, curve midpoints derived from pow(), retrigger timing/delta derived from retriggerCoef ≈ 0.8549
+- [x] test_LFO — analytical waveform bounds tightened to [-1, 1] + 1 ULP, DC tolerance 0.01→5e-4, saw/square/quantize counts derived from analytical cycle structure, +stability/extreme tests
+- [x] test_Portamento — convergence tolerances derived from exp(−5N/samples), float-ULP plateau near ±1 documented, +monotonic-convergence/extreme tests
+- [x] test_Noise — mean/RMS tolerances derived from uniform [-1,1] σ=1/√3, histogram bucket bound from √(Np(1−p)), +histogram/stability/seed-diversity tests
+- [x] test_BandlimitedNoise — hfRMS derived from α·σ·√(2/(2−α)) at each bandwidth, log-mapped fc formula, +stability and LP-settling tests
 - [ ] test_Saturation — drive headroom bounds
 - [ ] test_BitCrusher — quantization step accuracy
 - [ ] test_Wavefolder — drive/mix output bounds
