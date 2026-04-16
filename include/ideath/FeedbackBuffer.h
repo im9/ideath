@@ -53,6 +53,7 @@ public:
 private:
     float readSample(int pos) const;
     float readInterpolated(double pos) const;
+    int effectiveLength() const;
 
     float sampleRate_ = 44100.0f;
     std::vector<float> buffer_;

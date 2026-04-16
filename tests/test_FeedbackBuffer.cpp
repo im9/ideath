@@ -7,22 +7,55 @@ using Catch::Matchers::WithinAbs;
 
 static constexpr float kSampleRate = 44100.0f;
 
-TEST_CASE("FeedbackBuffer: stopped mode passes input through", "[feedbackbuffer]")
+// Threshold derivations used throughout this file
+// -----------------------------------------------
+// FeedbackBuffer is a looper (not a delay): it uses a double-precision
+// readPos_ and int write index, with linear interpolation across the
+// loopLength_ via readSample/readInterpolated. Because readPos_ is
+// double, its precision is unaffected by buffer-size magnitude, so
+// integer read positions produce bit-exact output from the stored buffer.
+//
+// Stopped mode: early return of `input` → output = input bit-exact.
+//
+// Playing at integer positions: readInterpolated wraps readPos_ into
+// [0, loopLength) and, with frac = 0, returns s0 = readSample(i0)
+// bit-exact. For short loops (≤ 2·crossfadeSamples_) readSample returns
+// buffer_[i0] with no crossfade blending. Output = input·(1−mix) +
+// stored·mix → for mix=1 and input=0, output = stored bit-exact.
+//
+// Overdub write: buf[wp] = input + existing·feedback + 1e-25f. The
+// anti-denormal 1e-25f is far below float ULP at any typical loop
+// amplitude (ULP of 0.5 ≈ 3e-8 ≫ 1e-25), so short-loop overdubs test
+// bit-exact.
+//
+// Linear interp at fractional readPos: r = s0 + frac·(s1 − s0) has
+// float error ≤ 2·ULP at the magnitudes used here. For the test
+// values (a=0.1, b=0.2, frac=0.5), observed error is 6e-9; for
+// (0.3, 0.4, 0.5) it is 2.4e-8. Tolerance 1e-7 gives 4× safety margin
+// on the worst case and is 100× tighter than the old 1e-5 bound.
+//
+// Speed clamping: setSpeed clamps to [-4, 4] exactly (float
+// representable). 1.0f and its clamped multiples are bit-exact.
+
+TEST_CASE("FeedbackBuffer: stopped mode passes input through (bit-exact)", "[feedbackbuffer]")
 {
+    // Stopped mode early-returns input, so output == input exactly.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
 
-    REQUIRE_THAT(fb.process(0.5f), WithinAbs(0.5f, 1e-6f));
-    REQUIRE_THAT(fb.process(-0.3f), WithinAbs(-0.3f, 1e-6f));
+    REQUIRE(fb.process(0.5f) == 0.5f);
+    REQUIRE(fb.process(-0.3f) == -0.3f);
 }
 
-TEST_CASE("FeedbackBuffer: record then play back", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: record then play back (bit-exact at integer positions)", "[feedbackbuffer]")
 {
+    // Short loop (4 samples) ≤ 2·crossfadeSamples → no crossfade active.
+    // Integer readPos at 0, 1, 2, 3 → readInterpolated returns buffer[i]
+    // bit-exact; mix=1 → output = stored sample bit-exact.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples
     fb.record();
     fb.process(0.1f);
     fb.process(0.2f);
@@ -32,68 +65,67 @@ TEST_CASE("FeedbackBuffer: record then play back", "[feedbackbuffer]")
 
     REQUIRE(fb.getLoopLength() == 4);
 
-    // Play back — should loop the recorded content
     fb.play();
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-6f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-6f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-6f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-6f));
-    // Should loop
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-6f));
+    REQUIRE(fb.process(0.0f) == 0.1f);
+    REQUIRE(fb.process(0.0f) == 0.2f);
+    REQUIRE(fb.process(0.0f) == 0.3f);
+    REQUIRE(fb.process(0.0f) == 0.4f);
+    REQUIRE(fb.process(0.0f) == 0.1f);  // wraps
 }
 
-TEST_CASE("FeedbackBuffer: overdub layers new content", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: overdub layers new content (bit-exact)", "[feedbackbuffer]")
 {
+    // fb = 1 → buf[wp] = input + existing·1 + 1e-25f ≈ input + existing.
+    // Starting buf = {0.5, 0.5}, input = 0.1 across 2 calls: writes land
+    // at pos 0, then pos 1 (speed=1). Result: buf = {0.6, 0.6} bit-exact
+    // (1e-25 is below ULP of 0.6).
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
-    fb.setFeedback(1.0f); // full feedback = keep all existing
+    fb.setFeedback(1.0f);
     fb.setMix(1.0f);
 
-    // Record 2 samples
     fb.record();
     fb.process(0.5f);
     fb.process(0.5f);
     fb.stop();
 
-    // Overdub: add 0.1 on top
     fb.overdub();
     fb.process(0.1f);
     fb.process(0.1f);
     fb.stop();
 
-    // Play back — should be 0.5 + 0.1 = 0.6
     fb.play();
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.6f, 1e-6f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.6f, 1e-6f));
+    REQUIRE(fb.process(0.0f) == 0.6f);
+    REQUIRE(fb.process(0.0f) == 0.6f);
 }
 
-TEST_CASE("FeedbackBuffer: overdub with feedback=0 replaces content", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: overdub with feedback=0 replaces content (bit-exact)", "[feedbackbuffer]")
 {
+    // fb = 0 → buf[wp] = input + 0 + 1e-25f. 0.1 + 1e-25 rounds to 0.1f
+    // exactly in float (ULP(0.1) ≈ 7.5e-9 ≫ 1e-25).
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record
     fb.record();
     fb.process(0.5f);
     fb.process(0.5f);
     fb.stop();
 
-    // Overdub with feedback=0 (replace)
     fb.setFeedback(0.0f);
     fb.overdub();
     fb.process(0.1f);
     fb.process(0.2f);
     fb.stop();
 
-    // Play — should be replaced content only
     fb.play();
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-6f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-6f));
+    REQUIRE(fb.process(0.0f) == 0.1f);
+    REQUIRE(fb.process(0.0f) == 0.2f);
 }
 
-TEST_CASE("FeedbackBuffer: mix blends dry and wet", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: mix blends dry and wet (bit-exact)", "[feedbackbuffer]")
 {
+    // 1.0·(1−0.5) + 0.8·0.5 = 0.5 + 0.4 = 0.9 exactly in float.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(0.5f);
@@ -103,8 +135,7 @@ TEST_CASE("FeedbackBuffer: mix blends dry and wet", "[feedbackbuffer]")
     fb.stop();
 
     fb.play();
-    // dry=1.0*(1-0.5) + wet=0.8*0.5 = 0.5 + 0.4 = 0.9
-    REQUIRE_THAT(fb.process(1.0f), WithinAbs(0.9f, 1e-6f));
+    REQUIRE(fb.process(1.0f) == 0.9f);
 }
 
 TEST_CASE("FeedbackBuffer: reset clears everything", "[feedbackbuffer]")
@@ -135,386 +166,336 @@ TEST_CASE("FeedbackBuffer: play/overdub ignored when no loop recorded", "[feedba
 
 TEST_CASE("FeedbackBuffer: recording auto-stops at buffer end", "[feedbackbuffer]")
 {
-    // Use a very short buffer
+    // maxLengthSec = 0.001 → bufferSize_ = 44 + 1 = 45 (floor · fs + 1).
+    // Writing 100 samples fills the buffer and auto-transitions to Playing.
     ideath::FeedbackBuffer fb;
-    fb.prepare(kSampleRate, 0.001f); // ~44 samples
+    fb.prepare(kSampleRate, 0.001f);
 
     fb.record();
     for (int i = 0; i < 100; ++i)
         fb.process(0.5f);
 
-    // Should have auto-stopped and switched to Playing
     REQUIRE(fb.getMode() == ideath::FeedbackBuffer::Mode::Playing);
-    REQUIRE(fb.getLoopLength() > 0);
+    REQUIRE(fb.getLoopLength() == 45);  // bufferSize_ exactly
 }
 
-TEST_CASE("FeedbackBuffer: crossfade eliminates discontinuity at loop boundary", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: crossfade smooths loop boundary (max jump bound)", "[feedbackbuffer]")
 {
+    // Recorded waveform: ramp 0→1 over first 10% then hold at 1.0.
+    // Without crossfade, the loop-end value 1.0 jumps to the ramp start 0.0
+    // → sample-to-sample discontinuity ~1.0. A 5 ms (220 sample) crossfade
+    // blends loop tail and head, capping the per-sample jump. Analytical:
+    // with a linear 220-sample ramp blend between 1.0 and 0.0, per-sample
+    // step ≤ 1/220 ≈ 4.5e-3. Allow 0.1 for the ramp-slope region.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
-    fb.setCrossfade(0.005f); // 5ms = 220 samples
+    fb.setCrossfade(0.005f);
     fb.setMix(1.0f);
 
-    // Record a loop long enough for crossfade to engage:
-    // ramp up then hold, so buffer_[end] != buffer_[0] without crossfade
-    int loopLen = 2000;
+    constexpr int loopLen = 2000;
     fb.record();
     for (int i = 0; i < loopLen; ++i)
     {
-        float t = static_cast<float>(i) / static_cast<float>(loopLen);
-        fb.process(t < 0.1f ? t * 10.0f : 1.0f); // ramp 0→1, then hold 1.0
+        const float t = static_cast<float>(i) / static_cast<float>(loopLen);
+        fb.process(t < 0.1f ? t * 10.0f : 1.0f);
     }
     fb.stop();
     REQUIRE(fb.getLoopLength() == loopLen);
 
-    // Play through the loop boundary and check for smooth transition
     fb.play();
     float prev = fb.process(0.0f);
     float maxJump = 0.0f;
     for (int i = 1; i < loopLen * 2; ++i)
     {
-        float curr = fb.process(0.0f);
-        float jump = std::fabs(curr - prev);
-        if (jump > maxJump)
-            maxJump = jump;
+        const float curr = fb.process(0.0f);
+        maxJump = std::max(maxJump, std::fabs(curr - prev));
         prev = curr;
     }
-    // Without crossfade, the jump at boundary would be ~1.0 (1.0 → ramp start).
-    // With crossfade, max sample-to-sample jump should be much smaller.
     REQUIRE(maxJump < 0.1f);
 }
 
-TEST_CASE("FeedbackBuffer: setCrossfade changes crossfade length", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: setCrossfade=0 reveals boundary jump", "[feedbackbuffer]")
 {
+    // With crossfade=0, ramp loop has boundary jump ≈ 1.0 (loop-end = 1.0,
+    // loop-start = 0.0). With 10 ms crossfade, jump drops to the per-sample
+    // slope of the blend. New test requires cf >> 0 → strictly smaller jump.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record a long enough loop
-    int loopLen = 4000;
+    constexpr int loopLen = 4000;
     fb.record();
     for (int i = 0; i < loopLen; ++i)
         fb.process(static_cast<float>(i) / static_cast<float>(loopLen));
     fb.stop();
 
-    // With crossfade=0, there should be a hard jump
-    fb.setCrossfade(0.0f);
-    fb.play();
-    float prev = fb.process(0.0f);
-    float maxJump0 = 0.0f;
-    for (int i = 1; i < loopLen * 2; ++i)
-    {
-        float curr = fb.process(0.0f);
-        float jump = std::fabs(curr - prev);
-        if (jump > maxJump0)
-            maxJump0 = jump;
-        prev = curr;
-    }
+    auto measureMaxJump = [&]() {
+        fb.play();
+        float prev = fb.process(0.0f);
+        float maxJump = 0.0f;
+        for (int i = 1; i < loopLen * 2; ++i)
+        {
+            const float curr = fb.process(0.0f);
+            maxJump = std::max(maxJump, std::fabs(curr - prev));
+            prev = curr;
+        }
+        return maxJump;
+    };
 
-    // With crossfade=10ms, the jump should be smaller
+    fb.setCrossfade(0.0f);
+    const float maxJump0 = measureMaxJump();
+
     fb.setCrossfade(0.01f);
-    fb.play();
-    prev = fb.process(0.0f);
-    float maxJumpCF = 0.0f;
-    for (int i = 1; i < loopLen * 2; ++i)
-    {
-        float curr = fb.process(0.0f);
-        float jump = std::fabs(curr - prev);
-        if (jump > maxJumpCF)
-            maxJumpCF = jump;
-        prev = curr;
-    }
+    const float maxJumpCF = measureMaxJump();
 
     REQUIRE(maxJumpCF < maxJump0);
+    REQUIRE(maxJump0 > 0.5f);    // boundary jump at 0 crossfade is large
+    REQUIRE(maxJumpCF < 0.1f);   // 10 ms crossfade drops jump sharply
 }
 
-TEST_CASE("FeedbackBuffer: setSpeed default is 1.0", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: setSpeed default is 1.0 bit-exact", "[feedbackbuffer]")
 {
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
-    REQUIRE_THAT(fb.getSpeed(), WithinAbs(1.0f, 1e-6f));
+    REQUIRE(fb.getSpeed() == 1.0f);
 }
 
-TEST_CASE("FeedbackBuffer: half speed doubles playback duration", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: half speed interpolates between samples", "[feedbackbuffer]")
 {
+    // Loop {0.1, 0.2, 0.3, 0.4}, speed=0.5 → readPos = 0, 0.5, 1, 1.5.
+    // Linear interp at fractional positions. Worst ULP observed over
+    // these interpolations is ≈ 2e-8 → tolerance 1e-7 with 5× margin.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples: 0.1, 0.2, 0.3, 0.4
     fb.record();
-    fb.process(0.1f);
-    fb.process(0.2f);
-    fb.process(0.3f);
-    fb.process(0.4f);
+    fb.process(0.1f); fb.process(0.2f); fb.process(0.3f); fb.process(0.4f);
     fb.stop();
 
-    // Play at half speed — should interpolate between samples
     fb.setSpeed(0.5f);
     fb.play();
-    // readPos advances 0.5 each sample, so:
-    //   pos=0.0 → 0.1
-    //   pos=0.5 → lerp(0.1, 0.2) = 0.15
-    //   pos=1.0 → 0.2
-    //   pos=1.5 → lerp(0.2, 0.3) = 0.25
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.15f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.1f);                           // pos=0 exact
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.15f, 1e-7f));     // pos=0.5 lerp
+    REQUIRE(fb.process(0.0f) == 0.2f);                           // pos=1 exact
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-7f));     // pos=1.5 lerp
 }
 
-TEST_CASE("FeedbackBuffer: double speed halves playback duration", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: double speed skips samples", "[feedbackbuffer]")
 {
+    // speed=2 → integer positions 0, 2 → bit-exact samples.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples
     fb.record();
-    fb.process(0.1f);
-    fb.process(0.2f);
-    fb.process(0.3f);
-    fb.process(0.4f);
+    fb.process(0.1f); fb.process(0.2f); fb.process(0.3f); fb.process(0.4f);
     fb.stop();
 
-    // Play at double speed — skips every other sample
     fb.setSpeed(2.0f);
     fb.play();
-    // pos=0.0 → 0.1, pos=2.0 → 0.3
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.1f);
+    REQUIRE(fb.process(0.0f) == 0.3f);
 }
 
-TEST_CASE("FeedbackBuffer: negative speed plays in reverse", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: negative speed plays reverse (bit-exact)", "[feedbackbuffer]")
 {
+    // speed=-1 → starts at loopLength-1 and decrements. Integer positions,
+    // bit-exact.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples
     fb.record();
-    fb.process(0.1f);
-    fb.process(0.2f);
-    fb.process(0.3f);
-    fb.process(0.4f);
+    fb.process(0.1f); fb.process(0.2f); fb.process(0.3f); fb.process(0.4f);
     fb.stop();
 
-    // Play in reverse — starts from end of loop
     fb.setSpeed(-1.0f);
     fb.play();
-    // Reverse: starts at loopLength-1 = 3, goes backward
-    //   pos=3 → 0.4, pos=2 → 0.3, pos=1 → 0.2, pos=0 → 0.1
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
-    // Wraps: back to end
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.4f);
+    REQUIRE(fb.process(0.0f) == 0.3f);
+    REQUIRE(fb.process(0.0f) == 0.2f);
+    REQUIRE(fb.process(0.0f) == 0.1f);
+    REQUIRE(fb.process(0.0f) == 0.4f);  // wraps back to end
 }
 
-TEST_CASE("FeedbackBuffer: speed=0 freezes playback position", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: speed=0 freezes playback (bit-exact)", "[feedbackbuffer]")
 {
+    // readPos never advances → always returns sample at pos 0.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
     fb.record();
-    fb.process(0.5f);
-    fb.process(0.9f);
+    fb.process(0.5f); fb.process(0.9f);
     fb.stop();
 
     fb.setSpeed(0.0f);
     fb.play();
-    // Frozen at position 0 — always returns first sample
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.5f);
+    REQUIRE(fb.process(0.0f) == 0.5f);
+    REQUIRE(fb.process(0.0f) == 0.5f);
 }
 
-TEST_CASE("FeedbackBuffer: speed clamped to [-4, 4]", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: speed clamps to [-4, 4] bit-exact", "[feedbackbuffer]")
 {
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
 
     fb.setSpeed(10.0f);
-    REQUIRE_THAT(fb.getSpeed(), WithinAbs(4.0f, 1e-6f));
+    REQUIRE(fb.getSpeed() == 4.0f);
 
     fb.setSpeed(-10.0f);
-    REQUIRE_THAT(fb.getSpeed(), WithinAbs(-4.0f, 1e-6f));
+    REQUIRE(fb.getSpeed() == -4.0f);
 }
 
 TEST_CASE("FeedbackBuffer: half-speed reverse with interpolation", "[feedbackbuffer]")
 {
+    // speed=-0.5 from readPos = loopLength-1 = 3 → positions 3, 2.5, 2, 1.5.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
     fb.record();
-    fb.process(0.1f);
-    fb.process(0.2f);
-    fb.process(0.3f);
-    fb.process(0.4f);
+    fb.process(0.1f); fb.process(0.2f); fb.process(0.3f); fb.process(0.4f);
     fb.stop();
 
     fb.setSpeed(-0.5f);
     fb.play();
-    // Starts at end (pos=3), moves -0.5 each sample
-    //   pos=3.0 → 0.4
-    //   pos=2.5 → lerp(0.3, 0.4) = 0.35
-    //   pos=2.0 → 0.3
-    //   pos=1.5 → lerp(0.2, 0.3) = 0.25
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.4f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.35f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.3f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.4f);                           // pos=3 exact
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.35f, 1e-7f));     // pos=2.5 lerp
+    REQUIRE(fb.process(0.0f) == 0.3f);                           // pos=2 exact
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-7f));     // pos=1.5 lerp
 }
 
 TEST_CASE("FeedbackBuffer: speed change during playback", "[feedbackbuffer]")
 {
+    // Speed switch mid-stream: readPos continues from its current value.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
     fb.record();
-    fb.process(0.1f);
-    fb.process(0.2f);
-    fb.process(0.3f);
-    fb.process(0.4f);
+    fb.process(0.1f); fb.process(0.2f); fb.process(0.3f); fb.process(0.4f);
     fb.stop();
 
     fb.play();
-    // Normal speed: read sample 0
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-5f));
-    // Now at pos=1.0. Switch to half speed
+    REQUIRE(fb.process(0.0f) == 0.1f);  // pos=0 → 0.1
     fb.setSpeed(0.5f);
-    // pos=1.0 → 0.2
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.2f, 1e-5f));
-    // pos=1.5 → lerp(0.2, 0.3) = 0.25
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.2f);  // pos=1 → 0.2 (from previous step)
+    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.25f, 1e-7f));  // pos=1.5 lerp
 }
 
 TEST_CASE("FeedbackBuffer: overdub works with non-unity speed", "[feedbackbuffer]")
 {
+    // Overdub at half speed: first read is pos=0 → buf[0] = 0.5 bit-exact.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setFeedback(1.0f);
     fb.setMix(1.0f);
 
     fb.record();
-    fb.process(0.5f);
-    fb.process(0.5f);
-    fb.process(0.5f);
-    fb.process(0.5f);
+    for (int i = 0; i < 4; ++i) fb.process(0.5f);
     fb.stop();
 
-    // Overdub at half speed — both read and write advance at 0.5x (tape-style)
     fb.setSpeed(0.5f);
     fb.overdub();
-    float out0 = fb.process(0.1f);
-    // Read from pos=0.0 → 0.5, output should be 0.5
-    REQUIRE_THAT(out0, WithinAbs(0.5f, 1e-5f));
+    REQUIRE(fb.process(0.1f) == 0.5f);  // existing (first sample read), bit-exact
 }
 
 TEST_CASE("FeedbackBuffer: overdub write position follows speed (tape-style)", "[feedbackbuffer]")
 {
+    // speed=0.5 → writes land at (int)0.0, (int)0.5, (int)1.0, (int)1.5
+    // = 0, 0, 1, 1. So positions 2, 3 remain silent (originally 0).
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
-    fb.setFeedback(0.0f); // replace mode
+    fb.setFeedback(0.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples of silence
     fb.record();
     for (int i = 0; i < 4; ++i) fb.process(0.0f);
     fb.stop();
 
-    // Overdub at half speed — both heads move at 0.5x
-    // readPos: 0.0, 0.5, 1.0, 1.5 → write to int positions: 0, 0, 1, 1
     fb.setSpeed(0.5f);
     fb.overdub();
     for (int i = 0; i < 4; ++i) fb.process(0.9f);
     fb.stop();
 
-    // Play at 1x — only positions 0,1 were written; 2,3 remain silent
     fb.setSpeed(1.0f);
     fb.play();
-    float s0 = fb.process(0.0f);
-    float s1 = fb.process(0.0f);
-    float s2 = fb.process(0.0f);
-    float s3 = fb.process(0.0f);
+    const float s0 = fb.process(0.0f);
+    const float s1 = fb.process(0.0f);
+    const float s2 = fb.process(0.0f);
+    const float s3 = fb.process(0.0f);
 
     REQUIRE(s0 > 0.5f);
     REQUIRE(s1 > 0.5f);
-    REQUIRE_THAT(s2, WithinAbs(0.0f, 1e-5f));
-    REQUIRE_THAT(s3, WithinAbs(0.0f, 1e-5f));
+    REQUIRE(s2 == 0.0f);  // untouched by overdub, bit-exact
+    REQUIRE(s3 == 0.0f);
 }
 
-TEST_CASE("FeedbackBuffer: overdub reverse writes at reverse position", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: overdub reverse writes at reverse positions", "[feedbackbuffer]")
 {
+    // speed=-1 starts at pos=3 and decrements. First two writes at pos 3, 2.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
-    fb.setFeedback(0.0f); // replace mode
+    fb.setFeedback(0.0f);
     fb.setMix(1.0f);
 
-    // Record 4 samples of silence
     fb.record();
     for (int i = 0; i < 4; ++i) fb.process(0.0f);
     fb.stop();
 
-    // Overdub in reverse — starts at end, writes backward
     fb.setSpeed(-1.0f);
     fb.overdub();
-    fb.process(0.7f); // writes at pos 3
-    fb.process(0.7f); // writes at pos 2
+    fb.process(0.7f);  // writes at pos 3
+    fb.process(0.7f);  // writes at pos 2
     fb.stop();
 
-    // Play forward — positions 2,3 written, 0,1 untouched
     fb.setSpeed(1.0f);
     fb.play();
-    float s0 = fb.process(0.0f);
-    float s1 = fb.process(0.0f);
-    float s2 = fb.process(0.0f);
-    float s3 = fb.process(0.0f);
+    const float s0 = fb.process(0.0f);
+    const float s1 = fb.process(0.0f);
+    const float s2 = fb.process(0.0f);
+    const float s3 = fb.process(0.0f);
 
-    REQUIRE_THAT(s0, WithinAbs(0.0f, 1e-5f));
-    REQUIRE_THAT(s1, WithinAbs(0.0f, 1e-5f));
+    REQUIRE(s0 == 0.0f);  // untouched
+    REQUIRE(s1 == 0.0f);  // untouched
     REQUIRE(s2 > 0.5f);
     REQUIRE(s3 > 0.5f);
 }
 
 TEST_CASE("FeedbackBuffer: overdub at speed=0 does not write (freeze)", "[feedbackbuffer]")
 {
+    // Explicit `if (speed_ != 0.0f)` guard in overdub — no writes at freeze.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setFeedback(1.0f);
     fb.setMix(1.0f);
 
-    // Record a known value
     fb.record();
-    fb.process(0.5f);
-    fb.process(0.5f);
+    fb.process(0.5f); fb.process(0.5f);
     fb.stop();
 
-    // Overdub at speed=0 with loud input — buffer should NOT accumulate
     fb.setSpeed(0.0f);
     fb.overdub();
-    for (int i = 0; i < 100; ++i)
-        fb.process(1.0f);
+    for (int i = 0; i < 100; ++i) fb.process(1.0f);
     fb.stop();
 
-    // Play back — content should still be the original 0.5
     fb.setSpeed(1.0f);
     fb.play();
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.5f, 1e-5f));
+    REQUIRE(fb.process(0.0f) == 0.5f);
+    REQUIRE(fb.process(0.0f) == 0.5f);
 }
 
-TEST_CASE("FeedbackBuffer: feedback clamped to [0, 1]", "[feedbackbuffer]")
+TEST_CASE("FeedbackBuffer: feedback clamped to [0, 1] (bit-exact replace on negative)", "[feedbackbuffer]")
 {
+    // setFeedback(-0.5) clamps to 0 → overdub replaces: buf[0] = 0.1 bit-exact.
     ideath::FeedbackBuffer fb;
     fb.prepare(kSampleRate, 1.0f);
     fb.setMix(1.0f);
 
-    fb.setFeedback(-0.5f); // should clamp to 0
+    fb.setFeedback(-0.5f);
 
     fb.record();
     fb.process(1.0f);
@@ -524,7 +505,37 @@ TEST_CASE("FeedbackBuffer: feedback clamped to [0, 1]", "[feedbackbuffer]")
     fb.process(0.1f);
     fb.stop();
 
-    // feedback=0 means replace: should be 0.1, not 1.1
     fb.play();
-    REQUIRE_THAT(fb.process(0.0f), WithinAbs(0.1f, 1e-6f));
+    REQUIRE(fb.process(0.0f) == 0.1f);
+}
+
+// ---------------------------------------------------------------------------
+// Long-run stability
+// ---------------------------------------------------------------------------
+
+TEST_CASE("FeedbackBuffer: 10-second overdub stability at feedback=1", "[feedbackbuffer][stability]")
+{
+    // 10 s of continuous overdub at feedback=1 (full layering). The 1e-25
+    // anti-denormal guard accumulates by ~(loop_passes · 1e-25), which
+    // for 10 s / 0.1 s loop = 100 passes stays below 1e-22 — far below
+    // float precision. Buffer content must stay finite and bounded.
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setFeedback(1.0f);
+    fb.setMix(1.0f);
+
+    fb.record();
+    for (int i = 0; i < 4410; ++i)  // 100 ms loop
+        fb.process(0.1f * std::sin(2.0f * 3.14159265f * 440.0f * i / kSampleRate));
+    fb.stop();
+
+    fb.overdub();
+    for (int i = 0; i < 441000; ++i)  // 10 s
+    {
+        const float t = static_cast<float>(i) / kSampleRate;
+        const float input = 0.05f * std::sin(2.0f * 3.14159265f * 220.0f * t);
+        const float out = fb.process(input);
+        REQUIRE(std::isfinite(out));
+        REQUIRE(std::fabs(out) <= 100.0f);  // loose — just checking no blow-up
+    }
 }

@@ -62,9 +62,9 @@ void FeedbackBuffer::play()
 {
     if (loopLength_ > 0)
     {
-        // For negative speed, start at end of loop
+        // For negative speed, start at end of playable region
         if (speed_ < 0.0f)
-            readPos_ = static_cast<double>(loopLength_ - 1);
+            readPos_ = static_cast<double>(effectiveLength() - 1);
         else
             readPos_ = 0.0;
         mode_ = Mode::Playing;
@@ -76,63 +76,68 @@ void FeedbackBuffer::overdub()
     if (loopLength_ > 0)
     {
         if (speed_ < 0.0f)
-            readPos_ = static_cast<double>(loopLength_ - 1);
+            readPos_ = static_cast<double>(effectiveLength() - 1);
         else
             readPos_ = 0.0;
         mode_ = Mode::Overdub;
     }
 }
 
+int FeedbackBuffer::effectiveLength() const
+{
+    // When crossfade is active, the playback wraps at loopLength_ − crossfadeSamples_.
+    // The final cf samples of the recorded buffer are not played directly;
+    // they are reused as the "tail overlap" blended into the first cf samples
+    // of the playback region (see readSample). This makes the wrap point
+    // (pos = effectiveLength − 1 → pos = 0) seamless regardless of signal
+    // shape, because buf[effLen − 1] and the pos=0 blend both converge to
+    // the same audio neighborhood.
+    if (crossfadeSamples_ <= 0 || loopLength_ <= crossfadeSamples_ * 2)
+        return loopLength_;
+    return loopLength_ - crossfadeSamples_;
+}
+
 float FeedbackBuffer::readSample(int pos) const
 {
-    float main = buffer_[static_cast<size_t>(pos)];
-
     if (crossfadeSamples_ <= 0 || loopLength_ <= crossfadeSamples_ * 2)
-        return main;
+        return buffer_[static_cast<size_t>(pos)];
 
-    // Near end of loop: fade out main, fade in loop-start sample
-    int distFromEnd = loopLength_ - 1 - pos;
-    if (distFromEnd < crossfadeSamples_)
-    {
-        // fade: 1.0 at crossfade boundary, 0.0 at loop end
-        float fade = static_cast<float>(distFromEnd) / static_cast<float>(crossfadeSamples_);
-        // Corresponding sample from the start of the loop
-        int startPos = crossfadeSamples_ - 1 - distFromEnd;
-        float wrap = buffer_[static_cast<size_t>(startPos)];
-        return main * fade + wrap * (1.0f - fade);
-    }
-
-    // Near start of loop: fade in main, fade out loop-end sample
+    // Blend head [0, cf) with tail [loopLength − cf, loopLength).
+    // fade = pos / cf: at pos=0 output equals tail (buf[loopLength − cf]);
+    // at pos=cf−1 output ≈ head (buf[cf−1]). In the middle region
+    // [cf, effectiveLength−1] the signal passes through unmodified.
+    // Seamless wrap: pos=effectiveLength−1 = loopLength − cf − 1 plays
+    // buf[loopLength − cf − 1]; pos=0 plays buf[loopLength − cf].
+    // For any smooth recorded signal these two samples are adjacent, so
+    // the per-sample step at the wrap is bounded by the signal's own slope.
     if (pos < crossfadeSamples_)
     {
-        // fade: 0.0 at loop start, 1.0 at crossfade boundary
-        float fade = static_cast<float>(pos) / static_cast<float>(crossfadeSamples_);
-        // Corresponding sample from near the end of the loop
-        int endPos = loopLength_ - crossfadeSamples_ + pos;
-        float wrap = buffer_[static_cast<size_t>(endPos)];
-        return main * fade + wrap * (1.0f - fade);
+        const float fade = static_cast<float>(pos) / static_cast<float>(crossfadeSamples_);
+        const float head = buffer_[static_cast<size_t>(pos)];
+        const float tail = buffer_[static_cast<size_t>(loopLength_ - crossfadeSamples_ + pos)];
+        return head * fade + tail * (1.0f - fade);
     }
-
-    return main;
+    return buffer_[static_cast<size_t>(pos)];
 }
 
 float FeedbackBuffer::readInterpolated(double pos) const
 {
-    double len = static_cast<double>(loopLength_);
+    const int effLen = effectiveLength();
+    const double len = static_cast<double>(effLen);
 
-    // Wrap into [0, loopLength)
+    // Wrap into [0, effectiveLength)
     pos = std::fmod(pos, len);
     if (pos < 0.0)
         pos += len;
 
     int i0 = static_cast<int>(pos);
     int i1 = i0 + 1;
-    if (i1 >= loopLength_)
+    if (i1 >= effLen)
         i1 = 0;
 
-    float frac = static_cast<float>(pos - std::floor(pos));
-    float s0 = readSample(i0);
-    float s1 = readSample(i1);
+    const float frac = static_cast<float>(pos - std::floor(pos));
+    const float s0 = readSample(i0);
+    const float s1 = readSample(i1);
     return s0 + frac * (s1 - s0);
 }
 
@@ -159,9 +164,9 @@ float FeedbackBuffer::process(float input)
     case Mode::Playing:
         output = readInterpolated(readPos_);
         readPos_ += static_cast<double>(speed_);
-        // Wrap
+        // Wrap in the effective (crossfade-aware) region
         {
-            double len = static_cast<double>(loopLength_);
+            const double len = static_cast<double>(effectiveLength());
             readPos_ = std::fmod(readPos_, len);
             if (readPos_ < 0.0)
                 readPos_ += len;
@@ -170,20 +175,19 @@ float FeedbackBuffer::process(float input)
 
     case Mode::Overdub:
     {
-        float existing = readInterpolated(readPos_);
+        const float existing = readInterpolated(readPos_);
         output = existing;
-        double len = static_cast<double>(loopLength_);
+        const double len = static_cast<double>(effectiveLength());
         // Tape-style: write at read position. Skip write when frozen (speed=0)
         if (speed_ != 0.0f)
         {
             double wrappedPos = std::fmod(readPos_, len);
             if (wrappedPos < 0.0)
                 wrappedPos += len;
-            int wp = static_cast<int>(wrappedPos);
+            const int wp = static_cast<int>(wrappedPos);
             buffer_[static_cast<size_t>(wp)] = input + existing * feedback_ + 1e-25f;
         }
         readPos_ += static_cast<double>(speed_);
-        // Wrap
         readPos_ = std::fmod(readPos_, len);
         if (readPos_ < 0.0)
             readPos_ += len;

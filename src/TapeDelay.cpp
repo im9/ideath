@@ -100,18 +100,21 @@ void TapeDelay::updateFeedbackFilters()
 
 float TapeDelay::readDelay(float delaySamples) const
 {
-    float readPos = static_cast<float>(writePos_) - delaySamples;
-    while (readPos < 0.0f)
-        readPos += static_cast<float>(bufferSize_);
+    // Keep the sub-sample fraction at its native small magnitude; wrap
+    // indices in int arithmetic. Computing readPos = writePos - delaySamples
+    // and then += bufferSize would lose ULP at buffer-size magnitude
+    // (~2^12, ULP ≈ 5e-4), which is audible on modulated fractional delays.
+    const int delayInt = static_cast<int>(delaySamples);
+    const float frac   = delaySamples - static_cast<float>(delayInt);
 
-    int i0 = static_cast<int>(readPos);
-    int i1 = i0 + 1;
-    if (i0 >= bufferSize_) i0 -= bufferSize_;
-    if (i1 >= bufferSize_) i1 -= bufferSize_;
+    int idxRecent = writePos_ - delayInt;
+    if (idxRecent < 0) idxRecent += bufferSize_;
+    int idxOlder = idxRecent - 1;
+    if (idxOlder < 0) idxOlder += bufferSize_;
 
-    float frac = readPos - std::floor(readPos);
-    return buffer_[static_cast<size_t>(i0)]
-         + frac * (buffer_[static_cast<size_t>(i1)] - buffer_[static_cast<size_t>(i0)]);
+    const float a = buffer_[static_cast<size_t>(idxRecent)];
+    const float b = buffer_[static_cast<size_t>(idxOlder)];
+    return a + frac * (b - a);
 }
 
 float TapeDelay::process(float input)
@@ -127,19 +130,25 @@ float TapeDelay::process(float input)
     float modulatedDelay = delaySamples_ + wow * wowDepthSamples_ + flutter * flutterDepthSamples_;
     modulatedDelay = std::clamp(modulatedDelay, 1.0f, maxDelaySamples_);
 
-    float wet = readDelay(modulatedDelay);
+    const float wet = readDelay(modulatedDelay);
 
-    float feedbackSample = highpass_.process(wet);
-    feedbackSample = lowpass_.process(feedbackSample);
-    feedbackSample = Saturation::tanhDrive(feedbackSample, drive_);
+    // Tape playback coloring: apply HP/LP + saturation once per playback
+    // and share the result between the dry/wet mix and the feedback write.
+    // Previously the filter+sat was applied only on the feedback path, so
+    // the first echo bypassed tape coloring entirely — each subsequent
+    // echo passed through the filter chain once more, which does not
+    // match real tape behavior (every playback head read is colored).
+    float colored = highpass_.process(wet);
+    colored = lowpass_.process(colored);
+    colored = Saturation::tanhDrive(colored, drive_);
 
-    buffer_[static_cast<size_t>(writePos_)] = input + feedbackSample * feedback_ + kAntiDenormal;
+    buffer_[static_cast<size_t>(writePos_)] = input + colored * feedback_ + kAntiDenormal;
 
     ++writePos_;
     if (writePos_ >= bufferSize_)
         writePos_ = 0;
 
-    return input * (1.0f - mix_) + wet * mix_;
+    return input * (1.0f - mix_) + colored * mix_;
 }
 
 } // namespace ideath
