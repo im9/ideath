@@ -2,6 +2,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/FeedbackBuffer.h>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 
@@ -212,6 +214,86 @@ TEST_CASE("FeedbackBuffer: crossfade smooths loop boundary (max jump bound)", "[
         prev = curr;
     }
     REQUIRE(maxJump < 0.1f);
+}
+
+TEST_CASE("FeedbackBuffer: loop-seam crossfade preserves RMS (no midpoint dip)", "[feedbackbuffer]")
+{
+    // The per-sample-jump test above only checks that the seam is SMOOTH.
+    // It does not verify that the blend preserves energy. A linear blend
+    // `head·fade + tail·(1−fade)` between decorrelated head/tail segments
+    // drops ~3 dB at fade = 0.5 (RMS = √(0.25σ² + 0.25σ²) = σ/√2 for
+    // independent head/tail of equal RMS σ). Audible as a momentary
+    // "thinning" at each loop repeat when the recorded material has
+    // stochastic content (noise, dense textures, music) whose loop-end
+    // and loop-start are not phase-aligned.
+    //
+    // Equal-power crossfade (cos/sin) keeps RMS ≈ σ across the whole seam
+    // (cos²(πx/2)·σ² + sin²(πx/2)·σ² = σ²). We exploit this: record
+    // deterministic white noise so head and tail are strongly decorrelated,
+    // then compare RMS at mid-seam (fade ≈ 0.5) to RMS deep inside the
+    // loop (no crossfade, pure playback). Linear fails, equal-power passes.
+    ideath::FeedbackBuffer fb;
+    fb.prepare(kSampleRate, 1.0f);
+    fb.setCrossfade(0.01f); // 10 ms = 441 samples
+    fb.setMix(1.0f);
+
+    // xorshift32 PRNG — reproducible across runs, no std::random dependency.
+    uint32_t state = 0x9E3779B9u;
+    auto noise = [&]() {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        // Map to [-1, 1) and halve to stay well below loud limits.
+        return (static_cast<float>(state) / 2147483648.0f - 1.0f) * 0.5f;
+    };
+
+    constexpr int loopLen = 10000; // > 2 × crossfadeSamples, so blend active
+    fb.record();
+    for (int i = 0; i < loopLen; ++i)
+        fb.process(noise());
+    fb.stop();
+    REQUIRE(fb.getLoopLength() == loopLen);
+
+    // Capture the full first playback pass so we can slice it into windows.
+    std::vector<float> out(loopLen);
+    fb.play();
+    for (int i = 0; i < loopLen; ++i)
+        out[i] = fb.process(0.0f);
+
+    // Seam window: centred on fade = 0.5 (pos ≈ 220). Width 100 samples
+    // covers fade ∈ [0.385, 0.612], close to midpoint throughout. For
+    // uncorrelated head/tail of RMS σ the window-averaged RMS under
+    // equal-power is ~σ; under linear it integrates to ~0.71σ.
+    const int cf = 441;
+    const int seamMid = cf / 2;
+    const int seamWin = 100;
+
+    auto rmsOver = [&](int start, int n) {
+        float s = 0.0f;
+        for (int i = 0; i < n; ++i)
+            s += out[start + i] * out[start + i];
+        return std::sqrt(s / static_cast<float>(n));
+    };
+
+    const float rmsSeam = rmsOver(seamMid - seamWin / 2, seamWin);
+
+    // Pure window: deep inside the loop, far from any crossfade region.
+    // readSample returns buffer_[pos] unblended for pos ∈ [cf, effLen−1].
+    const int pureStart = loopLen / 2;
+    const int pureWin = 400;
+    const float rmsPure = rmsOver(pureStart, pureWin);
+
+    INFO("rmsSeam=" << rmsSeam << " rmsPure=" << rmsPure
+         << " ratio=" << rmsSeam / rmsPure);
+
+    // Equal-power at fade 0.5 of decorrelated equal-σ inputs yields
+    // RMS = σ (same as pure playback). Linear yields σ/√2 ≈ 0.707σ — a
+    // clean 30 % deficit. Threshold 0.85 cleanly separates the two. The
+    // 15 % margin absorbs: (a) the 100-sample RMS-estimator noise of
+    // σ·√(1/(2·100)) ≈ 7 %, (b) fade excursion from 0.5 across the
+    // window, and (c) any partial head/tail correlation from the finite
+    // loop length.
+    REQUIRE(rmsSeam > rmsPure * 0.85f);
 }
 
 TEST_CASE("FeedbackBuffer: setCrossfade=0 reveals boundary jump", "[feedbackbuffer]")

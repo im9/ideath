@@ -10,6 +10,7 @@ void FeedbackBuffer::prepare(float sampleRate, float maxLengthSec)
     bufferSize_ = static_cast<int>(maxLengthSec * sampleRate) + 1;
     buffer_.resize(static_cast<size_t>(bufferSize_), 0.0f);
     crossfadeSamples_ = static_cast<int>(0.005f * sampleRate); // 5ms default
+    rebuildSeamTable();
     reset();
 }
 
@@ -40,6 +41,28 @@ void FeedbackBuffer::setSpeed(float speed)
 void FeedbackBuffer::setCrossfade(float seconds)
 {
     crossfadeSamples_ = std::max(0, static_cast<int>(seconds * sampleRate_));
+    rebuildSeamTable();
+}
+
+void FeedbackBuffer::rebuildSeamTable()
+{
+    // Resize the seam LUT. Allocates only when crossfadeSamples_ grows
+    // past the previous high-water mark (std::vector::resize keeps
+    // capacity). Typically called during prepare() or setCrossfade()
+    // at setup time — not real-time.
+    const size_t n = static_cast<size_t>(crossfadeSamples_);
+    seamHeadGain_.resize(n);
+    seamTailGain_.resize(n);
+    if (n == 0)
+        return;
+    constexpr float kHalfPi = 1.570796327f;
+    const float invCf = 1.0f / static_cast<float>(crossfadeSamples_);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const float x = static_cast<float>(i) * invCf;
+        seamHeadGain_[i] = std::sin(kHalfPi * x);
+        seamTailGain_[i] = std::cos(kHalfPi * x);
+    }
 }
 
 void FeedbackBuffer::record()
@@ -110,12 +133,18 @@ float FeedbackBuffer::readSample(int pos) const
     // buf[loopLength − cf − 1]; pos=0 plays buf[loopLength − cf].
     // For any smooth recorded signal these two samples are adjacent, so
     // the per-sample step at the wrap is bounded by the signal's own slope.
+    //
+    // Equal-power gains (cos²+sin²=1) keep the blend RMS constant across
+    // the seam for decorrelated head/tail — which is the common case for
+    // noise, dense textures, and any loop whose end/start aren't phase-
+    // aligned. A linear (fade, 1−fade) blend would drop ~3 dB at the
+    // midpoint of such seams, audible as a thinning on each loop repeat.
     if (pos < crossfadeSamples_)
     {
-        const float fade = static_cast<float>(pos) / static_cast<float>(crossfadeSamples_);
         const float head = buffer_[static_cast<size_t>(pos)];
         const float tail = buffer_[static_cast<size_t>(loopLength_ - crossfadeSamples_ + pos)];
-        return head * fade + tail * (1.0f - fade);
+        return head * seamHeadGain_[static_cast<size_t>(pos)]
+             + tail * seamTailGain_[static_cast<size_t>(pos)];
     }
     return buffer_[static_cast<size_t>(pos)];
 }

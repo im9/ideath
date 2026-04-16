@@ -55,8 +55,16 @@ private:
     float readInterpolated(double pos) const;
     int effectiveLength() const;
 
+    void rebuildSeamTable();
+
     float sampleRate_ = 44100.0f;
     std::vector<float> buffer_;
+    // Precomputed equal-power seam gains: seamHeadGain_[p] = sin(π·p/(2·cf)),
+    // seamTailGain_[p] = cos(π·p/(2·cf)). Sized to crossfadeSamples_ by
+    // rebuildSeamTable() whenever the crossfade length changes. Avoids a
+    // per-sample sin/cos call in the playback hot path.
+    std::vector<float> seamHeadGain_;
+    std::vector<float> seamTailGain_;
     int bufferSize_ = 0;
     int writePos_ = 0;
     double readPos_ = 0.0;
