@@ -194,7 +194,7 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 - [x] UnisonOscillator — stacked detuned oscillators (unison spread, stereo-ready)
 
 ### Robustness / Refactoring
-- [ ] ShimmerReverb — freeze crossfade phase alignment (linear blend causes tonal shift)
+- [x] ShimmerReverb — freeze crossfade switched from linear to equal-power (sin/cos). Linear `(1−x)·S + x·F` between decorrelated shimmer/Freeverb caused ~3 dB midpoint RMS dip; equal-power (`cos(πx/2)·S + sin(πx/2)·F`, `a²+b²=1`) keeps summed RMS constant. Test: `ShimmerReverb: freeze crossfade preserves RMS (no midpoint dip)` bounds rmsMid ≥ 0.85× qmean(endpoints), separating equal-power (≈1.0) from linear (≈0.707)
 - [ ] Voice — migrate from Biquad to SVFilter to match REPL reference and reduce high-Q retrigger ringing
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Wavetable — document expected input range for 4-bit vs normalized data paths

@@ -403,8 +403,15 @@ std::pair<float, float> ShimmerReverb::process(float input)
     float shimR = fwdR;
 
     // --- Freeze crossfade ---
-    // Feed current shimmer output into Freeverb to capture the tail
-    auto [frzL, frzR] = freezeReverb_.process((shimL + shimR) * 0.5f);
+    // Before freeze: feed shimmer output into Freverb so its comb state
+    // is warm and ready to hold the tail.  After freeze engages its
+    // combs run at fb = 1.0 (indefinite sustain) — any further input
+    // would be added permanently and the amplitude would grow linearly,
+    // turning "freeze" into "accumulate until clipping".  So once freeze
+    // is active we feed silence; the combs then recirculate the tail
+    // captured at the moment of engagement.
+    const float freezeInput = freeze_ ? 0.0f : (shimL + shimR) * 0.5f;
+    auto [frzL, frzR] = freezeReverb_.process(freezeInput);
 
     // Advance crossfade
     if (freeze_)
@@ -418,9 +425,14 @@ std::pair<float, float> ShimmerReverb::process(float input)
         if (freezeXfade_ < 0.0f) freezeXfade_ = 0.0f;
     }
 
-    // Blend: 0 = shimmer, 1 = freeverb
-    float outL = shimL * (1.0f - freezeXfade_) + frzL * freezeXfade_;
-    float outR = shimR * (1.0f - freezeXfade_) + frzR * freezeXfade_;
+    // Equal-power crossfade: a² + b² = 1 keeps the summed RMS roughly
+    // constant for decorrelated signals, avoiding the ~3 dB midpoint dip
+    // that a linear (a·S + (1−a)·F) blend produces when shimmer and
+    // Freeverb outputs are not phase-aligned.
+    const float shimGain = std::cos(0.5f * kPi * freezeXfade_);
+    const float frzGain  = std::sin(0.5f * kPi * freezeXfade_);
+    float outL = shimL * shimGain + frzL * frzGain;
+    float outR = shimR * shimGain + frzR * frzGain;
 
     // Dry/wet mix
     float dry = 1.0f - mix_;
