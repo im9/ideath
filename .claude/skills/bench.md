@@ -78,7 +78,7 @@ int main()
 
 5. Compile and run:
 ```bash
-cd /Users/tn/src/libs/ideath
+# From the repository root:
 c++ -std=c++17 -O2 -I include -o build/bench_tmp tests/bench_tmp.cpp src/<Name>.cpp [dependencies if needed] && ./build/bench_tmp
 ```
    If the primitive depends on other source files (e.g. Voice depends on Oscillator, Envelope, etc.), include them in the compile command. Check `#include` directives in the source to find dependencies.

@@ -2,7 +2,7 @@
 
 `ideath` uses semantic versioning in the form `MAJOR.MINOR.PATCH`.
 
-Current project version is defined in [CMakeLists.txt](/Users/tn/src/libs/ideath/CMakeLists.txt).
+Current project version is defined in [CMakeLists.txt](CMakeLists.txt).
 
 ## Compatibility Policy
 

@@ -70,7 +70,7 @@ For each agent, brief it with the categories below as a checklist, the bug examp
 Use this as the prompt body for each per-group agent (substitute `<GROUP>` and the file list):
 
 ```
-You are auditing DSP code in the ideath library at /Users/tn/src/libs/ideath/
+You are auditing DSP code in the ideath library (the current repository root)
 for hidden correctness bugs.  Read but do not modify any files.
 
 Files in your group: <list>
