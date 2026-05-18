@@ -401,7 +401,7 @@ TEST_CASE("AR: reset returns to idle", "[env][ar]")
 }
 
 // ---------------------------------------------------------------------------
-// ADR 009 / Phase 9b1 — AdsrEnvelope curve shaping
+// AdsrEnvelope curve shaping
 // ---------------------------------------------------------------------------
 
 namespace {

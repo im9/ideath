@@ -204,7 +204,7 @@ float AdsrEnvelope::process()
             break;
     }
 
-    // --- Curve shaping (ADR 009 / Phase 9b1) ---
+    // --- Curve shaping ---
     //
     // The internal `level_` state is left untouched (so the existing linear
     // attack ramp + exponential release timing are preserved exactly when

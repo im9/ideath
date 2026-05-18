@@ -11,8 +11,8 @@ namespace ideath {
 /// cutoff sweeps logarithmically down toward ~5 Hz, taking the texture from
 /// white → pink-ish → brown-ish → slow random walk.
 ///
-/// Slothrop ADR 009 / Phase 9b1 — kept as a separate class so the bare
-/// `Noise` primitive stays a pure entropy source for callers that want it.
+/// Kept as a separate class so the bare `Noise` primitive stays a pure
+/// entropy source for callers that want it.
 class BandlimitedNoise
 {
 public:

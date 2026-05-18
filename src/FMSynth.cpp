@@ -117,7 +117,7 @@ float FMSynth::process()
     float out = 0.0f;
     int carrierCount = 1;
 
-    // Algorithms (YM2612-inspired, matching inboil):
+    // Algorithms (YM2612-inspired):
     //   OP indices: op1=carrier/out, op2..op4=modulators depending on algo
     switch (algorithm_)
     {

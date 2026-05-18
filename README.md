@@ -1,6 +1,6 @@
 # iDEATH
 
-Personal DSP foundation library. Pure C++17, zero external runtime dependencies.
+DSP foundation library. Pure C++17, zero external runtime dependencies.
 
 Designed to be shared across JUCE plugins (VST/AU/iOS) and potentially Emscripten targets.
 

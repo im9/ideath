@@ -26,7 +26,7 @@ public:
     /// Enable one-shot mode: runs one cycle then holds at end value.
     void setOneShot(bool enabled);
 
-    // --- Slothrop ADR 009 / Phase 9b1 extensions ---
+    // --- Shape / Curve / Quantize extensions ---
     // These are additive: at default values (0.0) the LFO is bit-equivalent
     // to the legacy single-waveform behaviour selected via setWaveform().
 
@@ -66,7 +66,6 @@ private:
     float prevPhase_ = 0.0f;     // to detect phase wrap for S&H
     uint32_t noiseState_ = 0x12345678u; // for S&H random
 
-    // ADR 009 / Phase 9b1
     float shape_ = 0.0f;
     float curve_ = 0.0f;
     float quantize_ = 0.0f;

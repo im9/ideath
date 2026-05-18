@@ -215,7 +215,7 @@ TEST_CASE("LFO: reset preserves rate", "[lfo]")
 }
 
 // ---------------------------------------------------------------------------
-// ADR 009 / Phase 9b1 — Shape, Curve, Quantize
+// Shape, Curve, Quantize
 // ---------------------------------------------------------------------------
 
 TEST_CASE("LFO: defaults equivalent to legacy sine", "[lfo][adr009]")
@@ -492,7 +492,7 @@ TEST_CASE("LFO: extreme parameter combinations stay bounded", "[lfo][stability]"
         }
     }
 
-    // All three Phase 9b1 params at maximum simultaneously. Shape mixes
+    // All three morph params (Shape / Curve / Quantize) at maximum simultaneously. Shape mixes
     // two morphs, Quantize holds the result once per cycle. Output
     // bound is still [-1, 1] (lerp of convex-combined values).
     {

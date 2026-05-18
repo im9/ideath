@@ -169,11 +169,11 @@ float LFO::process()
     //
     // Selection priority:
     //   * If curve_ is non-default (> 0), the new sine→tri→saw→square morph
-    //     drives the carrier (ADR 009 form-parameter accountability path).
+    //     drives the carrier.
     //   * Otherwise the legacy `Waveform` enum selection is used unchanged.
     //
     // This keeps every existing caller bit-equivalent while letting the new
-    // continuous Curve parameter take over when Slothrop drives it.
+    // continuous Curve parameter take over when callers drive it.
     float carrier = 0.0f;
 
     if (curve_ > 0.0f)

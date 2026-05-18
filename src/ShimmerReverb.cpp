@@ -19,7 +19,7 @@ void ShimmerReverb::ModAllpass::prepare(int size, float fb, float lfoRate,
     feedback = fb;
     lfoPhase = phase;
     lfoInc = lfoRate / sampleRate;
-    modDepth = 49.0f; // max ±49 samples (from inboil)
+    modDepth = 49.0f; // max ±49 samples
 }
 
 void ShimmerReverb::ModAllpass::clear()
@@ -174,7 +174,7 @@ float ShimmerReverb::DcBlocker::process(float input)
 
 // --- ShimmerReverb ---
 
-// Allpass delay tunings (from inboil / Faust shimmer.dsp)
+// Allpass delay tunings (Faust shimmer.dsp)
 // Forward AP
 static constexpr int kFwdApL[] = { 601, 613 };
 static constexpr int kFwdApR[] = { 2043, 2087 };

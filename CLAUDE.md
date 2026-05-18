@@ -1,9 +1,9 @@
 # iDEATH
 
-Personal DSP foundation library. Pure C++17, zero external runtime dependencies.
+DSP foundation library. Pure C++17, zero external runtime dependencies.
 Designed to be shared across JUCE plugins (VST/AU/iOS) and potentially Emscripten targets.
 
-Named after a place in Richard Brautigan's *In Watermelon Sugar* (same universe as inboil).
+Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 
 ## Setup
 
@@ -38,7 +38,7 @@ Built with miniaudio (vendored in `third_party/miniaudio/`).
 CMake option: `TN_DSP_BUILD_REPL=ON`.
 
 **REPL as reference implementation:** The REPL is not just a demo — it is the reference
-audio engine for the ideath ecosystem. VST (Slothrop) and iOS (Profane) products should
+audio engine for the ideath ecosystem. Downstream plugin and iOS targets should
 be able to use REPL output as the "correct" sound for a given set of parameters.
 Therefore REPL audio quality must be production-grade: no clicks, no artifacts, no
 audible glitches in any signal chain configuration. When a bug is heard in the REPL,
@@ -127,7 +127,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 5. `make test` — all green
 6. Update Primitives list in `CLAUDE.md` and `README.md`
 7. **Run `/audit` (the audit skill)** — required for any new primitive or non-trivial change to an existing one.  History has shown narrow per-file review misses entire bug classes (canonical-reference omissions, reversed signs that match a correct comment, switch/case copy-paste, fixes that were applied to the REPL but not the library).  The audit skill at `.claude/skills/audit.md` is structured around the bug families that have actually shown up here.
-8. **Run `make bench`** — required for any new primitive or change that touches a hot loop / `process()` body.  The bench suite at `benchmarks/bench_primitives.cpp` exists to catch performance regressions before they reach Slothrop / iOS targets where headroom is tight.
+8. **Run `make bench`** — required for any new primitive or change that touches a hot loop / `process()` body.  The bench suite at `benchmarks/bench_primitives.cpp` exists to catch performance regressions before they reach the downstream plugin / iOS targets where headroom is tight.
 
 Steps 7 and 8 are not optional polish — they are part of the definition of "done" for primitive work.  Skipping them is how we got the bugs that prompted this checklist.  When in doubt about whether a change qualifies as "non-trivial", run them anyway; they're cheap compared to debugging a regression in the plugin layer.
 
@@ -170,14 +170,9 @@ target_link_libraries(MyPlugin PRIVATE ideath)
 
 Then `#include <ideath/Biquad.h>` etc. in plugin code.
 
-## Relationship to Other Projects
-
-- **inboil** (https://github.com/im9/inboil) — browser DAW. DSP algorithms originate here, ported to C++
-- **Future iOS/VST apps** — consume ideath for DSP, own UI is separate
-
 ## Next Steps
 
-### Primitives — Effects (port from inboil)
+### Primitives — Effects (outstanding ports)
 Shipped primitives are listed in the **Primitives** section at the top of this
 file. Outstanding ports:
 - [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze

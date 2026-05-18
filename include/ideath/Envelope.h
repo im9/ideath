@@ -71,7 +71,7 @@ private:
     float retriggerCoef_ = 0.0f;
     Stage stage_ = Stage::Idle;
 
-    // ADR 009 / Phase 9b1 — curve shaping for attack & release segments.
+    // Curve shaping for attack & release segments.
     float curve_ = 0.0f;          // user-facing [-1, +1]
     float curveExponent_ = 1.0f;  // 2^curve_, used as pow() exponent
     float releaseStartLevel_ = 0.0f;
