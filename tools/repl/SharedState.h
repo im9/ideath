@@ -13,6 +13,7 @@ enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
 enum class LfoTarget { Off, Pitch, Filter, Volume };
 enum class LfoWaveform { Sine, Triangle, Square, Saw, SampleAndHold };
+enum class FgTarget { Off, Pitch, Filter, Volume };
 enum class ReverbType { Off, Room, Hall, Shimmer };
 
 struct VoiceParams
@@ -66,6 +67,16 @@ struct VoiceParams
     LfoWaveform lfoWaveform = LfoWaveform::Sine;
     float lfoRate = 5.0f;
     float lfoDepth = 0.0f;
+
+    // Function generator (West Coast rise/fall envelope, see FunctionGenerator.h)
+    // Pitch / filter depth is in cents (output is unipolar [0,1] * depth).
+    // Volume depth is percent (sample *= 1 + fgVal * depth/100).
+    FgTarget fgTarget = FgTarget::Off;
+    bool fgCycle = false;
+    float fgRise = 0.1f;
+    float fgFall = 0.5f;
+    float fgCurve = 0.0f;
+    float fgDepth = 0.0f;
 
     // FM Synth
     int fmAlgorithm = 0;

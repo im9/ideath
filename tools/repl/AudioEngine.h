@@ -12,6 +12,7 @@
 #include <ideath/TapeDelay.h>
 #include <ideath/CombFilter.h>
 #include <ideath/LFO.h>
+#include <ideath/FunctionGenerator.h>
 #include <ideath/Portamento.h>
 #include <ideath/FMSynth.h>
 #include <ideath/Compressor.h>
@@ -54,6 +55,7 @@ private:
     TapeDelay tapeDelay_;
     CombFilter comb_;
     LFO lfo_;
+    FunctionGenerator fg_;
     Portamento porta_;
     FMSynth fm_;
     Compressor comp_;

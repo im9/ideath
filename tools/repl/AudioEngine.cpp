@@ -15,6 +15,7 @@ void AudioEngine::prepare(float sampleRate)
     tapeDelay_.prepare(sampleRate, 2.0f);
     comb_.prepare(sampleRate, 0.1f);
     lfo_.prepare(sampleRate);
+    fg_.prepare(sampleRate);
     porta_.prepare(sampleRate);
     fm_.prepare(sampleRate);
     comp_.prepare(sampleRate);
@@ -78,6 +79,15 @@ void AudioEngine::applyPendingState(SharedState& shared)
         newParams.loopAction = VoiceParams::LoopAction::None;
 
         params_ = newParams;
+
+        // Function generator: sync rise/fall/curve every block (setters are
+        // modulation-safe).  setCycle drives the run-switch — setCycle(true)
+        // from Idle auto-starts the cycle; setCycle(false) lets the current
+        // segment complete before going idle.
+        fg_.setRise(params_.fgRise);
+        fg_.setFall(params_.fgFall);
+        fg_.setCurve(params_.fgCurve);
+        fg_.setCycle(params_.fgTarget != FgTarget::Off && params_.fgCycle);
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -115,6 +125,11 @@ void AudioEngine::applyPendingState(SharedState& shared)
             pitchEnv_.setDecay(params_.pitchEnvDecay);
             pitchEnv_.trigger(1.0f);
         }
+
+        // Function generator: one-shot mode fires on note-on.  Cycle mode
+        // is free-running (started in applyPendingState), so ignore noteOn.
+        if (params_.fgTarget != FgTarget::Off && !params_.fgCycle)
+            fg_.trigger();
 
         // FM synth note on
         if (params_.source == SourceType::FM)
@@ -176,6 +191,8 @@ void AudioEngine::applyPendingState(SharedState& shared)
                     pitchEnv_.setDecay(params_.pitchEnvDecay);
                     pitchEnv_.trigger(1.0f);
                 }
+                if (params_.fgTarget != FgTarget::Off && !params_.fgCycle)
+                    fg_.trigger();
                 if (params_.source == SourceType::FM)
                     fm_.noteOn(freq);
                 seqGateOpen_ = true;
@@ -246,6 +263,8 @@ void AudioEngine::advanceSequencer()
             pitchEnv_.setDecay(params_.pitchEnvDecay);
             pitchEnv_.trigger(1.0f);
         }
+        if (params_.fgTarget != FgTarget::Off && !params_.fgCycle)
+            fg_.trigger();
         if (params_.source == SourceType::FM)
             fm_.noteOn(freq);
         seqGateOpen_ = true;
@@ -276,6 +295,7 @@ float AudioEngine::process()
         tapeDelay_.reset();
         comb_.reset();
         lfo_.reset();
+        fg_.reset();
         delayCleared_ = true;
         }
         return 0.0f;
@@ -319,6 +339,16 @@ float AudioEngine::process()
 
         if (params_.lfoTarget == LfoTarget::Pitch)
             freq *= std::pow(2.0f, lfoVal * params_.lfoDepth / 1200.0f); // depth in cents
+    }
+
+    // --- Function generator modulation (West Coast Contour) ---
+    // FG output is unipolar [0, 1]; depth in cents for pitch/filter targets.
+    float fgVal = 0.0f;
+    if (params_.fgTarget != FgTarget::Off)
+    {
+        fgVal = fg_.process();
+        if (params_.fgTarget == FgTarget::Pitch)
+            freq *= std::pow(2.0f, fgVal * params_.fgDepth / 1200.0f);
     }
 
     // --- Source ---
@@ -365,6 +395,10 @@ float AudioEngine::process()
         // LFO → filter modulation
         if (params_.lfoTarget == LfoTarget::Filter)
             filterFreq *= std::pow(2.0f, lfoVal * params_.lfoDepth / 1200.0f);
+
+        // Function generator → filter modulation
+        if (params_.fgTarget == FgTarget::Filter)
+            filterFreq *= std::pow(2.0f, fgVal * params_.fgDepth / 1200.0f);
 
         filter_.setCutoff(filterFreq);
         // Map Biquad Q range to SVFilter resonance (0–0.9).
@@ -508,6 +542,10 @@ float AudioEngine::process()
     // --- LFO → Volume ---
     if (params_.lfoTarget == LfoTarget::Volume)
         sample *= 1.0f + lfoVal * params_.lfoDepth * 0.01f;
+
+    // --- Function generator → Volume ---
+    if (params_.fgTarget == FgTarget::Volume)
+        sample *= 1.0f + fgVal * params_.fgDepth * 0.01f;
 
     // --- Master volume with gain smoothing ---
     sample *= params_.volume * gain;

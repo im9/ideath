@@ -56,6 +56,9 @@ ideath REPL commands:
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
                                 LFO modulation (or "lfo off")
+  fg <rise> <fall> <curve> <oneshot|cycle> <pitch|filter|vol> <depth>
+                                West Coast function generator (or "fg off").
+                                Depth in cents for pitch/filter, percent for vol.
   env <A> <D> <S> <R>          Set ADSR envelope (or "env off")
   penv <semitones> <decay>    Pitch envelope (or "penv off")
   note <C4|freq>               Trigger note (with envelope if set)
@@ -432,6 +435,33 @@ bool parseCommand(const std::string& line, SharedState& shared)
             }
             if (tokens.size() > 4)
                 shared.staging.lfoDepth = parseFloat(tokens[4], 50.0f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "fg")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.fgTarget = FgTarget::Off;
+        }
+        else if (tokens.size() >= 7)
+        {
+            // fg <rise> <fall> <curve> <oneshot|cycle> <target> <depth>
+            shared.staging.fgRise  = parseFloat(tokens[1], 0.1f);
+            shared.staging.fgFall  = parseFloat(tokens[2], 0.5f);
+            shared.staging.fgCurve = parseFloat(tokens[3], 0.0f);
+            shared.staging.fgCycle = (tokens[4] == "cycle");
+            if      (tokens[5] == "pitch")  shared.staging.fgTarget = FgTarget::Pitch;
+            else if (tokens[5] == "filter") shared.staging.fgTarget = FgTarget::Filter;
+            else if (tokens[5] == "vol")    shared.staging.fgTarget = FgTarget::Volume;
+            else                            shared.staging.fgTarget = FgTarget::Off;
+            shared.staging.fgDepth = parseFloat(tokens[6], 1200.0f);
+        }
+        else
+        {
+            std::cout << "fg: usage 'fg <rise> <fall> <curve> <oneshot|cycle> <pitch|filter|vol> <depth>' or 'fg off'" << std::endl;
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;

@@ -98,12 +98,19 @@ Any effect can be disabled with `<command> off` (e.g., `filter off`).
 | Command | Description |
 |---------|-------------|
 | `lfo <sine\|tri\|square\|saw\|sh> <rate> <pitch\|filter\|vol> <depth>` | LFO modulation |
+| `fg <rise> <fall> <curve> <oneshot\|cycle> <pitch\|filter\|vol> <depth>` | West Coast function generator (0-Coast Contour, MATHS) |
+| `fg off` | Disable function generator |
 | `penv <semitones> <decay_sec>` | Pitch envelope sweep (e.g., `penv 36 0.04` for kicks) |
 | `penv off` | Disable pitch envelope |
 | `porta <time_sec>` | Portamento glide time |
 | `env <attack> <decay> <sustain> <release>` | ADSR envelope |
 
 LFO depth units: cents for pitch/filter targets, percentage for volume.
+Function generator: `rise`/`fall` in seconds, `curve` in [-1, +1] (negative = log-ish
+pluck, positive = exponential swell), `oneshot` re-fires on every note-on, `cycle`
+free-runs as a shaped LFO. Depth: cents for pitch/filter, percent for volume.
+Output is unipolar [0, 1] so pitch/filter targets always sweep upward from base
+by `depth` cents at peak.
 Pitch envelope sweeps frequency up by N semitones at note-on, then decays back to base pitch.
 Essential for kick drums (e.g., `penv 36 0.04` = 3 octaves, 40ms decay).
 
