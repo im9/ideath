@@ -9,6 +9,7 @@
 #include <ideath/Envelope.h>
 #include <ideath/FMSynth.h>
 #include <ideath/FeedbackBuffer.h>
+#include <ideath/FunctionGenerator.h>
 #include <ideath/HallReverb.h>
 #include <ideath/LFO.h>
 #include <ideath/Noise.h>
@@ -129,6 +130,43 @@ TEST_CASE("Bench: Decay Envelope", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += env.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: FunctionGenerator", "[bench]")
+{
+    // Linear curve: hot path is one float add + branch, mirrors a typical
+    // slow-modulator workload.
+    ideath::FunctionGenerator linear;
+    linear.prepare(kSR);
+    linear.setRise(0.2f);
+    linear.setFall(0.3f);
+    linear.setCurve(0.0f);
+    linear.setCycle(true);
+
+    BENCHMARK("FunctionGenerator::process (linear, cycle)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += linear.process();
+        return acc;
+    };
+
+    // Curved variant exercises the pow() shaper on every sample — the
+    // realistic worst case for CPU cost.
+    ideath::FunctionGenerator curved;
+    curved.prepare(kSR);
+    curved.setRise(0.2f);
+    curved.setFall(0.3f);
+    curved.setCurve(0.7f);
+    curved.setCycle(true);
+
+    BENCHMARK("FunctionGenerator::process (curve=0.7, cycle)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += curved.process();
         return acc;
     };
 }

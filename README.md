@@ -39,6 +39,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
 | **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
+| **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
 
 ## Design Principles
 

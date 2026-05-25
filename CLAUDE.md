@@ -83,6 +83,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **CombFilter** — Feedback comb filter with damping (Karplus-Strong / metallic textures)
 - **FormantFilter** — 3 parallel bandpass SVF, vowel morph A-E-I-O-U (vocal character shaping)
 - **HarmonicWavetable** — 128-table morphing wavetable (additive harmonic series, band-limited, continuous morph)
+- **FunctionGenerator** — West Coast rise/fall envelope (Make Noise 0-Coast Contour, MATHS rise/fall), shared curve, one-shot or self-cycling LFO, end-of-cycle pulse for inter-module routing
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer

@@ -40,6 +40,8 @@ than comparing cross-host.
 | Portamento::process                |           2.136 µs |        4.17 |
 | AdsrEnvelope::process              |           2.305 µs |        4.50 |
 | DecayEnvelope::process             |           0.629 µs |        1.23 |
+| FunctionGenerator::process (linear)|           2.424 µs |        4.73 |
+| FunctionGenerator::process (curved)|           2.581 µs |        5.04 |
 | Biquad::process                    |           4.382 µs |        8.56 |
 | SVFilter::process                  |           4.328 µs |        8.45 |
 | CombFilter::process                |           2.393 µs |        4.67 |
@@ -73,3 +75,7 @@ than comparing cross-host.
 - Apple M2 Max numbers are **not** a stand-in for the A15 ceiling declared in
   `CLAUDE.md`. Once A15 on-device numbers are recorded, add a separate column
   here and carry the per-primitive ceiling forward to plugin integration.
+- The two `FunctionGenerator` rows were measured 2026-05-25 on the same Apple
+  M2 Max host alongside the rest of the table. The curved variant exercises
+  `std::pow` per sample (curve = 0.7); the linear variant short-circuits the
+  shaper and is one branch + one float add in the hot path.
