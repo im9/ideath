@@ -25,6 +25,11 @@ void AudioEngine::prepare(float sampleRate)
     wavefolder_.prepare(sampleRate);
     unison_.prepare(sampleRate);
     looper_.prepare(sampleRate, 30.0f); // max 30 seconds loop
+    karplus_.prepare(sampleRate);
+    modal_.prepare(sampleRate);
+    // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
+    // up to 2 s of recall material at positionScatter=1.0.
+    granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
     pitchEnv_.prepare(sampleRate);
     gainSmoother_.prepare(sampleRate);
     gainSmoother_.setTime(0.005f); // 5ms fade
@@ -88,6 +93,17 @@ void AudioEngine::applyPendingState(SharedState& shared)
         fg_.setFall(params_.fgFall);
         fg_.setCurve(params_.fgCurve);
         fg_.setCycle(params_.fgTarget != FgTarget::Off && params_.fgCycle);
+
+        // Modal resonator: count / decay / inharmonicity are non-modulated
+        // and live-tweakable, so they're applied at block boundary.
+        // Fundamental tracks `freq` per-sample (in process()) because it's
+        // a modulatable pitch parameter.  setPartialDecay short-circuits when
+        // the value hasn't moved, so calling it for every partial each block
+        // is essentially free after the first call.
+        modal_.setPartialCount(params_.modalPartials);
+        modal_.setInharmonicity(params_.modalInharmonicity);
+        for (int i = 0; i < ideath::ModalResonator::kMaxPartials; ++i)
+            modal_.setPartialDecay(i, params_.modalDecay);
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -143,6 +159,18 @@ void AudioEngine::applyPendingState(SharedState& shared)
             }
             fm_.noteOn(baseFreq_);
         }
+
+        // Karplus-Strong: re-pluck on note-on. Pitch/decay/damping/exciter
+        // are applied per-sample inside process() (setters are modulation-
+        // safe and cheap).
+        if (params_.source == SourceType::KarplusStrong)
+            karplus_.pluck();
+
+        // Modal resonator: strike on every note-on so each note rings the
+        // bell.  Per-note params are pushed into the modal source from the
+        // audio loop below.
+        if (params_.source == SourceType::Modal)
+            modal_.strike(1.0f);
     }
 
     int noteOff = shared.noteOffCounter.load(std::memory_order_acquire);
@@ -195,6 +223,10 @@ void AudioEngine::applyPendingState(SharedState& shared)
                     fg_.trigger();
                 if (params_.source == SourceType::FM)
                     fm_.noteOn(freq);
+                if (params_.source == SourceType::KarplusStrong)
+                    karplus_.pluck();
+                if (params_.source == SourceType::Modal)
+                    modal_.strike(seqVelocity_);
                 seqGateOpen_ = true;
             }
         }
@@ -267,6 +299,10 @@ void AudioEngine::advanceSequencer()
             fg_.trigger();
         if (params_.source == SourceType::FM)
             fm_.noteOn(freq);
+        if (params_.source == SourceType::KarplusStrong)
+            karplus_.pluck();
+        if (params_.source == SourceType::Modal)
+            modal_.strike(seqVelocity_);
         seqGateOpen_ = true;
     }
     else
@@ -296,6 +332,7 @@ float AudioEngine::process()
         comb_.reset();
         lfo_.reset();
         fg_.reset();
+        granular_.reset();
         delayCleared_ = true;
         }
         return 0.0f;
@@ -379,6 +416,27 @@ float AudioEngine::process()
             unison_.setVoiceCount(params_.unisonVoices);
             unison_.setDetune(params_.unisonDetune);
             sample = unison_.process(params_.oscWaveform == OscWaveform::Saw ? 1.0f : 0.0f);
+            break;
+
+        case SourceType::KarplusStrong:
+            // Setters are modulation-safe and cheap; sync them every sample
+            // so LFO / FG / pitch-env modulations on `freq` track in tune.
+            karplus_.setFrequency(freq);
+            karplus_.setDecay(params_.ksDecay);
+            karplus_.setDamping(params_.ksDamping);
+            karplus_.setExciter(params_.ksExciter);
+            sample = karplus_.process();
+            break;
+
+        case SourceType::Modal:
+            // setFundamental recomputes every partial's BP coefficient, so
+            // it's the one parameter that's expensive per sample.  We still
+            // push it each sample because pitch can be modulated (LFO / FG /
+            // pitch-env / portamento) — the cost is amortised across whatever
+            // the bell sequence demands.  Count / decay / inharmonicity are
+            // applied at block boundary (applyPendingState) instead.
+            modal_.setFundamental(freq);
+            sample = modal_.process();
             break;
 
         case SourceType::None:
@@ -495,6 +553,19 @@ float AudioEngine::process()
         looper_.setFeedback(params_.loopFeedback);
         looper_.setMix(params_.loopMix);
         sample = looper_.process(sample);
+    }
+
+    // --- Granular (ring-buffer grain cloud) ---
+    if (params_.granularEnabled)
+    {
+        granular_.setGrainRate(params_.granularRate);
+        granular_.setGrainSize(params_.granularSize);
+        granular_.setPitchSpread(params_.granularPitchSpread);
+        granular_.setPositionScatter(params_.granularScatter);
+        granular_.setFreeze(params_.granularFreeze);
+        granular_.writeSample(sample);
+        const float wet = granular_.process();
+        sample = sample * (1.0f - params_.granularMix) + wet * params_.granularMix;
     }
 
     // --- Reverb (mono sum of stereo output) ---

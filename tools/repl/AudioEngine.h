@@ -22,6 +22,9 @@
 #include <ideath/Wavefolder.h>
 #include <ideath/UnisonOscillator.h>
 #include <ideath/FeedbackBuffer.h>
+#include <ideath/KarplusStrong.h>
+#include <ideath/ModalResonator.h>
+#include <ideath/GranularProcessor.h>
 
 namespace ideath { namespace repl {
 
@@ -65,6 +68,9 @@ private:
     Wavefolder wavefolder_;
     UnisonOscillator unison_;
     FeedbackBuffer looper_;
+    KarplusStrong karplus_;
+    ModalResonator modal_;
+    GranularProcessor granular_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;

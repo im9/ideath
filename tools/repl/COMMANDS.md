@@ -34,7 +34,7 @@ See the project wiki for VSCode / Vim integration examples.
 ## Signal Chain
 
 ```
-Source (osc | wt | noise | fm | unison)
+Source (osc | wt | noise | fm | unison | pluck | modal)
   → Filter
   → AdsrEnvelope
   → Compressor
@@ -45,6 +45,7 @@ Source (osc | wt | noise | fm | unison)
   → TapeDelay
   → CombFilter
   → Looper (FeedbackBuffer)
+  → GranularProcessor
   → Reverb
   → master volume
   → output
@@ -65,6 +66,8 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FM synth source (algo 0-7) |
 | `fmfb <op 0-3> <amount>` | Set FM operator feedback |
 | `unison <saw\|square> <freq> [voices] [detune_cents]` | Unison oscillator (default 5 voices, 15 cents) |
+| `pluck [freq] [decay_sec] [damping] [exciter]` | Karplus-Strong plucked string (defaults: 220 Hz, 1 s, 0.3, 1.0). Re-plucks on every `note` / sequencer step. |
+| `modal <fund> [partials] [decay] [inharm]` | Bell / chime engine. `partials` 1-16, `decay` seconds (uniform across partials), `inharm` 0-1 stretches upper partials. Struck on every note-on / sequencer step. e.g. `modal 220 12 1.5 0.4` then `note C3`. |
 
 FM operator format is `ratio:level` (e.g., `fm 0 1:1 2:0.5 3:0.3 4:0.2`).
 Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
@@ -80,6 +83,8 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `delay <time_sec> <feedback>` | Delay line |
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
 | `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
+| `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix]` | Granular cloud (2 s ring buffer) |
+| `granular freeze [on\|off]` | Freeze granular ring buffer (no on/off arg toggles) |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
 | `loop feedback <0-1>` | Looper overdub feedback |
 | `loop mix <0-1>` | Looper dry/wet mix |
@@ -265,6 +270,16 @@ ideath[1]> seq gate 30
 # Visualize current waveform
 ideath[1]> osc saw 440
 ideath[1]> scope
+
+# Plucked string melody (Karplus-Strong)
+ideath[1]> pluck 220 1.5 0.25 1.0
+ideath[1]> seq C3 E3 G3 B3 C4 B3 G3 E3 110
+
+# Granular cloud over a held pad
+ideath[1]> preset pad
+ideath[1]> note C3
+ideath[1]> granular 40 0.08 5 0.5 0.7    # 40 grains/sec, 80 ms, ±5 st, mid scatter, 70% wet
+ideath[1]> granular freeze on            # capture current buffer, keep scrubbing
 ```
 
 ## Note Names

@@ -7,7 +7,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -119,6 +119,28 @@ struct VoiceParams
     // Unison oscillator
     int unisonVoices = 5;
     float unisonDetune = 15.0f;
+
+    // Karplus-Strong plucked string
+    float ksDecay   = 1.0f;
+    float ksDamping = 0.3f;
+    float ksExciter = 1.0f;
+
+    // ModalResonator (bell engine).  Fundamental tracks `frequency` like
+    // every other source; partial count / decay / inharmonicity are exposed
+    // as a single sweep via `modal` REPL command.  `strike()` is fired on
+    // every note-on / sequencer step automatically.
+    int   modalPartials      = 8;
+    float modalDecay         = 0.7f;
+    float modalInharmonicity = 0.0f;
+
+    // GranularProcessor (input-consuming, like delay)
+    bool  granularEnabled = false;
+    float granularRate = 40.0f;          // grains per second
+    float granularSize = 0.08f;          // seconds per grain
+    float granularPitchSpread = 0.0f;    // ±semitones
+    float granularScatter = 0.5f;        // [0, 1]
+    float granularMix = 0.5f;            // dry/wet
+    bool  granularFreeze = false;
 
     // Looper (FeedbackBuffer)
     enum class LoopAction { None, Record, Stop, Play, Overdub, Off };

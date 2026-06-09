@@ -42,6 +42,11 @@ ideath REPL commands:
   fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
   unison <saw|square> <freq> [voices] [detune_cents]
                                 Unison oscillator source
+  pluck [freq] [decay] [damp] [exciter]
+                                Karplus-Strong plucked string source
+  modal <fund> [partials] [decay] [inharm]
+                                Bell engine (struck on note-on / seq step).
+                                fund Hz, partials 1-16, decay sec, inharm 0-1.
   filter <lp|hp|bp> <freq> <Q>  SVFilter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
@@ -51,6 +56,9 @@ ideath REPL commands:
                                 Tape delay (or "tape off")
   comb <time> <feedback> [damp] [mix]
                                 Comb filter / resonator (or "comb off")
+  granular <rate> <size> [pitchSpread] [scatter] [mix]
+                                Granular cloud (or "granular off")
+  granular freeze [on|off]      Freeze granular ring buffer
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
@@ -404,6 +412,42 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.combDamp = parseFloat(tokens[3], 0.3f);
             if (tokens.size() > 4)
                 shared.staging.combMix = parseFloat(tokens[4], 1.0f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "granular")
+    {
+        // granular off                                  → disable
+        // granular freeze [on|off]                      → toggle / set freeze
+        // granular <rate> <size> [pitchSpread] [scatter] [mix]
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.granularEnabled = false;
+        }
+        else if (tokens.size() > 1 && tokens[1] == "freeze")
+        {
+            if (tokens.size() > 2 && tokens[2] == "off")
+                shared.staging.granularFreeze = false;
+            else if (tokens.size() > 2 && tokens[2] == "on")
+                shared.staging.granularFreeze = true;
+            else
+                shared.staging.granularFreeze = !shared.staging.granularFreeze;
+        }
+        else
+        {
+            shared.staging.granularEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.granularRate = parseFloat(tokens[1], 40.0f);
+            if (tokens.size() > 2)
+                shared.staging.granularSize = parseFloat(tokens[2], 0.08f);
+            if (tokens.size() > 3)
+                shared.staging.granularPitchSpread = parseFloat(tokens[3], 0.0f);
+            if (tokens.size() > 4)
+                shared.staging.granularScatter = parseFloat(tokens[4], 0.5f);
+            if (tokens.size() > 5)
+                shared.staging.granularMix = parseFloat(tokens[5], 0.5f);
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;
@@ -764,6 +808,52 @@ bool parseCommand(const std::string& line, SharedState& shared)
         shared.paramsReady.store(true, std::memory_order_release);
         std::cout << "Unison: " << shared.staging.unisonVoices
                   << " voices, detune=" << shared.staging.unisonDetune << " cents" << std::endl;
+        return true;
+    }
+
+    if (cmd == "pluck")
+    {
+        // pluck [freq] [decay_sec] [damping 0-1] [exciter 0-1]
+        // Selects the Karplus-Strong source. Defaults match a comfortable
+        // mid-range nylon-string-ish pluck.
+        shared.staging.source = SourceType::KarplusStrong;
+        if (tokens.size() > 1)
+            shared.staging.frequency = parseFloat(tokens[1], 220.0f);
+        if (tokens.size() > 2)
+            shared.staging.ksDecay = parseFloat(tokens[2], 1.0f);
+        if (tokens.size() > 3)
+            shared.staging.ksDamping = parseFloat(tokens[3], 0.3f);
+        if (tokens.size() > 4)
+            shared.staging.ksExciter = parseFloat(tokens[4], 1.0f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Pluck (Karplus-Strong): freq=" << shared.staging.frequency
+                  << " decay=" << shared.staging.ksDecay
+                  << " damp=" << shared.staging.ksDamping
+                  << " exciter=" << shared.staging.ksExciter << std::endl;
+        return true;
+    }
+
+    if (cmd == "modal")
+    {
+        // modal <fund> [partials] [decay] [inharmonicity]
+        // Bell engine: each note-on / sequencer step fires a strike() that
+        // excites the modes; partial ratios are the harmonic series, fund
+        // tracks the standard `frequency` field, decay is applied uniformly
+        // to all partials, inharmonicity stretches upper partials.
+        shared.staging.source = SourceType::Modal;
+        if (tokens.size() > 1)
+            shared.staging.frequency = parseFloat(tokens[1], 220.0f);
+        if (tokens.size() > 2)
+            shared.staging.modalPartials = parseInt(tokens[2], 8);
+        if (tokens.size() > 3)
+            shared.staging.modalDecay = parseFloat(tokens[3], 0.7f);
+        if (tokens.size() > 4)
+            shared.staging.modalInharmonicity = parseFloat(tokens[4], 0.0f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Modal: fund=" << shared.staging.frequency
+                  << " partials=" << shared.staging.modalPartials
+                  << " decay=" << shared.staging.modalDecay << "s"
+                  << " inharm=" << shared.staging.modalInharmonicity << std::endl;
         return true;
     }
 
