@@ -39,6 +39,9 @@ add_library(ideath STATIC
     src/FormantFilter.cpp
     src/HarmonicWavetable.cpp
     src/FunctionGenerator.cpp
+    src/KarplusStrong.cpp
+    src/ModalResonator.cpp
+    src/GranularProcessor.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -137,6 +140,9 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_FormantFilter.cpp
         tests/test_HarmonicWavetable.cpp
         tests/test_FunctionGenerator.cpp
+        tests/test_KarplusStrong.cpp
+        tests/test_ModalResonator.cpp
+        tests/test_GranularProcessor.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)

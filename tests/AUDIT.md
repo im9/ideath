@@ -56,4 +56,20 @@ pass is done.
 _(Add a row here when a new test file is committed. Move it to the table above
 once all thresholds in the file have a stated derivation.)_
 
-— none —
+- `test_KarplusStrong` — KS loop math (g_raw = 10^(-3/N_cyc), N_cyc = decay·freq);
+  silence ε from DelayLine 1e-25 anti-denormal; exciter burst sample count =
+  min(kExciterSec·sr, D−1); auto-correlation peak at lag D = sr/freq for pitch
+  verification (replaced earlier ZC-counting variant which was invalid for
+  broadband KS output); HF energy 6 dB drop bound for damping; -60 dB ratio
+  bracket [0.5e-3, 5e-3] for decay accuracy; loop gain kMaxLoopGain = 0.9995
+  hard ceiling for stability. To audit and graduate.
+- `test_ModalResonator` — Per-partial Q = π·fc·decay/ln(1000) (closed-form
+  2nd-order resonator T60 → Q mapping); Goertzel single-bin magnitude for
+  partial-presence assertions; BP off-bin attenuation ≈ (f/fc − fc/f)²·Q² for
+  partial-isolation; 1e-5 RMS floor at t=0.5s for long-decay (T60=2s) audibility;
+  10s post-strike stability; default kMinQ=1 / kMaxQ=5000 clamps prevent
+  degenerate / numerically unhelpful Q. To audit and graduate.
+- `test_GranularProcessor` — derivations are stated inline (Hann mean = 0.5;
+  gain-comp 1/√(O·0.5) with O = grainRate·grainSize; Poisson grain-count
+  variance for pile-up bounds; Goertzel-bin power for pitch-passthrough);
+  promote to the audited table once a second pair of eyes signs off.

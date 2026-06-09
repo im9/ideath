@@ -10,8 +10,11 @@
 #include <ideath/FMSynth.h>
 #include <ideath/FeedbackBuffer.h>
 #include <ideath/FunctionGenerator.h>
+#include <ideath/GranularProcessor.h>
 #include <ideath/HallReverb.h>
+#include <ideath/KarplusStrong.h>
 #include <ideath/LFO.h>
+#include <ideath/ModalResonator.h>
 #include <ideath/Noise.h>
 #include <ideath/Oscillator.h>
 #include <ideath/PeakLimiter.h>
@@ -544,6 +547,108 @@ TEST_CASE("Bench: FeedbackBuffer", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += buffer.process(sineAt(i));
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: KarplusStrong", "[bench]")
+{
+    // Re-pluck every 2× block to keep the loop alive across the benchmark
+    // window without dominating the hot path. The dominant cost is the
+    // delay-line readDelay (linear interp) + one-pole LP + the loop-gain
+    // multiply; the burst path adds one extra Noise::process call for a
+    // few samples per pluck.
+    ideath::KarplusStrong ks;
+    ks.prepare(kSR);
+    ks.setFrequency(220.0f);
+    ks.setDecay(1.0f);
+    ks.setDamping(0.3f);
+    ks.setExciter(1.0f);
+    ks.pluck();
+
+    BENCHMARK("KarplusStrong::process")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            if ((i % (kBlock / 2)) == 0) ks.pluck();
+            acc += ks.process();
+        }
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: ModalResonator", "[bench]")
+{
+    // 8-partial bell, harmonic ratios, modest decay. Strike once before
+    // the BENCHMARK block so every measured iteration runs the steady
+    // partial-ring hot path (which is the realistic workload for a held
+    // bell tail). At default 8 partials the inner loop runs 8 BPs per
+    // sample (each multiplied by its cached Q).
+    ideath::ModalResonator modal8;
+    modal8.prepare(kSR);
+    modal8.setPartialCount(8);
+    modal8.setFundamental(220.0f);
+    for (int i = 0; i < 8; ++i)
+        modal8.setPartialDecay(i, 1.0f);
+    modal8.strike(1.0f);
+
+    BENCHMARK("ModalResonator::process (8 partials)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += modal8.process();
+        return acc;
+    };
+
+    // 16-partial worst-case: every mode alive, max parallelism.
+    ideath::ModalResonator modal16;
+    modal16.prepare(kSR);
+    modal16.setPartialCount(ideath::ModalResonator::kMaxPartials);
+    modal16.setFundamental(110.0f);  // low fund keeps all 16 partials under Nyquist
+    for (int i = 0; i < ideath::ModalResonator::kMaxPartials; ++i)
+        modal16.setPartialDecay(i, 1.0f);
+    modal16.strike(1.0f);
+
+    BENCHMARK("ModalResonator::process (16 partials)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += modal16.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: GranularProcessor", "[bench]")
+{
+    // Representative config: grainRate × grainSize = 200 · 0.04 = 8.0
+    // expected overlap → keeps ~8 grains in flight at steady state, which
+    // is the realistic worst case before the pool of 16 saturates. The
+    // hot path then runs an 8-grain inner loop: a linear-interp buffer
+    // read + a cos() Hann + a couple of float adds per grain, all behind
+    // a deterministic xorshift32 RNG that only fires on spawn boundaries.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSR, static_cast<int>(kSR));   // 1 s ring buffer
+    gp.setGrainRate(200.0f);
+    gp.setGrainSize(0.04f);
+    gp.setPitchSpread(5.0f);
+    gp.setPositionScatter(0.5f);
+
+    // Warm: fill buffer and let ~8 grains spin up before the timed block.
+    for (int i = 0; i < static_cast<int>(kSR); ++i)
+    {
+        gp.writeSample(sineAt(i));
+        (void)gp.process();
+    }
+
+    BENCHMARK("GranularProcessor::process")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            gp.writeSample(sineAt(i));
+            acc += gp.process();
+        }
         return acc;
     };
 }

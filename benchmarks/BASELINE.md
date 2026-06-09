@@ -52,6 +52,10 @@ than comparing cross-host.
 | DelayLine::process                 |           2.091 µs |        4.08 |
 | TapeDelay::process                 |          11.000 µs |       21.48 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
+| KarplusStrong::process             |           2.636 µs |        5.15 |
+| ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
+| ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
+| GranularProcessor::process         |          24.174 µs |       47.21 |
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
 | Reverb::process                    |          11.359 µs |       22.19 |

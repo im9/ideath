@@ -84,6 +84,9 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **FormantFilter** — 3 parallel bandpass SVF, vowel morph A-E-I-O-U (vocal character shaping)
 - **HarmonicWavetable** — 128-table morphing wavetable (additive harmonic series, band-limited, continuous morph)
 - **FunctionGenerator** — West Coast rise/fall envelope (Make Noise 0-Coast Contour, MATHS rise/fall), shared curve, one-shot or self-cycling LFO, end-of-cycle pulse for inter-module routing
+- **KarplusStrong** — Plucked-string synthesis (noise burst → LP-filtered delay-line feedback), freq / decay / damping / exciter; loop gain compensates for filter loss so the -60 dB tail length matches `setDecay` even under heavy damping
+- **ModalResonator** — Bell engine: N parallel BPs (modes) with per-partial Q derived from decay (`Q = π × fc × decay / ln(1000)`), struck by a short noise burst; piano-string inharmonicity stretch (`f_i = fundamental × ratio_i × sqrt(1 + B × ratio_i²)`); Nyquist-muted partials
+- **GranularProcessor** — Granular cloud (ring buffer + Hann-windowed grain pool), grain rate / size / pitch spread / position scatter / freeze; pool-exhaustion graceful; deterministic given a fixed RNG seed
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -102,6 +105,7 @@ Polyphony) are excluded because the REPL itself serves that role.
   | SVFilter | ±Q (up to ±5) | resonant peak at cutoff, Q=1/(2−2×resonance) |
   | Biquad | ±Q | resonant peak, Q passed directly |
   | UnisonOscillator | ±√N (up to ±4) | N voices in-phase, gain comp ÷√N |
+  | ModalResonator | ±N (up to ±16) | N parallel BPs with per-partial Q derived from decay; BP output multiplied by Q to compensate 0 dB-peak normalisation → per-partial peak ≈ 1, N partials sum to ≈ ±N in worst-case phase alignment |
   | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions
@@ -176,7 +180,6 @@ Then `#include <ideath/Biquad.h>` etc. in plugin code.
 ### Primitives — Effects (outstanding ports)
 Shipped primitives are listed in the **Primitives** section at the top of this
 file. Outstanding ports:
-- [ ] GranularProcessor — ring buffer grain cloud, Hann window, scatter/pitch/freeze
 - [ ] StutterBuffer — slice repeat glitch, crossfade boundaries
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
 
