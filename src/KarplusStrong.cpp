@@ -49,6 +49,18 @@ void KarplusStrong::setFrequency(float hz)
     // the fractional delay (linear interp) intact for in-tune playback.
     line_.setDelay(1.0f / frequency_);
     recomputeLoopGain();
+
+    // If a pluck is in flight, re-clamp the remaining burst to the new
+    // delay length. pluck() clamps burst ≤ delaySamples_ - 1 against the
+    // delay at pluck time; without this re-clamp, raising the pitch
+    // (shrinking D) mid-pluck would leave the burst longer than the new
+    // delay, causing the burst to overlap itself in the line and push the
+    // output past the ±1 nominal bound.
+    if (exciterRemaining_ > 0)
+    {
+        const int maxBurst = std::max(1, static_cast<int>(delaySamples_) - 1);
+        exciterRemaining_  = std::min(exciterRemaining_, maxBurst);
+    }
 }
 
 void KarplusStrong::setDecay(float seconds)

@@ -582,6 +582,58 @@ TEST_CASE("KarplusStrong: extreme combo (low freq + high damp + loud exciter) st
 }
 
 // ---------------------------------------------------------------------------
+// 11b. setFrequency() during an active pluck must preserve the ±1 bound
+// ---------------------------------------------------------------------------
+
+TEST_CASE("KarplusStrong: setFrequency mid-pluck preserves output bound",
+          "[karplus][boundary]")
+{
+    // pluck() clamps the burst length to (delaySamples_ - 1) so the burst
+    // window never overlaps itself in the delay line (see test #3 derivation).
+    // But that clamp is computed against the delay length AT pluck time. If
+    // setFrequency() raises the pitch (shrinks D) while the burst is still
+    // in flight, the remaining burst length can exceed the new D-1, the
+    // burst overlaps itself in the line, and the output overshoots ±1 by
+    // up to ~2× (one feedback recirculation × loop gain + one fresh noise
+    // sample at the same write position).
+    //
+    // This test plucks at 110 Hz (D ≈ 401 samples → burst clamped to ~44),
+    // processes only 5 samples (39 of the burst still to come), then jumps
+    // to 5 kHz (D ≈ 8.82) — now the remaining 39-sample burst is ≈ 4.4×
+    // longer than the new delay. We then assert |output| ≤ 1.001 (the
+    // canonical ±1 bound used in test #3) for the rest of the burst window
+    // plus one full cycle past it.
+    //
+    // Threshold derivation matches test #3: nominal ±1 from the (clamped)
+    // exciter + loop gain < 1, plus 1e-3 float-precision headroom from the
+    // multiplicative chain.
+    ideath::KarplusStrong ks;
+    ks.prepare(kSampleRate);
+    ks.setFrequency(110.0f);
+    ks.setDecay(1.0f);
+    ks.setDamping(0.0f);   // worst case: no filter loss to attenuate overlap
+    ks.setExciter(1.0f);
+    ks.pluck();
+
+    // Process 5 samples at the original pitch (39 burst samples remaining).
+    for (int i = 0; i < 5; ++i) (void)ks.process();
+
+    // Mid-pluck pitch jump.
+    ks.setFrequency(5000.0f);
+
+    // Run through the rest of the burst + one cycle of the new pitch.
+    // 100 samples covers ~11 cycles of 5 kHz @ 44.1 kHz, far more than the
+    // ~39 remaining burst samples and any transient settling.
+    for (int i = 0; i < 100; ++i)
+    {
+        float v = ks.process();
+        REQUIRE(std::isfinite(v));
+        REQUIRE(v >= -1.0f - 1e-3f);
+        REQUIRE(v <= 1.0f + 1e-3f);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 12. Sample-rate independence — pitch matches at 44.1 kHz and 48 kHz
 // ---------------------------------------------------------------------------
 
