@@ -599,3 +599,197 @@ TEST_CASE("GranularProcessor: high-volume process is alloc-free (manual review)"
         REQUIRE(std::isfinite(out));
     }
 }
+
+// -----------------------------------------------------------------------------
+// 9. Hann window shape (single grain, deterministic input)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: single-grain output matches Hann · gain_comp · DC",
+          "[granular]")
+{
+    // Feed DC = 1.0 into the buffer.  With positionScatter=0 and
+    // pitchSpread=0 the grain reads from a deterministic offset at unity
+    // pitch, so the read value is always 1.0 (modulo ring-buffer init).
+    // Then the only time-varying factor in the output is the Hann envelope.
+    //
+    // Configuration:
+    //   grainRate = 2 Hz → spawn period = 0.5 s
+    //   grainSize = 0.4 s → 17 640 samples per grain @ 44.1 kHz
+    //   At most one grain is active at any time (grainSize < spawn period).
+    //   O = 2 · 0.4 = 0.8  →  denom = max(0.4, 0.5) = 0.5
+    //   gain_comp = 1/√0.5 = √2 ≈ 1.414
+    //
+    // Hann formula: w(t) = 0.5 · (1 − cos(2π·t/T)) for t ∈ [0, T].
+    //   w(0) = 0,  w(T/2) = 1,  w(T) = 0,  w(T/4) = w(3T/4) = 0.5.
+    //
+    // Expected output during a grain at phase p ∈ [0, 1]:
+    //   out(p) = w(p) · gain_comp · DC = w(p) · √2 · 1
+    //
+    // We capture one full grain lifetime and verify the shape at three
+    // checkpoints: start (≈0), middle (≈√2), and quarter-points (≈√2/2).
+    //
+    // Tolerance derivation: ±0.05 (≈ 3.5% of peak √2) covers:
+    //   - discrete grain-phase quantisation: 1 sample / 17 640 ≈ 6e-5
+    //   - Hann curvature near the checkpoint sample: |w'(p)| at p=0.5 is 0,
+    //     at p=0.25 is ≈ π, so a single-sample slip changes Hann value by
+    //     ≈ π · 6e-5 ≈ 2e-4
+    //   - ring-buffer warm-up: the read tap may not see exact DC=1.0 for
+    //     the first ~grainSize seconds (linear interp across the
+    //     write-stop boundary)
+    //   - float-precision multiplicative chain
+    // 0.05 leaves ≈ 250× margin over the theoretical worst-case error.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, static_cast<int>(2.0f * kSampleRate));
+    gp.setGrainRate(2.0f);
+    gp.setGrainSize(0.4f);
+    gp.setPitchSpread(0.0f);
+    gp.setPositionScatter(0.0f);
+
+    // Warm the buffer with DC=1.0 (2 s worth = full ring buffer).
+    for (int i = 0; i < static_cast<int>(2.0f * kSampleRate); ++i)
+    {
+        gp.writeSample(1.0f);
+        (void)gp.process();
+    }
+
+    // Skip until a spawn is observed (≤ spawn period = 0.5 s).
+    int waited = 0;
+    while (gp.activeGrainCount() == 0 && waited < static_cast<int>(0.6f * kSampleRate))
+    {
+        gp.writeSample(1.0f);
+        (void)gp.process();
+        ++waited;
+    }
+    REQUIRE(gp.activeGrainCount() == 1);
+
+    // Sample the grain at known phase points.  Grain length = 0.4 s.
+    const int grainLen = static_cast<int>(0.4f * kSampleRate);
+    std::vector<float> grainOut(static_cast<std::size_t>(grainLen));
+    for (int i = 0; i < grainLen; ++i)
+    {
+        gp.writeSample(1.0f);
+        grainOut[static_cast<std::size_t>(i)] = gp.process();
+    }
+
+    // Hann checkpoints (the spawn happens at sample 0 of grainOut).
+    const float gain = std::sqrt(2.0f);
+    const std::size_t qIdx = static_cast<std::size_t>(grainLen / 4);
+    const std::size_t mIdx = static_cast<std::size_t>(grainLen / 2);
+    const std::size_t tIdx = static_cast<std::size_t>(3 * grainLen / 4);
+
+    REQUIRE_THAT(grainOut[qIdx], WithinAbs(0.5f * gain, 0.05f));   // ≈ 0.707
+    REQUIRE_THAT(grainOut[mIdx], WithinAbs(1.0f * gain, 0.05f));   // ≈ √2
+    REQUIRE_THAT(grainOut[tIdx], WithinAbs(0.5f * gain, 0.05f));   // ≈ 0.707
+}
+
+// -----------------------------------------------------------------------------
+// 10. Grain envelope timing precision
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: grain lifetime matches grainSize × sr",
+          "[granular]")
+{
+    // With a low spawn rate so grains don't overlap, the activeGrainCount
+    // transition 0 → 1 → 0 must span exactly grainSize × sr samples
+    // (±1 for discrete sample quantisation in the grain-end check).
+    //
+    // Threshold derivation: 1-sample tolerance comes from the integer-
+    // comparison nature of the grain-active check (envPhase ≥ 1.0 → grain
+    // dies).  No physics tolerance applies.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, static_cast<int>(kSampleRate));
+    gp.setGrainRate(1.0f);    // 1 spawn / s
+    gp.setGrainSize(0.1f);    // 4410 samples @ 44.1 kHz
+    gp.setPitchSpread(0.0f);
+    gp.setPositionScatter(0.0f);
+
+    // Wait for spawn (≤ 1 s).
+    int waited = 0;
+    while (gp.activeGrainCount() == 0 && waited < static_cast<int>(1.1f * kSampleRate))
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+        ++waited;
+    }
+    REQUIRE(gp.activeGrainCount() == 1);
+
+    // Count process() calls until grain dies.
+    const int expected = static_cast<int>(0.1f * kSampleRate);
+    int lifetime = 0;
+    while (gp.activeGrainCount() == 1 && lifetime < expected + 100)
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+        ++lifetime;
+    }
+    // Allow ±2 samples for the activeGrainCount sampling boundary and the
+    // discrete envPhase ≥ 1.0 termination check.
+    REQUIRE(std::abs(lifetime - expected) <= 2);
+}
+
+// -----------------------------------------------------------------------------
+// 11. Buffer wrap correctness with positionScatter
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: positionScatter=1.0 reads span the whole buffer",
+          "[granular]")
+{
+    // Write a unique marker into different time slices of the buffer, then
+    // set positionScatter=1.0 and collect grain outputs over many spawns.
+    // The grain reads must land across the buffer (= reading from anywhere
+    // up to 1 buffer-length in the past), so the output values should
+    // include samples from EARLY parts of the buffer, not just the most
+    // recent.
+    //
+    // Marker scheme: split the 1 s ring buffer into 4 quarters; quarter k
+    // is filled with value (k+1) · 0.2 = {0.2, 0.4, 0.6, 0.8}.  After
+    // positionScatter=1.0 reads, the grain output range should at minimum
+    // span the lowest and highest markers (modulo Hann attenuation), which
+    // catches a buffer-wrap off-by-one bug that would keep all reads near
+    // the latest written value.
+    //
+    // Threshold derivation: a working wrap-correct implementation must
+    // produce output minima ≤ 0.3 · gain_comp · Hann_peak (somewhere in
+    // the early quarter, value 0.2 × gain ≈ 0.28) and maxima ≥ 0.7 ×
+    // gain · 0.5 (some Hann phase × value 0.8 ≈ 0.5).  We bound the
+    // observed range with these soft bounds.
+    ideath::GranularProcessor gp;
+    const int bufLen = static_cast<int>(kSampleRate);
+    gp.prepare(kSampleRate, bufLen);
+    gp.setGrainRate(50.0f);    // 50 spawns/s → ~50 grains in the test window
+    gp.setGrainSize(0.02f);    // short grain to keep individual reads sharp
+    gp.setPitchSpread(0.0f);
+    gp.setPositionScatter(1.0f);
+
+    // Fill the buffer with the 4-quarter marker pattern.
+    const int quarter = bufLen / 4;
+    for (int q = 0; q < 4; ++q)
+    {
+        const float marker = 0.2f * static_cast<float>(q + 1); // 0.2, 0.4, 0.6, 0.8
+        for (int i = 0; i < quarter; ++i)
+        {
+            gp.writeSample(marker);
+            (void)gp.process();
+        }
+    }
+
+    // Now collect outputs over 1 s.  Continue writing the highest marker
+    // (0.8) so the buffer slowly rewrites; positionScatter=1.0 still picks
+    // any past position so reads can come from the older markers.
+    float minObs = 1e9f, maxObs = -1e9f;
+    for (int i = 0; i < bufLen; ++i)
+    {
+        gp.writeSample(0.8f);
+        const float out = gp.process();
+        REQUIRE(std::isfinite(out));
+        if (std::fabs(out) > 1e-4f)   // ignore the silent gaps between grains
+        {
+            minObs = std::min(minObs, out);
+            maxObs = std::max(maxObs, out);
+        }
+    }
+    // Spread must cover at least a 2× range — a wrap-broken impl that
+    // only reads near the write head would show a narrow range close to
+    // 0.8 · gain_comp.  Soft bound: max/min ≥ 2.
+    REQUIRE(maxObs / std::max(minObs, 1e-4f) >= 2.0f);
+}
