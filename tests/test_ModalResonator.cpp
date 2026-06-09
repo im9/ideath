@@ -99,12 +99,22 @@ TEST_CASE("ModalResonator: output bounded for default params", "[modal]")
     // decay=0.5 s and partials at 220 Hz … 1760 Hz, Q ranges from ~50 (1st
     // partial) to ~400 (8th).  The BP output is multiplied by its own Q
     // at the sum stage to compensate the 0 dB-peak normalisation, so each
-    // partial's impulse-response peak is ≈ 1.  Worst-case sum: 8 partials
-    // exactly in phase → ±8.  Set generous 500 here to cover any transient
-    // overshoot from the noise burst convolving with the BP impulse
-    // response, well under the spec ceiling.
+    // partial's steady-state impulse-response peak is ≈ 1.
+    //
+    // Bound derivation:
+    //   Steady-state worst case = N partials in phase = N (CLAUDE.md
+    //   output-levels table). For N=8 → ±8.
+    //   Transient overshoot factor 1.5×: for a 2nd-order resonator excited
+    //   by a sudden onset (here, the 2 ms noise burst), the impulse-response
+    //   build-up can briefly exceed the steady-state amplitude by up to ~π/2
+    //   (textbook 2nd-order step response overshoot bound). We round to 1.5×
+    //   for headroom against stochastic input variance.
+    //   ⇒ bound = 8 × 1.5 = 12.
+    // The PeakLimiter in the downstream signal chain handles the documented
+    // spec ceiling for plugin consumers; this test verifies no DSP-internal
+    // explosion beyond the well-derived transient envelope.
     for (float s : out)
-        REQUIRE(std::fabs(s) < 500.0f);
+        REQUIRE(std::fabs(s) < 12.0f);
 }
 
 // --- Reset / state ----------------------------------------------------

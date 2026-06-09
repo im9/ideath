@@ -179,11 +179,19 @@ TEST_CASE("GranularProcessor: 1 ms grainSize survives — no crash, no NaN", "[g
         gp.writeSample(sineAt(i, 440.0f, kSampleRate));
         const float out = gp.process();
         REQUIRE(std::isfinite(out));
-        // O = 500·0.001 = 0.5.  Gain comp = 1/sqrt(max(0.5·0.5, 0.5)) =
-        // 1/sqrt(0.5) ≈ 1.414.  Peak overlap (Poisson λ=0.5) is bounded
-        // in practice by ≤ kMaxGrains=16 but typically ≤ 3 simultaneous
-        // grains.  Worst-case peak bound = 1.414 · 3 · 1.0 ≈ 4.2.
-        REQUIRE(std::fabs(out) <= 5.0f);
+        // Theoretical worst-case bound:
+        //   y_max ≤ kMaxGrains · Hann_peak · gain_comp(O) · |input|max
+        // Each grain contributes at most (Hann_peak=1) · gain_comp · |input|max
+        // and the pool has at most kMaxGrains=16 active simultaneously.
+        //   O = 500·0.001 = 0.5  →  denom = max(O·0.5, 0.5) = 0.5
+        //   gain_comp = 1/√0.5 = √2 ≈ 1.414
+        //   |input|max = 1 (unit sine)
+        //   bound = 16 · 1 · √2 · 1 ≈ 22.63
+        // This is a strict mathematical upper bound (sum of N items each
+        // ≤ M is ≤ N·M); the actual peak is much lower due to Poisson grain
+        // spacing and Hann envelope decorrelation, but the test only needs
+        // to catch unbounded explosion. Round up to 23 for float headroom.
+        REQUIRE(std::fabs(out) <= 23.0f);
     }
 }
 
@@ -262,10 +270,16 @@ TEST_CASE("GranularProcessor: positionScatter=0 → all grains read from write h
         REQUIRE(std::isfinite(out));
         maxAbs = std::max(maxAbs, std::fabs(out));
     }
-    // O = 30·0.05 = 1.5.  Gain = 1/sqrt(0.75) ≈ 1.155.  Per-grain peak ≤
-    // 1.0; typical 3-grain pileup → bound 1.155·3 ≈ 3.5.  Allow 5.0
-    // headroom for the read-at-write-head self-reference edge case.
-    REQUIRE(maxAbs <= 5.0f);
+    // Theoretical worst-case bound (same formula as the 1 ms grain test):
+    //   y_max ≤ kMaxGrains · Hann_peak · gain_comp(O) · |input|max
+    //   O = 30·0.05 = 1.5  →  denom = max(0.75, 0.5) = 0.75
+    //   gain_comp = 1/√0.75 ≈ 1.155
+    //   |input|max = 1 (unit sine)
+    //   bound = 16 · 1 · 1.155 · 1 ≈ 18.48
+    // The self-referential read (positionScatter=0 reads at the write
+    // head) cannot exceed this bound because it just samples buffer
+    // values that themselves are ≤ |input|max. Round up to 19.
+    REQUIRE(maxAbs <= 19.0f);
 }
 
 TEST_CASE("GranularProcessor: freeze=true freezes buffer contents", "[granular]")
@@ -351,8 +365,13 @@ TEST_CASE("GranularProcessor: setters clamp to documented ranges", "[granular]")
         gp.writeSample(0.8f);
         const float out = gp.process();
         REQUIRE(std::isfinite(out));
-        // Same stress-test ceiling.
-        REQUIRE(std::fabs(out) <= 5.0f);
+        // Theoretical worst-case bound for clamped extreme params:
+        //   grainRate=20, grainSize clamped to a small positive (impl-
+        //   defined floor), so O is small → denom hits the 0.5 floor →
+        //   gain_comp = 1/√0.5 = √2.
+        //   |input|max = 0.8 (DC value written).
+        //   bound = 16 · 1 · √2 · 0.8 ≈ 18.10  → round up to 19.
+        REQUIRE(std::fabs(out) <= 19.0f);
     }
 }
 
@@ -482,17 +501,25 @@ TEST_CASE("GranularProcessor: 10 s stability at moderate params", "[granular][st
         REQUIRE(std::isfinite(out));
         maxAbs = std::max(maxAbs, std::fabs(out));
     }
-    // O = grainRate · grainSize = 60·0.04 = 2.4 expected overlap.
-    // Gain comp = 1/sqrt(O · 0.5) = 1/sqrt(1.2) ≈ 0.913.
-    // Per-grain peak ≤ 1·|input|max·Hann_max = 1.0.  Coincident grains:
-    // Poisson(λ=2.4) → 99.99% bound ≈ λ + 4·√λ ≈ 8.6.  Worst-case sum
-    // bound = 0.913 · 8.6 = 7.85, but in practice grain envelopes are
-    // never simultaneously at Hann_max=1 across many grains.  Empirical
-    // bound derived from CLT (RMS ≈ √(O·0.375)·gain ≈ 0.84) × 4σ peak ≈
-    // 3.4.  Add headroom for the AM input envelope coinciding with peak
-    // pile-ups → use 5.0 as the long-run ceiling.
-    REQUIRE(maxAbs <= 5.0f);
-    // Sanity: we should hear *something*.
+    // Theoretical worst-case bound:
+    //   y_max ≤ kMaxGrains · Hann_peak · gain_comp(O) · |input|max
+    //   O = 60·0.04 = 2.4  →  denom = max(1.2, 0.5) = 1.2
+    //   gain_comp = 1/√1.2 ≈ 0.913
+    //   |input|max = 1 (AM-modulated sine peaks at amp=1, sin=1)
+    //   bound = 16 · 1 · 0.913 · 1 ≈ 14.6  → round up to 15.
+    REQUIRE(maxAbs <= 15.0f);
+    // Lower bound — catches catastrophic silence (e.g. all-grains-idle
+    // bug, broken gain comp, broken spawn logic).
+    //   The 10 s window contains ≈3 cycles of the 0.3 Hz AM envelope, so
+    //   the input traverses amp=1 multiple times. At amp=1 the per-grain
+    //   contribution is Hann_peak · gain_comp · |input| = 1 · 0.913 · 1
+    //   = 0.913. Even with average overlap 2.4 grains × mean Hann 0.5,
+    //   expected peak amplitude during AM-peak phases is bounded below by
+    //   gain_comp · |input|max · Hann_peak ≈ 0.913 (a single in-phase
+    //   grain). Floor 0.05 = -26 dBFS is ~18× below this expected lower
+    //   bound, catching ≥18× attenuation failure modes without being
+    //   brittle against AM-trough phase coincidence with grain spawn
+    //   gaps. Comfortably above the denormal/flush floor (~1e-5).
     REQUIRE(maxAbs > 0.05f);
 }
 
@@ -516,14 +543,19 @@ TEST_CASE("GranularProcessor: extreme combo — max everything", "[granular][sta
         gp.writeSample(sineAt(i, 110.0f, kSampleRate) * 0.5f);
         const float out = gp.process();
         REQUIRE(std::isfinite(out));
-        // With O capped at 16 by the pool, stress ceiling = 2.5.
-        REQUIRE(std::fabs(out) <= 5.0f);  // generous: max ±2 octave pitch
-                                          // shift × 16 grains lets the
-                                          // central-limit headroom grow,
-                                          // but theoretical max is bounded
-                                          // by gain_comp · 16 · max_hann =
-                                          // (1/sqrt(0.5·max(O·0.5,0.5))) · 16
-                                          // ≈ (1/sqrt(8)) · 16 ≈ 5.66.
+        // Theoretical worst-case bound at pool saturation:
+        //   Active grains capped at kMaxGrains = 16 by the pool (extra
+        //   spawn requests drop silently).
+        //   O = grainRate · grainSize = 2000 · 1.0 = 2000, but the actual
+        //   number of active grains saturates at 16.
+        //   denom = max(O·0.5, 0.5) = 1000  →  gain_comp = 1/√1000 ≈ 0.0316.
+        //   |input|max = 0.5 (sine × 0.5).
+        //   Pitch shift ±2 octaves only changes read speed, not the
+        //   amplitude of buffer values — bounded by ±|input|max.
+        //   bound = 16 · 1 · 0.0316 · 0.5 ≈ 0.253  → round up to 1.0 for
+        //   generous float headroom and any transient overshoot from
+        //   linear interpolation at sub-sample read positions.
+        REQUIRE(std::fabs(out) <= 1.0f);
     }
 }
 

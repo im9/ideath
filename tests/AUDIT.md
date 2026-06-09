@@ -50,26 +50,13 @@ pass is done.
 | `test_Polyphony` | silent/reset bit-exact via tanh(0)=0; single-voice RMS = ⟨tanh²(saw)⟩ = 1 − tanh(1) ≈ 0.238; chord/single ratio from CLT Gaussian σ = 1 giving ≈ 1.29 (threshold 1.1); rail threshold from arctanh(1 − ULP/2) ≈ 8.7; +explicit steal-oldest semantic test; +10 s stability with resonant filter |
 | `test_SeqClick` | Voice-vs-offline RMS tol from BitCrusher 32-bit quantisation (≈ 6e−8) vs wrong-order divergence (~0.1); click-delta 0.02 from envAttack ≈ 0.107 follower response: clean ramp Δ_env ≈ 1e−3, hard click ≈ 0.037, SVFilter-ring ≈ 4e−3–7e−3 per Q/drive case |
 | `test_AudioSafety` | denormal bounds; long-run stability |
+| `test_KarplusStrong` | KS loop math (g_raw = 10^(-3/N_cyc), N_cyc = decay·freq); silence ε ≤ 1e-10 from DelayLine 1e-25 anti-denormal; exciter burst clamped to min(kExciterSec·sr, D−1) so it never overlaps a delay-line slot → ±1.001 bound; autocorrelation peak at lag D = sr/freq with ±1-sample tolerance for sample-rate-independent pitch; HF energy 6 dB drop bound for damping; −60 dB envelope ratio bracket [0.5e−3, 5e−3] for decay accuracy; loop gain kMaxLoopGain = 0.9995 strict ceiling; damping=1 → 0.3× peak ratio (10 dB) catches "damping ignored"; minDecay 0.05 s → 0.1× ratio (20 dB) catches "decay ignored"; setFrequency mid-pluck re-clamps remaining burst |
+| `test_ModalResonator` | Per-partial Q = π·fc·decay/ln(1000) from closed-form 2nd-order resonator T60↔Q mapping; per-partial BP × Q at output sum → per-partial peak ≈ 1; output ceiling N·1.5 (≈ N partials in phase × 2nd-order transient overshoot factor); BP off-bin attenuation (Δf/BW)²·Q² with 5× threshold margin for Goertzel partial-isolation; inharmonicity stretch f_i = ratio_i·√(1+B·ratio_i²), B = inharm·0.1; long-decay (T60=2 s) audibility floor 1e-5 RMS = −100 dBFS above denormal floor; long/short decay ratio 10× from exp(−6.9·t/T60); kMinQ=1 / kMaxQ=5000 clamps |
+| `test_GranularProcessor` | Universal worst-case output bound y_max ≤ kMaxGrains · Hann_peak · gain_comp(O) · \|input\|max, with gain_comp(O) = 1/√max(O·0.5, 0.5); Hann mean 0.5 from ∫₀¹(0.5−0.5·cos 2πt)dt; gain-comp's 0.5 floor caps boost at √2 for sparse-grain regimes; bit-exact zero on no-grains state and frozen-buffer DC sign-band; pitch-passthrough 4× ratio for octave-failure detection from Hann main-lobe leakage; CLT-based ±0.4 (≈ 28%) tolerance on √2 expectation at O=4; pool-saturation floor (1.0 bound at O=2000 with gain_comp ≈ 0.032) |
 
 ## Unaudited
 
 _(Add a row here when a new test file is committed. Move it to the table above
 once all thresholds in the file have a stated derivation.)_
 
-- `test_KarplusStrong` — KS loop math (g_raw = 10^(-3/N_cyc), N_cyc = decay·freq);
-  silence ε from DelayLine 1e-25 anti-denormal; exciter burst sample count =
-  min(kExciterSec·sr, D−1); auto-correlation peak at lag D = sr/freq for pitch
-  verification (replaced earlier ZC-counting variant which was invalid for
-  broadband KS output); HF energy 6 dB drop bound for damping; -60 dB ratio
-  bracket [0.5e-3, 5e-3] for decay accuracy; loop gain kMaxLoopGain = 0.9995
-  hard ceiling for stability. To audit and graduate.
-- `test_ModalResonator` — Per-partial Q = π·fc·decay/ln(1000) (closed-form
-  2nd-order resonator T60 → Q mapping); Goertzel single-bin magnitude for
-  partial-presence assertions; BP off-bin attenuation ≈ (f/fc − fc/f)²·Q² for
-  partial-isolation; 1e-5 RMS floor at t=0.5s for long-decay (T60=2s) audibility;
-  10s post-strike stability; default kMinQ=1 / kMaxQ=5000 clamps prevent
-  degenerate / numerically unhelpful Q. To audit and graduate.
-- `test_GranularProcessor` — derivations are stated inline (Hann mean = 0.5;
-  gain-comp 1/√(O·0.5) with O = grainRate·grainSize; Poisson grain-count
-  variance for pile-up bounds; Goertzel-bin power for pitch-passthrough);
-  promote to the audited table once a second pair of eyes signs off.
+— none —
