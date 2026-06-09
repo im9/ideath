@@ -132,6 +132,47 @@ TEST_CASE("KarplusStrong: exciter burst length matches spec", "[karplus]")
     REQUIRE_FALSE(ks.exciterActive());
 }
 
+TEST_CASE("KarplusStrong: re-pluck during active burst restarts the count",
+          "[karplus]")
+{
+    // Header contract (KarplusStrong.h on pluck()):
+    //   "Calling pluck() again while the previous burst is still in flight
+    //    simply replaces the remaining count (a fresh pluck restarts the
+    //    burst)."
+    //
+    // Test: pluck, advance partway through the burst, pluck again, and
+    // verify the burst extends for a full kExciterSec window from the
+    // *second* pluck — not just the residual of the first.
+    //
+    // At freq=220, D = 200.45 samples and kExciterSec·sr = 44 samples, so
+    // the burst is clamped to min(44, 199) = 44 samples (no overlap).
+    // Threshold derivation: burst length is a spec value (kExciterSec·sr),
+    // not a derived tolerance.
+    ideath::KarplusStrong ks;
+    ks.prepare(kSampleRate);
+    ks.setFrequency(220.0f);
+    ks.setExciter(1.0f);
+    ks.pluck();
+
+    const int full = static_cast<int>(ideath::KarplusStrong::kExciterSec * kSampleRate);
+    REQUIRE(ks.exciterActive());
+
+    // Advance 5 samples → if "replace" were broken (e.g. cumulative add or
+    // no-op), the residual would be 39 or some other non-`full` value.
+    for (int i = 0; i < 5; ++i)
+        (void)ks.process();
+    REQUIRE(ks.exciterActive());
+
+    // Re-pluck. The remaining count must reset to a fresh `full` samples.
+    ks.pluck();
+    for (int i = 0; i < full; ++i)
+    {
+        REQUIRE(ks.exciterActive());
+        (void)ks.process();
+    }
+    REQUIRE_FALSE(ks.exciterActive());
+}
+
 // ---------------------------------------------------------------------------
 // 3. Output bounds — nominal ±1
 // ---------------------------------------------------------------------------
