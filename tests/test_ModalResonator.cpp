@@ -586,6 +586,125 @@ TEST_CASE("ModalResonator: max partials × long decay × high inharmonicity stay
     }
 }
 
+// --- Q clamp boundaries ---------------------------------------------------
+
+TEST_CASE("ModalResonator: Q clamps to kMinQ at degenerate small decay × low fc",
+          "[modal][clamp]")
+{
+    // Q formula: Q = π · fc · decay / ln(1000).
+    // At decay = 0.001 s (kMinDecay), fc = 10 Hz (kMinFreq):
+    //   Q_raw = π · 10 · 0.001 / 6.908 ≈ 0.00455
+    //   ⇒ clamped to kMinQ = 1.0.
+    // At Q=1 a 2nd-order BP is critically damped — the impulse response
+    // dies within one period (T60_BP = Q·ln(1000)/(π·fc) ≈ 0.22 s for fc=10).
+    // After the 2 ms noise burst there's essentially no ringing tail; in
+    // 100 ms the partial must have decayed by many orders of magnitude.
+    //
+    // Threshold derivation: at the kMinQ floor the BP's natural T60 at
+    // fc=10 Hz is Q · ln(1000)/(π·fc) = 1·6.908/(π·10) ≈ 0.22 s; at
+    // t = 100 ms the envelope is exp(−6.908·0.1/0.22) ≈ exp(−3.14) ≈ 0.043.
+    // Per-partial peak ≈ 1 (post Q-compensation), 1 partial active, so peak
+    // at t = 100 ms ≤ ~0.04. We assert ≤ 0.1 (≈ 2.5× margin against
+    // discrete-time + transient overshoot).
+    ModalResonator m;
+    m.prepare(kSR);
+    m.setPartialCount(1);
+    m.setFundamental(10.0f);
+    m.setPartialRatio(0, 1.0f);
+    m.setPartialDecay(0, 0.001f);
+    m.setInharmonicity(0.0f);
+
+    m.strike(1.0f);
+    // Skip the 2 ms burst window.
+    const int skipBurst = static_cast<int>(kSR * 0.01f);
+    for (int i = 0; i < skipBurst; ++i) (void)m.process();
+    // Skip to t = 100 ms.
+    const int skipToT100 = static_cast<int>(kSR * 0.09f);
+    for (int i = 0; i < skipToT100; ++i) (void)m.process();
+
+    const int win = static_cast<int>(kSR * 0.02f);
+    float peak = 0.0f;
+    for (int i = 0; i < win; ++i)
+        peak = std::max(peak, std::fabs(m.process()));
+    REQUIRE(peak <= 0.1f);
+}
+
+TEST_CASE("ModalResonator: Q clamps to kMaxQ at very long decay × high fc, stays finite",
+          "[modal][clamp]")
+{
+    // Q formula again. At decay = 30 s (kMaxDecay), fc = 10 kHz:
+    //   Q_raw = π · 10000 · 30 / 6.908 ≈ 136 432
+    //   ⇒ clamped to kMaxQ = 5000.
+    // At Q=5000 the BP is extremely resonant but still stable (pole strictly
+    // inside the unit circle).  This test verifies the kMaxQ clamp keeps
+    // the filter well-conditioned: no NaN, no inf, output bounded.
+    //
+    // Threshold derivation: per-partial impulse-response peak after Q
+    // multiplication is bounded by ||h·Q||_∞.  For the BP's 0 dB-peak
+    // formulation h[0] = α/a0 with α = sin(ω0)/(2Q), so Q·h[0] = sin(ω0)/2
+    // (independent of Q for fixed ω0).  At ω0 = 2π·10000/44100 ≈ 1.425 rad,
+    // Q·h[0] ≈ 0.495.  Subsequent IR samples can exceed this initial value
+    // due to the resonator's natural ringing build-up — the 2nd-order step
+    // response overshoot bound is 1 + exp(−π·ζ/√(1−ζ²)) with damping ratio
+    // ζ = 1/(2Q); for Q=5000 the overshoot factor approaches 2.0.  Add a
+    // small safety margin for stochastic input variance from the noise
+    // burst: bound 2.5 = sin(ω0)/2 × overshoot 2 × variance margin 2.5.
+    // Run 1 s = 44 100 samples to exercise the long impulse-response tail.
+    ModalResonator m;
+    m.prepare(kSR);
+    m.setPartialCount(1);
+    m.setFundamental(10000.0f);
+    m.setPartialRatio(0, 1.0f);
+    m.setPartialDecay(0, 30.0f);
+    m.setInharmonicity(0.0f);
+
+    m.strike(1.0f);
+    const int N = static_cast<int>(kSR);
+    for (int i = 0; i < N; ++i)
+    {
+        float s = m.process();
+        REQUIRE(std::isfinite(s));
+        REQUIRE(std::fabs(s) <= 2.5f);
+    }
+}
+
+TEST_CASE("ModalResonator: per-partial peak amplitude bounded by Q compensation",
+          "[modal]")
+{
+    // The class comment claims per-partial peak ≈ 1 after Q multiplication,
+    // but that claim is for STEADY-STATE response (|H|=1 at fc).  For the
+    // 2 ms noise-burst excitation the BP doesn't reach steady state; the
+    // actual peak is much smaller and depends on the burst's spectral
+    // energy in the BP's narrow passband.
+    //
+    // Threshold derivation:
+    //   Upper bound: ||h·Q||_∞ ≈ sin(ω0)/2 × transient-overshoot ≤ 1.5
+    //     For ω0 = 2π·440/44100 ≈ 0.063, sin(ω0)/2 ≈ 0.031, plus 2nd-order
+    //     transient build-up ≈ π/2 ≈ 1.57, plus noise-burst variance:
+    //     bound ≤ 1.5 well covers the worst case.
+    //   Lower bound: 0.01 — catches catastrophic silence failure (BP
+    //     coefficients wrong, Q multiplication missing, strike no-op).
+    //     Actual peak at fc=440 Hz, Q≈200, with 2 ms noise burst is
+    //     ~0.1 (in-band burst energy = noise_var · BW · T = (1/3) · 2.2 · 0.002
+    //     ≈ 1.5e-3, RMS ≈ 0.04, peak ≈ 0.1), so floor 0.01 has 10× headroom
+    //     against the smallest plausible legitimate peak.
+    ModalResonator m;
+    m.prepare(kSR);
+    m.setPartialCount(1);
+    m.setFundamental(440.0f);
+    m.setPartialRatio(0, 1.0f);
+    m.setPartialDecay(0, 1.0f);
+    m.setInharmonicity(0.0f);
+
+    m.strike(1.0f);
+    const int N = static_cast<int>(kSR * 0.1f); // 100 ms covers the build-up
+    float peak = 0.0f;
+    for (int i = 0; i < N; ++i)
+        peak = std::max(peak, std::fabs(m.process()));
+    REQUIRE(peak >= 0.01f);
+    REQUIRE(peak <= 1.5f);
+}
+
 // --- Default ctor sanity --------------------------------------------------
 
 TEST_CASE("ModalResonator: default-constructed is usable without prepare()", "[modal]")
