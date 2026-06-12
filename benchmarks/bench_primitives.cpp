@@ -12,6 +12,7 @@
 #include <ideath/FunctionGenerator.h>
 #include <ideath/GranularProcessor.h>
 #include <ideath/HallReverb.h>
+#include <ideath/HarmonicOscillator.h>
 #include <ideath/KarplusStrong.h>
 #include <ideath/LFO.h>
 #include <ideath/ModalResonator.h>
@@ -649,6 +650,43 @@ TEST_CASE("Bench: GranularProcessor", "[bench]")
             gp.writeSample(sineAt(i));
             acc += gp.process();
         }
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: HarmonicOscillator", "[bench]")
+{
+    // 8-partial config — representative LOW+MID-band usage where slothrop's
+    // Loom engine spends most of its time. Inner loop runs 8 sin() calls
+    // per sample after the amp==0 skip filters out HIGH-band partials.
+    ideath::HarmonicOscillator h8;
+    h8.prepare(kSR);
+    h8.setFrequency(220.0f);
+    h8.setPartialCount(8);
+    h8.setBands(1.0f, 1.0f, 0.0f, 0.0f);
+
+    BENCHMARK("HarmonicOscillator::process (8 partials)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += h8.process();
+        return acc;
+    };
+
+    // 32-partial worst case: low fundamental keeps every partial below
+    // Nyquist guard, all amps non-zero so no skip. This is the bound the
+    // iPhone-class CPU budget must absorb for a single Loom voice.
+    ideath::HarmonicOscillator h32;
+    h32.prepare(kSR);
+    h32.setFrequency(55.0f);   // 55 × 32 = 1760 Hz, all 32 alive
+    h32.setPartialCount(ideath::HarmonicOscillator::kMaxPartials);
+    h32.setBands(1.0f, 1.0f, 1.0f, 0.0f);
+
+    BENCHMARK("HarmonicOscillator::process (32 partials)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += h32.process();
         return acc;
     };
 }

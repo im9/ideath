@@ -87,6 +87,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **KarplusStrong** — Plucked-string synthesis (noise burst → LP-filtered delay-line feedback), freq / decay / damping / exciter; loop gain compensates for filter loss so the -60 dB tail length matches `setDecay` even under heavy damping
 - **ModalResonator** — Bell engine: N parallel BPs (modes) with per-partial Q derived from decay (`Q = π × fc × decay / ln(1000)`), struck by a short noise burst; piano-string inharmonicity stretch (`f_i = fundamental × ratio_i × sqrt(1 + B × ratio_i²)`); Nyquist-muted partials
 - **GranularProcessor** — Granular cloud (ring buffer + Hann-windowed grain pool), grain rate / size / pitch spread / position scatter / freeze; pool-exhaustion graceful; deterministic given a fixed RNG seed
+- **HarmonicOscillator** — Plaits-style additive engine: sum of up to 32 harmonically-related sines, Plaits-style LOW/MID/HIGH band amplitudes with within-band taper (`shape`), per-partial amplitude override; partials above Nyquist silently muted; deterministic phase init
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -106,6 +107,7 @@ Polyphony) are excluded because the REPL itself serves that role.
   | Biquad | ±Q | resonant peak, Q passed directly |
   | UnisonOscillator | ±√N (up to ±4) | N voices in-phase, gain comp ÷√N |
   | ModalResonator | ±N (up to ±16) | N parallel BPs with per-partial Q derived from decay; BP output multiplied by Q to compensate 0 dB-peak normalisation → per-partial peak ≈ 1, N partials sum to ≈ ±N in worst-case phase alignment |
+  | HarmonicOscillator | ±N (up to ±32) | N partials at amp 1.0 sum to ±N in worst-case phase alignment; typical observed peak ≈ √(N/2)·√(2 ln M) ≈ ±18 over a 1 s window of random-phase init |
   | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions

@@ -59,4 +59,6 @@ pass is done.
 _(Add a row here when a new test file is committed. Move it to the table above
 once all thresholds in the file have a stated derivation.)_
 
-— none —
+| Test file | Status |
+|---|---|
+| `test_HarmonicOscillator` | New file; thresholds carry derivations inline (Goertzel amplitude tolerance ±0.01 from N=44100 bin-aligned leakage floor; ±N peak ceiling from N partials in phase; HIGH-fundamental Nyquist bound from `sr × 0.45 = 19845 Hz`; shape=1 linear-taper expected values 1.0 / 0.5 / 0.0 for LOW band derived from `band_pos × (width-1)`). Pending full audit pass to graduate to main table. |

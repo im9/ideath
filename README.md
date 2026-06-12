@@ -43,6 +43,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain |
 | **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch |
 | **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze |
+| **HarmonicOscillator** | Plaits-style additive engine — up to 32 harmonically-related sines with LOW/MID/HIGH band controls and within-band taper |
 
 ## Design Principles
 

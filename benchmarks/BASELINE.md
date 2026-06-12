@@ -55,6 +55,8 @@ than comparing cross-host.
 | KarplusStrong::process             |           2.636 µs |        5.15 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
 | ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
+| HarmonicOscillator::process (8 part.)  |      12.156 µs |       23.74 |
+| HarmonicOscillator::process (32 part.) |     115.658 µs |      225.89 |
 | GranularProcessor::process         |          24.174 µs |       47.21 |
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
@@ -83,3 +85,12 @@ than comparing cross-host.
   M2 Max host alongside the rest of the table. The curved variant exercises
   `std::pow` per sample (curve = 0.7); the linear variant short-circuits the
   shaper and is one branch + one float add in the hot path.
+- The two `HarmonicOscillator` rows were measured 2026-06-12 on the same
+  Apple M2 Max host. The 8-partial config (LOW + MID bands) is the
+  expected slothrop Loom common case; the 32-partial config is the
+  worst-case ceiling. Inner loop is dominated by `std::sin` (one call per
+  alive non-zero-amp partial). At 32 partials this is ~10× the
+  ModalResonator-16 cost — the cost is real and well-attributed to `sin`,
+  not algorithmic. A sine LUT / polynomial approx is the obvious future
+  optimisation (per the SIMD candidates list in `CLAUDE.md`); not landed
+  in v1 to keep the implementation auditable.

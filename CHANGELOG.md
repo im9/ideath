@@ -25,6 +25,14 @@ The format is based on Keep a Changelog, adapted for the project's current stage
   per-voice rate jitter so voices wander uncorrelated. Default amount is
   `0.0` cents — pre-existing call sites are bit-identical
   (`getVoiceDriftCents()` exposed for tests/debug)
+- `HarmonicOscillator` — Plaits-style additive engine with up to 32
+  harmonically-related sine partials. High-level Plaits-style
+  `setBands(low, mid, high, shape)` mapping (LOW = partials 1..3,
+  MID = partials 4..7, HIGH = partials 8..32, `shape` linearly tapers
+  within each band) plus low-level `setPartialAmplitude(idx, amp)` for
+  per-partial modulation. Partials above `sampleRate × 0.45` are
+  silently muted to prevent aliasing fold. Phase init is deterministic
+  via a fixed xorshift32 seed so renders are bit-exact reproducible
 
 ### Changed
 

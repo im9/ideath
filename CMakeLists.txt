@@ -42,6 +42,7 @@ add_library(ideath STATIC
     src/KarplusStrong.cpp
     src/ModalResonator.cpp
     src/GranularProcessor.cpp
+    src/HarmonicOscillator.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -143,6 +144,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_KarplusStrong.cpp
         tests/test_ModalResonator.cpp
         tests/test_GranularProcessor.cpp
+        tests/test_HarmonicOscillator.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
