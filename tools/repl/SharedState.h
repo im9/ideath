@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ideath/HarmonicOscillator.h>
 #include <atomic>
 #include <cstdint>
 
@@ -7,7 +8,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -132,6 +133,18 @@ struct VoiceParams
     int   modalPartials      = 8;
     float modalDecay         = 0.7f;
     float modalInharmonicity = 0.0f;
+
+    // HarmonicOscillator (Plaits-style additive engine, Loom).  Fundamental
+    // tracks `frequency`; the three Plaits-style band levels and within-band
+    // taper are exposed as a single sweep via the `harmonic` REPL command.
+    // `partials` is a CPU knob (1..32) — the band amplitudes are written
+    // to all 32 partial slots regardless.  Defaults: balanced 3-band mix,
+    // flat within-band, 32 partials.
+    int   harmonicPartials = ideath::HarmonicOscillator::kMaxPartials;
+    float harmonicLow      = 1.0f;
+    float harmonicMid      = 0.5f;
+    float harmonicHigh     = 0.25f;
+    float harmonicShape    = 0.0f;
 
     // GranularProcessor (input-consuming, like delay)
     bool  granularEnabled = false;

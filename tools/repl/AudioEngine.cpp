@@ -27,6 +27,7 @@ void AudioEngine::prepare(float sampleRate)
     looper_.prepare(sampleRate, 30.0f); // max 30 seconds loop
     karplus_.prepare(sampleRate);
     modal_.prepare(sampleRate);
+    harmonic_.prepare(sampleRate);
     // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
     // up to 2 s of recall material at positionScatter=1.0.
     granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
@@ -104,6 +105,16 @@ void AudioEngine::applyPendingState(SharedState& shared)
         modal_.setInharmonicity(params_.modalInharmonicity);
         for (int i = 0; i < ideath::ModalResonator::kMaxPartials; ++i)
             modal_.setPartialDecay(i, params_.modalDecay);
+
+        // HarmonicOscillator: bands + partial count are block-rate.  The
+        // fundamental is pitch-modulated and so pushed per-sample below.
+        // setBands writes all 32 partial amplitudes; setPartialCount caps
+        // how many are summed in process() (CPU knob).
+        harmonic_.setBands(params_.harmonicLow,
+                           params_.harmonicMid,
+                           params_.harmonicHigh,
+                           params_.harmonicShape);
+        harmonic_.setPartialCount(params_.harmonicPartials);
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -437,6 +448,14 @@ float AudioEngine::process()
             // applied at block boundary (applyPendingState) instead.
             modal_.setFundamental(freq);
             sample = modal_.process();
+            break;
+
+        case SourceType::Harmonic:
+            // setFrequency short-circuits when the value hasn't moved, so
+            // per-sample calls under modulation are cheap.  Bands / count
+            // are block-rate (applyPendingState).
+            harmonic_.setFrequency(freq);
+            sample = harmonic_.process();
             break;
 
         case SourceType::None:

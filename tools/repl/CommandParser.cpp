@@ -47,6 +47,11 @@ ideath REPL commands:
   modal <fund> [partials] [decay] [inharm]
                                 Bell engine (struck on note-on / seq step).
                                 fund Hz, partials 1-16, decay sec, inharm 0-1.
+  harmonic <fund> [low] [mid] [high] [shape] [partials]
+                                Additive engine (Plaits-style sum of sines).
+                                fund Hz, band levels 0-1 (LOW=harm 1-3,
+                                MID=4-7, HIGH=8-32), shape 0-1 within-band
+                                taper, partials 1-32 (CPU cap).
   filter <lp|hp|bp> <freq> <Q>  SVFilter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
@@ -854,6 +859,38 @@ bool parseCommand(const std::string& line, SharedState& shared)
                   << " partials=" << shared.staging.modalPartials
                   << " decay=" << shared.staging.modalDecay << "s"
                   << " inharm=" << shared.staging.modalInharmonicity << std::endl;
+        return true;
+    }
+
+    if (cmd == "harmonic")
+    {
+        // harmonic <fund> [low] [mid] [high] [shape] [partials]
+        // Plaits-style additive: fund tracks `frequency`, low/mid/high are
+        // band amplitudes (LOW=partials 1..3, MID=4..7, HIGH=8..32) in
+        // [0, 1], shape is within-band linear taper in [0, 1], partials
+        // caps the active partial count in [1, 32] as a CPU knob.
+        shared.staging.source = SourceType::Harmonic;
+        if (tokens.size() > 1)
+            shared.staging.frequency = parseFloat(tokens[1], 220.0f);
+        if (tokens.size() > 2)
+            shared.staging.harmonicLow = parseFloat(tokens[2], 1.0f);
+        if (tokens.size() > 3)
+            shared.staging.harmonicMid = parseFloat(tokens[3], 0.5f);
+        if (tokens.size() > 4)
+            shared.staging.harmonicHigh = parseFloat(tokens[4], 0.25f);
+        if (tokens.size() > 5)
+            shared.staging.harmonicShape = parseFloat(tokens[5], 0.0f);
+        if (tokens.size() > 6)
+            shared.staging.harmonicPartials = parseInt(tokens[6],
+                ideath::HarmonicOscillator::kMaxPartials);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Harmonic: fund=" << shared.staging.frequency
+                  << " low="    << shared.staging.harmonicLow
+                  << " mid="    << shared.staging.harmonicMid
+                  << " high="   << shared.staging.harmonicHigh
+                  << " shape="  << shared.staging.harmonicShape
+                  << " partials=" << shared.staging.harmonicPartials
+                  << std::endl;
         return true;
     }
 

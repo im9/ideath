@@ -25,6 +25,7 @@
 #include <ideath/KarplusStrong.h>
 #include <ideath/ModalResonator.h>
 #include <ideath/GranularProcessor.h>
+#include <ideath/HarmonicOscillator.h>
 
 namespace ideath { namespace repl {
 
@@ -71,6 +72,7 @@ private:
     KarplusStrong karplus_;
     ModalResonator modal_;
     GranularProcessor granular_;
+    HarmonicOscillator harmonic_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;
