@@ -11,7 +11,7 @@ class SVFilter
 public:
     enum class Mode { Lowpass, Highpass, Bandpass, Notch };
 
-    SVFilter() = default;
+    SVFilter();
 
     void prepare(float sampleRate);
     void reset();

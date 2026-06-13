@@ -93,6 +93,7 @@ void LFO::reset()
     holdValue_ = 0.0f;
     quantizeHold_ = 0.0f;
     prevPhase_ = 0.0f;
+    noiseState_ = 0x12345678u; // restore S&H RNG seed for deterministic replay
 }
 
 void LFO::setRate(float rateHz)

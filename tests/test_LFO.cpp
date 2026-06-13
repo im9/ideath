@@ -214,6 +214,35 @@ TEST_CASE("LFO: reset preserves rate", "[lfo]")
     }
 }
 
+TEST_CASE("LFO: reset restores deterministic S&H noise state", "[lfo]")
+{
+    // S&H uses an internal xorshift32 RNG (noiseState_) seeded in the header.
+    // reset() must restore that seed so a recorded → reset → replay sequence
+    // produces bit-identical output (same musical contract as Sine in the
+    // "reset preserves rate" test above).  Before this guard, noiseState_
+    // continued advancing across reset(), so replay differed from initial run.
+    ideath::LFO a;
+    a.prepare(kSampleRate);
+    a.setRate(20.0f);
+    a.setWaveform(ideath::LFO::Waveform::SampleAndHold);
+    a.setPolarity(ideath::LFO::Polarity::Bipolar);
+
+    constexpr int N = 8192; // > 8 wraps at 20 Hz → many S&H updates captured
+
+    std::vector<float> first(N);
+    for (int i = 0; i < N; ++i)
+        first[i] = a.process();
+
+    a.reset();
+    for (int i = 0; i < N; ++i)
+    {
+        // xorshift32 is deterministic given seed; reset() must restore the
+        // seed so replay matches bit-for-bit (1e-6 is API tolerance only).
+        float v = a.process();
+        REQUIRE_THAT(v, WithinAbs(first[i], 1e-6f));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shape, Curve, Quantize
 // ---------------------------------------------------------------------------

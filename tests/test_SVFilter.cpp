@@ -49,6 +49,24 @@ TEST_CASE("SVFilter: default-constructed is valid", "[svfilter]")
     REQUIRE(std::isfinite(y));
 }
 
+TEST_CASE("SVFilter: default-constructed without prepare() is usable", "[svfilter]")
+{
+    // API consistency with Biquad, which defaults to passthrough (b0_=1.0f) so
+    // process() on a default-constructed instance is meaningful.  SVFilter
+    // headers default a1_=a2_=a3_=0, which would make Lowpass output silence
+    // for any input — a hidden failure mode if prepare() is forgotten.  Default
+    // cutoffHz_=1000 / sampleRate_=44100 / resonance_=0 imply Butterworth LP
+    // with DC gain = 1.0, so a constant DC input must converge to ~1.0.
+    ideath::SVFilter filt;
+    // Intentionally NO prepare() call.
+    float y = 0.0f;
+    // 2000 samples ≫ 1/(2*pi*1000/44100) ≈ 7 samples time-constant — plenty
+    // to converge to DC steady state within 1% of unity.
+    for (int i = 0; i < 2000; ++i)
+        y = filt.process(1.0f);
+    REQUIRE_THAT(y, WithinAbs(1.0f, 0.01f));
+}
+
 TEST_CASE("SVFilter: reset clears state", "[svfilter]")
 {
     ideath::SVFilter filt;

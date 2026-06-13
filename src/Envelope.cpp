@@ -74,6 +74,7 @@ void AdsrEnvelope::reset()
 {
     level_ = 0.0f;
     stage_ = Stage::Idle;
+    releaseStartLevel_ = 0.0f;
 }
 
 void AdsrEnvelope::setAttack(float seconds)

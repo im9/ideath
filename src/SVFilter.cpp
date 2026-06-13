@@ -7,6 +7,15 @@ namespace ideath {
 // Tiny DC offset to flush denormals in filter state.
 static constexpr float kAntiDenormal = 1e-25f;
 
+SVFilter::SVFilter()
+{
+    // Precompute coefficients for the default cutoff/resonance/sampleRate so a
+    // default-constructed instance is usable without calling prepare() first
+    // — matches Biquad's b0_=1.0f passthrough default and avoids the silent
+    // zero-output failure mode otherwise produced by a1_=a2_=a3_=0.
+    updateCoefficients();
+}
+
 void SVFilter::prepare(float sampleRate)
 {
     sampleRate_ = sampleRate;
