@@ -28,6 +28,8 @@ void AudioEngine::prepare(float sampleRate)
     karplus_.prepare(sampleRate);
     modal_.prepare(sampleRate);
     harmonic_.prepare(sampleRate);
+    bowed_.prepare(sampleRate);
+    ping_.prepare(sampleRate);
     // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
     // up to 2 s of recall material at positionScatter=1.0.
     granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
@@ -115,6 +117,20 @@ void AudioEngine::applyPendingState(SharedState& shared)
                            params_.harmonicHigh,
                            params_.harmonicShape);
         harmonic_.setPartialCount(params_.harmonicPartials);
+
+        // BowedString: pressure / position / damping are block-rate (no
+        // per-sample modulation in slothrop's spec).  Bow velocity is
+        // driven by the note gate in the note-event handlers below.
+        bowed_.setPressure(params_.bowedPressure);
+        bowed_.setPosition(params_.bowedPosition);
+        bowed_.setDamping(params_.bowedDamping);
+
+        // LowPassGateVoice (Ping engine): tone / damping / brightness are
+        // block-rate.  Frequency / ping() are handled in process() / the
+        // note-event handlers below.
+        ping_.setTone(params_.pingTone);
+        ping_.setDamping(params_.pingDamping);
+        ping_.setBrightness(params_.pingBrightness);
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -182,6 +198,16 @@ void AudioEngine::applyPendingState(SharedState& shared)
         // audio loop below.
         if (params_.source == SourceType::Modal)
             modal_.strike(1.0f);
+
+        // BowedString: engage the bow on note-on at the configured velocity.
+        // The note-off handler will release it.
+        if (params_.source == SourceType::Bowed)
+            bowed_.setBowVelocity(params_.bowedVelocity);
+
+        // LowPassGateVoice: fire the vactrol envelope on every note-on.
+        // No note-off — the LPG decay IS the gate.
+        if (params_.source == SourceType::Ping)
+            ping_.ping(1.0f);
     }
 
     int noteOff = shared.noteOffCounter.load(std::memory_order_acquire);
@@ -190,6 +216,10 @@ void AudioEngine::applyPendingState(SharedState& shared)
         lastNoteOff_ = noteOff;
         env_.noteOff();
         fm_.noteOff();
+        // BowedString: release the bow on note-off; loop rings out under
+        // damping-controlled decay.
+        if (params_.source == SourceType::Bowed)
+            bowed_.setBowVelocity(0.0f);
     }
 
     // --- Sequencer ---
@@ -456,6 +486,22 @@ float AudioEngine::process()
             // are block-rate (applyPendingState).
             harmonic_.setFrequency(freq);
             sample = harmonic_.process();
+            break;
+
+        case SourceType::Bowed:
+            // setFrequency short-circuits on no-op; recompute hits both
+            // delay-line lengths and the loopGain when pitch actually
+            // moves.  Pressure / position / damping are block-rate.
+            bowed_.setFrequency(freq);
+            sample = bowed_.process();
+            break;
+
+        case SourceType::Ping:
+            // Carrier-frequency setter is cheap (Oscillator); LPG runs
+            // the envelope and filter coefficient recompute.  Block-rate
+            // tone / damping / brightness applied in applyPendingState.
+            ping_.setFrequency(freq);
+            sample = ping_.process();
             break;
 
         case SourceType::None:

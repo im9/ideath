@@ -13,6 +13,9 @@
 #include <ideath/GranularProcessor.h>
 #include <ideath/HallReverb.h>
 #include <ideath/HarmonicOscillator.h>
+#include <ideath/BowedString.h>
+#include <ideath/LowPassGate.h>
+#include <ideath/LowPassGateVoice.h>
 #include <ideath/KarplusStrong.h>
 #include <ideath/LFO.h>
 #include <ideath/ModalResonator.h>
@@ -650,6 +653,82 @@ TEST_CASE("Bench: GranularProcessor", "[bench]")
             gp.writeSample(sineAt(i));
             acc += gp.process();
         }
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: LowPassGate", "[bench]")
+{
+    // Realistic Ping config: trigger once, let the envelope settle into
+    // Decay (where most of the LPG's runtime lives — the attack phase
+    // is sub-millisecond).  Carrier is a 440 Hz sine; the LPG runs an
+    // exp + Biquad coefficient recompute + Biquad process + multiply
+    // per sample.
+    ideath::LowPassGate lpg;
+    lpg.prepare(kSR);
+    lpg.setBrightness(0.7f);
+    lpg.setDamping(1.0f);   // long fall — envelope stays > kSilenceThreshold for the whole bench
+    lpg.trigger(1.0f);
+    for (int i = 0; i < static_cast<int>(kSR * 0.01f); ++i)
+        (void)lpg.process(sineAt(i));
+
+    BENCHMARK("LowPassGate::process (Decay stage)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += lpg.process(sineAt(i));
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: LowPassGateVoice", "[bench]")
+{
+    // The bundled voice adds a saw↔square Oscillator (≈ 5.5 ns/sample
+    // per Oscillator bench row) to the LPG cost.  Realistic Ping use
+    // case is pinged-once + steady ring.
+    ideath::LowPassGateVoice voice;
+    voice.prepare(kSR);
+    voice.setFrequency(440.0f);
+    voice.setTone(1.0f);
+    voice.setBrightness(0.7f);
+    voice.setDamping(1.0f);
+    voice.ping(1.0f);
+    for (int i = 0; i < static_cast<int>(kSR * 0.01f); ++i)
+        (void)voice.process();
+
+    BENCHMARK("LowPassGateVoice::process (Decay stage)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += voice.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: BowedString", "[bench]")
+{
+    // Slothrop Bow engine steady-state config: bow held at the friction
+    // peak velocity, moderate pressure and damping, mid-bridge pickup.
+    // The inner loop is two DelayLine reads + one std::exp + one std::tanh
+    // per sample plus the LP filter — comparable workload to KS plus the
+    // friction nonlinearity.
+    ideath::BowedString b;
+    b.prepare(kSR);
+    b.setFrequency(220.0f);
+    b.setPressure(0.6f);
+    b.setPosition(0.2f);
+    b.setDamping(0.3f);
+    b.setBowVelocity(0.3f);
+
+    // Warm: 1 s of bowing so the loop is in steady state before timing.
+    for (int i = 0; i < static_cast<int>(kSR); ++i)
+        (void)b.process();
+
+    BENCHMARK("BowedString::process (steady bow)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += b.process();
         return acc;
     };
 }

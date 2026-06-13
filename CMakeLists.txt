@@ -43,6 +43,9 @@ add_library(ideath STATIC
     src/ModalResonator.cpp
     src/GranularProcessor.cpp
     src/HarmonicOscillator.cpp
+    src/BowedString.cpp
+    src/LowPassGate.cpp
+    src/LowPassGateVoice.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -145,6 +148,8 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_ModalResonator.cpp
         tests/test_GranularProcessor.cpp
         tests/test_HarmonicOscillator.cpp
+        tests/test_BowedString.cpp
+        tests/test_LowPassGate.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)

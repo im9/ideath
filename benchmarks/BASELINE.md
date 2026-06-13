@@ -57,6 +57,9 @@ than comparing cross-host.
 | ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
 | HarmonicOscillator::process (8 part.)  |      12.156 µs |       23.74 |
 | HarmonicOscillator::process (32 part.) |     115.658 µs |      225.89 |
+| BowedString::process (steady bow)  |           8.654 µs |       16.90 |
+| LowPassGate::process (Decay)       |           2.246 µs |        4.39 |
+| LowPassGateVoice::process (Decay)  |           2.946 µs |        5.75 |
 | GranularProcessor::process         |          24.174 µs |       47.21 |
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
@@ -94,3 +97,16 @@ than comparing cross-host.
   not algorithmic. A sine LUT / polynomial approx is the obvious future
   optimisation (per the SIMD candidates list in `CLAUDE.md`); not landed
   in v1 to keep the implementation auditable.
+- `BowedString` measured 2026-06-12 on the same Apple M2 Max host.
+  Steady-state bow (loop has reached its limit cycle) is the realistic
+  workload — at note-on the loop builds up over a few hundred ms but the
+  per-sample cost is the same. Inner loop is two `DelayLine::readDelay`
+  taps + `std::exp` + `std::tanh` + LP filter; comparable to KarplusStrong
+  with one extra `exp` and one extra delay-line write. ≈ 3× KS's
+  5.15 ns/sample, dominated by the second `DelayLine`.
+- `LowPassGate` / `LowPassGateVoice` measured 2026-06-12 on the same
+  host. Decay-stage workload is the dominant runtime (attack is sub-ms);
+  inner loop is one `std::exp` (cutoff) + Biquad LP coefficient recompute
+  (`setLowpass`) + one Biquad sample step + one multiply. `LowPassGateVoice`
+  adds the Oscillator hot path (saw↔square morph, ~1.3 ns over the bare
+  oscillator bench) on top.

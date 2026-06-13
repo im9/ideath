@@ -52,6 +52,19 @@ ideath REPL commands:
                                 fund Hz, band levels 0-1 (LOW=harm 1-3,
                                 MID=4-7, HIGH=8-32), shape 0-1 within-band
                                 taper, partials 1-32 (CPU cap).
+  bowed <fund> [pressure] [position] [damping]
+                                Bowed-string physical model (continuous-
+                                excitation, sibling of pluck). fund Hz,
+                                pressure 0-1, position 0.02-0.5 (pickup),
+                                damping 0-1 (sustain at 0 = 10s, at 1 = 0.1s).
+                                Bow engages on note-on, releases on note-off.
+  ping <fund> [tone] [damping] [brightness]
+                                West Coast Low-Pass Gate (Buchla 292-style)
+                                + saw/square carrier. fund Hz, tone 0-1
+                                (0=square, 1=saw), damping 0-1 (LPG fall
+                                80 ms → 600 ms), brightness 0-1 (peak
+                                cutoff 50 Hz → 6 kHz). Re-pinged on every
+                                note-on / sequencer step.
   filter <lp|hp|bp> <freq> <Q>  SVFilter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
   sat <drive>                   Saturation (or "sat off")
@@ -859,6 +872,55 @@ bool parseCommand(const std::string& line, SharedState& shared)
                   << " partials=" << shared.staging.modalPartials
                   << " decay=" << shared.staging.modalDecay << "s"
                   << " inharm=" << shared.staging.modalInharmonicity << std::endl;
+        return true;
+    }
+
+    if (cmd == "ping")
+    {
+        // ping <fund> [tone] [damping] [brightness]
+        // West Coast LPG voice: carrier (saw/square morph) → LowPassGate.
+        // LPG fires on every note-on / sequencer step automatically (see
+        // AudioEngine note-on handler).
+        shared.staging.source = SourceType::Ping;
+        if (tokens.size() > 1)
+            shared.staging.frequency = parseFloat(tokens[1], 220.0f);
+        if (tokens.size() > 2)
+            shared.staging.pingTone = parseFloat(tokens[2], 1.0f);
+        if (tokens.size() > 3)
+            shared.staging.pingDamping = parseFloat(tokens[3], 0.3f);
+        if (tokens.size() > 4)
+            shared.staging.pingBrightness = parseFloat(tokens[4], 0.7f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Ping (LPG): fund=" << shared.staging.frequency
+                  << " tone="       << shared.staging.pingTone
+                  << " damping="    << shared.staging.pingDamping
+                  << " brightness=" << shared.staging.pingBrightness
+                  << std::endl;
+        return true;
+    }
+
+    if (cmd == "bowed")
+    {
+        // bowed <fund> [pressure] [position] [damping]
+        // Friction-driven bowed-string source.  Pitch tracks `frequency`;
+        // pressure / position / damping match the slothrop 3-knob Bow UI.
+        // Bow velocity is gated by note-on / note-off in the audio engine
+        // (set to bowedVelocity on note-on, back to 0 on note-off).
+        shared.staging.source = SourceType::Bowed;
+        if (tokens.size() > 1)
+            shared.staging.frequency = parseFloat(tokens[1], 220.0f);
+        if (tokens.size() > 2)
+            shared.staging.bowedPressure = parseFloat(tokens[2], 0.6f);
+        if (tokens.size() > 3)
+            shared.staging.bowedPosition = parseFloat(tokens[3], 0.1f);
+        if (tokens.size() > 4)
+            shared.staging.bowedDamping = parseFloat(tokens[4], 0.2f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Bowed: fund=" << shared.staging.frequency
+                  << " pressure=" << shared.staging.bowedPressure
+                  << " position=" << shared.staging.bowedPosition
+                  << " damping="  << shared.staging.bowedDamping
+                  << std::endl;
         return true;
     }
 

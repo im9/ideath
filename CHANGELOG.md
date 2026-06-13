@@ -33,6 +33,29 @@ The format is based on Keep a Changelog, adapted for the project's current stage
   per-partial modulation. Partials above `sampleRate × 0.45` are
   silently muted to prevent aliasing fold. Phase init is deterministic
   via a fixed xorshift32 seed so renders are bit-exact reproducible
+- `BowedString` — Friction-driven physical model: continuous-excitation
+  sibling of `KarplusStrong`. Single waveguide delay loop with an
+  analytical slip-stick friction curve
+  `f = pressure × scale × v_rel × exp(-k|v_rel|)` (peak normalised
+  to 1.0 so the friction reaches the negative-slope regime that drives
+  self-oscillation), `tanh` saturator on the loop input, one-pole LP
+  in the feedback path. Bow position implemented as a second tap into
+  the same delay loop (output = `mainTap − pickupTap`) giving the
+  pickup-position comb: `position=0.5` notches even harmonics,
+  `position → 0.02` pushes notches above the audio band. `Damping`
+  interpolates loop decay between 10 s (drone) and 0.1 s (snappy) at
+  fixed compensation against LP magnitude loss at the fundamental,
+  same closed-form mapping as `KarplusStrong::setDecay`
+- `LowPassGate` — Buchla 292-style vactrol Low-Pass Gate. Single
+  `trigger(velocity)` fires a ~1 ms exponential attack + a damping-
+  controlled exponential fall (80 ms ↔ 600 ms log-linear) that drives
+  BOTH a VCA and a VCF (Biquad LP). Filter cutoff is an exponential
+  interpolation in Hz between `kClosedCutoff = 50 Hz` at envelope=0 and
+  a `brightness`-controlled peak (50 Hz → 6 kHz) at envelope=1. Takes
+  an external `process(carrier)` — caller supplies the tonal source
+- `LowPassGateVoice` — Bundles a morphing saw↔square `Oscillator`
+  with a `LowPassGate` for the slothrop Ping engine. Maps directly to
+  the 3-knob Tone / Damping / Brightness UI
 
 ### Changed
 

@@ -34,7 +34,7 @@ See the project wiki for VSCode / Vim integration examples.
 ## Signal Chain
 
 ```
-Source (osc | wt | noise | fm | unison | pluck | modal | harmonic)
+Source (osc | wt | noise | fm | unison | pluck | modal | harmonic | bowed | ping)
   → Filter
   → AdsrEnvelope
   → Compressor
@@ -69,6 +69,8 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `pluck [freq] [decay_sec] [damping] [exciter]` | Karplus-Strong plucked string (defaults: 220 Hz, 1 s, 0.3, 1.0). Re-plucks on every `note` / sequencer step. |
 | `modal <fund> [partials] [decay] [inharm]` | Bell / chime engine. `partials` 1-16, `decay` seconds (uniform across partials), `inharm` 0-1 stretches upper partials. Struck on every note-on / sequencer step. e.g. `modal 220 12 1.5 0.4` then `note C3`. |
 | `harmonic <fund> [low] [mid] [high] [shape] [partials]` | Plaits-style additive engine (sum of up to 32 sines). Band levels are 0-1 (`low` = partials 1-3, `mid` = 4-7, `high` = 8-32); `shape` 0-1 linearly tapers amplitude within each band; `partials` 1-32 caps the active count (CPU knob). Defaults: `1 0.5 0.25 0` (balanced spectrum, flat) at 32 partials. e.g. `harmonic 110 1 0.5 0.25 0.3` then `note C2`. |
+| `bowed <fund> [pressure] [position] [damping]` | Friction-driven bowed-string physical model (continuous-excitation sibling of `pluck`). `pressure` 0-1 scales the friction-curve amplitude; `position` 0.02-0.5 is the pickup fraction (0.5 = mid-string notches even harmonics; 0.02 ≈ bridge, mellow); `damping` 0-1 interpolates loop decay from 10 s (drone) to 0.1 s (snappy). Bow engages on `note` and releases on `release` (or sequencer gate). e.g. `bowed 110 0.6 0.1 0.2` then `note C2`. |
+| `ping <fund> [tone] [damping] [brightness]` | West Coast Low-Pass Gate (Buchla 292-style) + saw/square morph carrier. `tone` 0-1 morphs square↔saw; `damping` 0-1 maps the LPG fall time exponentially from 80 ms (snappy) to 600 ms (sustained); `brightness` 0-1 maps the peak cutoff exponentially from 50 Hz (always dark) to 6 kHz (fully open). Re-pings on every `note` / sequencer step. e.g. `ping 220 1 0.2 0.8` then `note A3`. |
 
 FM operator format is `ratio:level` (e.g., `fm 0 1:1 2:0.5 3:0.3 4:0.2`).
 Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).

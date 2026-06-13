@@ -26,6 +26,8 @@
 #include <ideath/ModalResonator.h>
 #include <ideath/GranularProcessor.h>
 #include <ideath/HarmonicOscillator.h>
+#include <ideath/BowedString.h>
+#include <ideath/LowPassGateVoice.h>
 
 namespace ideath { namespace repl {
 
@@ -73,6 +75,8 @@ private:
     ModalResonator modal_;
     GranularProcessor granular_;
     HarmonicOscillator harmonic_;
+    BowedString bowed_;
+    LowPassGateVoice ping_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;

@@ -44,6 +44,9 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch |
 | **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze |
 | **HarmonicOscillator** | Plaits-style additive engine — up to 32 harmonically-related sines with LOW/MID/HIGH band controls and within-band taper |
+| **BowedString** | Friction-driven bowed-string physical model — waveguide delay loop + analytical slip-stick friction + pickup-position comb on the output (Pressure / Position / Damping) |
+| **LowPassGate** | Buchla 292-style vactrol Low-Pass Gate — single envelope drives both VCA and VCF cutoff (Damping / Brightness); takes an external carrier |
+| **LowPassGateVoice** | LowPassGate + morphing saw↔square carrier oscillator bundled for the slothrop Ping engine (Tone / Damping / Brightness) |
 
 ## Design Principles
 

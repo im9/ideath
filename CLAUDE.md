@@ -88,6 +88,9 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **ModalResonator** — Bell engine: N parallel BPs (modes) with per-partial Q derived from decay (`Q = π × fc × decay / ln(1000)`), struck by a short noise burst; piano-string inharmonicity stretch (`f_i = fundamental × ratio_i × sqrt(1 + B × ratio_i²)`); Nyquist-muted partials
 - **GranularProcessor** — Granular cloud (ring buffer + Hann-windowed grain pool), grain rate / size / pitch spread / position scatter / freeze; pool-exhaustion graceful; deterministic given a fixed RNG seed
 - **HarmonicOscillator** — Plaits-style additive engine: sum of up to 32 harmonically-related sines, Plaits-style LOW/MID/HIGH band amplitudes with within-band taper (`shape`), per-partial amplitude override; partials above Nyquist silently muted; deterministic phase init
+- **BowedString** — Friction-driven physical model (sustained sibling of `KarplusStrong`). Single waveguide delay loop with analytical hyperbolic friction (`f = pressure × scale × v_rel × exp(-k|v_rel|)`, peak normalised to 1.0), LP-feedback timbre, `tanh` loop saturator; second tap into the same loop implements a pickup-position comb on the output (mid-string notches even harmonics, near-bridge passes through cleanly). Damping interpolates a 10 s → 0.1 s decay time at fixed loop-gain budget
+- **LowPassGate** — Vactrol / Buchla-292-style Low-Pass Gate: single `trigger(velocity)` fires a ~1 ms exponential attack + `damping`-controlled exponential fall (80 ms → 600 ms log-linear) that drives BOTH a VCA and a VCF (Biquad LP, cutoff exponentially mapped from 50 Hz at envelope=0 to `brightness`-controlled peak at envelope=1). `process(carrier)` takes an external tonal source
+- **LowPassGateVoice** — Carrier-bundled LPG: morphing saw↔square `Oscillator` through `LowPassGate`. Slothrop's "Ping" engine; matches the 3-knob Tone / Damping / Brightness UI directly
 
 ### Design Principles
 - **JUCE-free** — no JUCE headers in the library; JUCE stays in the plugin layer
@@ -108,6 +111,8 @@ Polyphony) are excluded because the REPL itself serves that role.
   | UnisonOscillator | ±√N (up to ±4) | N voices in-phase, gain comp ÷√N |
   | ModalResonator | ±N (up to ±16) | N parallel BPs with per-partial Q derived from decay; BP output multiplied by Q to compensate 0 dB-peak normalisation → per-partial peak ≈ 1, N partials sum to ≈ ±N in worst-case phase alignment |
   | HarmonicOscillator | ±N (up to ±32) | N partials at amp 1.0 sum to ±N in worst-case phase alignment; typical observed peak ≈ √(N/2)·√(2 ln M) ≈ ±18 over a 1 s window of random-phase init |
+  | BowedString | ±2.0 | output is `mainTap − pickupTap`; each tap saturates inside `tanh()` to `[−1, 1]`, so the comb difference is bounded by `|tap| + |tap| = 2` by triangle inequality |
+  | LowPassGate / LowPassGateVoice | ±1.3 | LP DC gain = 1, RBJ LP Q=0.707 peaks at ≈ +1 dB ≈ ×1.12; envelope ∈ [0, velocity], velocity ≤ 1, carrier ∈ [−1, 1] → `LP-peak × envelope × carrier` ≤ 1.12 with brief cutoff-sweep transients up to ~1.2 |
   | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions

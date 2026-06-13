@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ideath/HarmonicOscillator.h>
+#include <ideath/BowedString.h>
+#include <ideath/LowPassGate.h>
 #include <atomic>
 #include <cstdint>
 
@@ -8,7 +10,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -145,6 +147,30 @@ struct VoiceParams
     float harmonicMid      = 0.5f;
     float harmonicHigh     = 0.25f;
     float harmonicShape    = 0.0f;
+
+    // BowedString (friction-driven physical model, Bow engine).  Fundamental
+    // tracks `frequency`; the bow is held on at a fixed mid-curve velocity
+    // (0.3, matching the friction-curve operating regime) whenever a note
+    // is active, and released to 0 on note-off.  Pressure / Position /
+    // Damping match the slothrop 3-knob Bow UI.
+    float bowedPressure = 0.6f;
+    float bowedPosition = 0.1f;
+    float bowedDamping  = 0.2f;
+    /// Bow velocity used while a note is active.  Tuned to the friction
+    /// peak v_rel = 1/kFrictionK = 0.2 plus a small overhead so the loop
+    /// sits in the negative-slope (slip) regime where self-oscillation
+    /// lives.  Below 0.1 the model goes quiet; above ~0.5 it saturates
+    /// into a duller tone.
+    float bowedVelocity = 0.3f;
+
+    // LowPassGateVoice (Buchla 292-style LPG + saw/square morph carrier,
+    // Ping engine).  `tone` is the carrier morph (0 = square, 1 = saw).
+    // `damping` controls LPG fall time (80 ms → 600 ms).  `brightness`
+    // controls peak LPG cutoff (50 Hz → 6 kHz).  The LPG envelope is
+    // re-pinged on every note-on / sequencer step.
+    float pingTone       = 1.0f;
+    float pingDamping    = 0.3f;
+    float pingBrightness = 0.7f;
 
     // GranularProcessor (input-consuming, like delay)
     bool  granularEnabled = false;
