@@ -124,7 +124,12 @@ private:
         void clear() { state = 0.0f; }
         float process(float input, float coeff)
         {
-            state = input + (state - input) * coeff;
+            // + 1e-25f denormal injection: this is a linear feedback state per
+            // CLAUDE.md convention.  When `input` decays to zero (e.g. between
+            // sustained passages), `state` would otherwise drift exponentially
+            // toward denormal range at high `coeff`, causing the per-sample
+            // FPU slowdown that denormal-flush guards against.
+            state = input + (state - input) * coeff + 1e-25f;
             return state;
         }
     };

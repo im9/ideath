@@ -17,7 +17,9 @@ public:
 
     /// Set downsampling rate in Hz. The input is held until the next
     /// downsample step, creating the classic "staircase" effect.
-    /// Pass 0 or >= sampleRate to disable downsampling.
+    /// Pass `sampleRate` (or higher) to disable downsampling.
+    /// Values below 1 Hz are clamped to 1 Hz; `setDownsampleRate(0)` therefore
+    /// produces a maximally destructive 1-second sample hold, NOT bypass.
     void setDownsampleRate(float rateHz);
 
     float process(float input);

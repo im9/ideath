@@ -59,7 +59,6 @@ void PeakLimiter::setLookahead(float seconds)
 float PeakLimiter::process(float input)
 {
     // Write input to lookahead delay
-    int readIdx = delayWriteIdx_;
     delayBuf_[delayWriteIdx_] = input;
     if (++delayWriteIdx_ >= lookaheadSamples_)
         delayWriteIdx_ = 0;
