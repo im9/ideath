@@ -62,7 +62,8 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Noise** — xorshift32 white noise generator
 - **BandlimitedNoise** — xorshift32 noise + one-pole LP (Bandwidth: white → pink-ish → brown → random walk)
 - **Saturation** — tanh drive + polynomial soft clip
-- **Wavetable** — Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation)
+- **Wavetable** — Chiptune wavetable oscillator (4-bit Game Boy style, 256-sample max table, no band-limiting — keep the lo-fi stairstep character). For modern multi-shape band-limited synthesis use `MultiShapeWavetable`
+- **MultiShapeWavetable** — General-purpose multi-shape band-limited wavetable engine (inboil-style). 10 shapes (Sine, Square, Saw, Triangle, Pulse, SuperSaw, Metallic, Spectral, FormantA, FormantO) baked into 2048-sample tables with 9 mipmap levels keyed by playback frequency → alias-free from ~10 Hz to Nyquist. Continuous morph between adjacent shapes via `setShapePosition`. Tables are shared across instances per sample rate (mutex-guarded lazy init in `prepare()`, lock-free `process()`)
 - **BitCrusher** — Bit depth reduction + sample rate reduction (lo-fi digital)
 - **DelayLine** — Circular buffer delay with linear interpolation, feedback, dry/wet mix
 - **TapeDelay** — Tape-style delay with wow/flutter modulation, feedback LP/HP coloring, saturation
@@ -70,7 +71,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
 - **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)
-- **FMSynth** — 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired)
+- **FMSynth** — Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 spec — Sega Mega Drive sound). Algorithm 0-7 maps directly to YM2612 hardware; for general-purpose / DX7-class FM, a separate primitive would be needed
 - **Reverb** — Freeverb (8 comb + 4 allpass, size/damp/freeze, stereo out)
 - **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
 - **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
@@ -113,6 +114,7 @@ Polyphony) are excluded because the REPL itself serves that role.
   | HarmonicOscillator | ±N (up to ±32) | N partials at amp 1.0 sum to ±N in worst-case phase alignment; typical observed peak ≈ √(N/2)·√(2 ln M) ≈ ±18 over a 1 s window of random-phase init |
   | BowedString | ±2.0 | output is `mainTap − pickupTap`; each tap saturates inside `tanh()` to `[−1, 1]`, so the comb difference is bounded by `|tap| + |tap| = 2` by triangle inequality |
   | LowPassGate / LowPassGateVoice | ±1.3 | LP DC gain = 1, RBJ LP Q=0.707 peaks at ≈ +1 dB ≈ ×1.12; envelope ∈ [0, velocity], velocity ≤ 1, carrier ∈ [−1, 1] → `LP-peak × envelope × carrier` ≤ 1.12 with brief cutoff-sweep transients up to ~1.2 |
+  | MultiShapeWavetable | ±1.05 | each per-shape table is peak-normalised to 1.0, linear sample interpolation cannot exceed the max table value; small headroom (0.05) covers the worst-case shape-morph crossfade where two shapes' peaks land in phase |
   | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions

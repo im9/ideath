@@ -32,6 +32,7 @@
 #include <ideath/Voice.h>
 #include <ideath/Wavefolder.h>
 #include <ideath/Wavetable.h>
+#include <ideath/MultiShapeWavetable.h>
 
 #include <cmath>
 
@@ -190,6 +191,40 @@ TEST_CASE("Bench: Wavetable", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += wt.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: MultiShapeWavetable", "[bench]")
+{
+    // Snap to a single shape (Saw) — measures the steady-state per-sample cost:
+    // mipmap level lookup + bilinear table sample + (shape morph with frac=0
+    // collapses to one table read).
+    ideath::MultiShapeWavetable saw;
+    saw.prepare(kSR);
+    saw.setFrequency(440.0f);
+    saw.setShape(ideath::MultiShapeWavetable::Shape::Saw);
+
+    BENCHMARK("MultiShapeWavetable::process (Saw)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += saw.process();
+        return acc;
+    };
+
+    // Morph position halfway between Saw and Triangle — the bilinear-crossfade
+    // path (two table reads + lerp).  Measures upper-bound per-sample cost.
+    ideath::MultiShapeWavetable morph;
+    morph.prepare(kSR);
+    morph.setFrequency(440.0f);
+    morph.setShapePosition(2.5f);
+
+    BENCHMARK("MultiShapeWavetable::process (morph)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += morph.process();
         return acc;
     };
 }

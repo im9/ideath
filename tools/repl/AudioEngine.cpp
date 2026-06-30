@@ -30,6 +30,7 @@ void AudioEngine::prepare(float sampleRate)
     harmonic_.prepare(sampleRate);
     bowed_.prepare(sampleRate);
     ping_.prepare(sampleRate);
+    multiwt_.prepare(sampleRate);
     // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
     // up to 2 s of recall material at positionScatter=1.0.
     granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
@@ -131,6 +132,11 @@ void AudioEngine::applyPendingState(SharedState& shared)
         ping_.setTone(params_.pingTone);
         ping_.setDamping(params_.pingDamping);
         ping_.setBrightness(params_.pingBrightness);
+
+        // MultiShapeWavetable: morph position is block-rate (could go
+        // per-sample under modulation, but the REPL keeps it as a static
+        // selection per command).
+        multiwt_.setShapePosition(params_.multiwtPosition);
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -502,6 +508,14 @@ float AudioEngine::process()
             // tone / damping / brightness applied in applyPendingState.
             ping_.setFrequency(freq);
             sample = ping_.process();
+            break;
+
+        case SourceType::MultiShape:
+            // setFrequency is cheap (just `phaseInc_ = freq/sr` plus the
+            // mipmap-level branch in process()).  Shape position is block-rate
+            // (applyPendingState).
+            multiwt_.setFrequency(freq);
+            sample = multiwt_.process();
             break;
 
         case SourceType::None:

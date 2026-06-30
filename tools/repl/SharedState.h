@@ -3,6 +3,7 @@
 #include <ideath/HarmonicOscillator.h>
 #include <ideath/BowedString.h>
 #include <ideath/LowPassGate.h>
+#include <ideath/MultiShapeWavetable.h>
 #include <atomic>
 #include <cstdint>
 
@@ -10,7 +11,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, MultiShape, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -171,6 +172,14 @@ struct VoiceParams
     float pingTone       = 1.0f;
     float pingDamping    = 0.3f;
     float pingBrightness = 0.7f;
+
+    // MultiShapeWavetable (inboil-style multi-shape band-limited wavetable
+    // engine, distinct from chiptune-focused Wavetable).  `multiwtPosition`
+    // is a continuous morph over the 10 shapes in enum order (0=Sine, 1=Square,
+    // 2=Saw, 3=Triangle, 4=Pulse, 5=SuperSaw, 6=Metallic, 7=Spectral,
+    // 8=FormantA, 9=FormantO).  Fractional values crossfade between adjacent
+    // shapes; the REPL command accepts a shape name OR a float position.
+    float multiwtPosition = 0.0f;
 
     // GranularProcessor (input-consuming, like delay)
     bool  granularEnabled = false;

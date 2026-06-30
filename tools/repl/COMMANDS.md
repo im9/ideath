@@ -61,7 +61,8 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | Command | Description |
 |---------|-------------|
 | `osc <saw\|square> <freq>` | Oscillator source |
-| `wt <square\|saw\|tri\|sine> <freq>` | Wavetable source |
+| `wt <square\|saw\|tri\|sine> <freq>` | Wavetable source (Game Boy 4-bit, chiptune) |
+| `multiwt <shape\|pos> <freq>` | MultiShapeWavetable source (inboil-style, mipmap anti-aliased). Shape names: `sine`, `square`, `saw`, `tri`, `pulse`, `super`, `metal`, `spec`, `formA`, `formO`. Numeric arg = morph position 0-9 (fractional crossfades between shapes). |
 | `noise` | White noise source |
 | `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FM synth source (algo 0-7) |
 | `fmfb <op 0-3> <amount>` | Set FM operator feedback |

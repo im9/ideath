@@ -34,6 +34,8 @@ than comparing cross-host.
 | Oscillator::process (saw)          |           2.815 µs |        5.50 |
 | Oscillator::process (square)       |           2.818 µs |        5.50 |
 | Wavetable::process                 |           2.755 µs |        5.38 |
+| MultiShapeWavetable::process (Saw) |           2.804 µs |        5.48 |
+| MultiShapeWavetable::process (morph)|          3.035 µs |        5.93 |
 | UnisonOscillator::process          |           9.179 µs |       17.93 |
 | Noise::process                     |           1.610 µs |        3.14 |
 | LFO::process                       |           3.005 µs |        5.87 |
@@ -110,3 +112,11 @@ than comparing cross-host.
   (`setLowpass`) + one Biquad sample step + one multiply. `LowPassGateVoice`
   adds the Oscillator hot path (saw↔square morph, ~1.3 ns over the bare
   oscillator bench) on top.
+- `MultiShapeWavetable` measured 2026-06-30 on the same Apple M2 Max host.
+  Inner loop: branchy `mipmapLevelFor` (≤8 compares) + bilinear sample
+  interpolation. Snap-to-shape costs ~5.48 ns/sample, ~2% over plain `Wavetable`
+  despite the larger 2048-sample tables and mipmap-level branch — the L1
+  cache holds one mipmap level (8 KB at fp32) comfortably. Morph mode
+  (`setShapePosition` between two shapes) doubles the table reads + adds a
+  lerp, ~5.93 ns/sample (+8% vs snap). Both fit well inside any plugin's
+  per-voice budget.

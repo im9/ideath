@@ -37,7 +37,12 @@ void printHelp()
     std::cout << R"(
 ideath REPL commands:
   osc <saw|square> <freq>       Oscillator source
-  wt <square|saw|tri|sine> <freq>  Wavetable source
+  wt <square|saw|tri|sine> <freq>  Wavetable source (Game Boy 4-bit, chiptune)
+  multiwt <shape|pos> <freq>    MultiShapeWavetable source (inboil-style multi-
+                                shape band-limited engine, mipmap anti-aliased).
+                                Shape names: sine, square, saw, tri, pulse, super,
+                                metal, spec, formA, formO. Numeric arg = morph
+                                position 0-9 (fractional crossfades between shapes).
   noise                         Noise source
   fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
   unison <saw|square> <freq> [voices] [detune_cents]
@@ -150,6 +155,35 @@ bool parseCommand(const std::string& line, SharedState& shared)
             else if (tokens[1] == "saw") shared.staging.wtShape = WtShape::Saw;
             else if (tokens[1] == "tri") shared.staging.wtShape = WtShape::Triangle;
             else if (tokens[1] == "sine") shared.staging.wtShape = WtShape::Sine;
+        }
+        if (tokens.size() > 2)
+            shared.staging.frequency = parseFloat(tokens[2], 440.0f);
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "multiwt")
+    {
+        // multiwt <shape_name | position> [freq]
+        // Shape names map to MultiShapeWavetable::Shape enum positions.
+        // Numeric arg → morph position (fractional crossfade between shapes).
+        shared.staging.source = SourceType::MultiShape;
+        if (tokens.size() > 1)
+        {
+            const std::string& a = tokens[1];
+            float pos = -1.0f;
+            if      (a == "sine")     pos = 0.0f;
+            else if (a == "square")   pos = 1.0f;
+            else if (a == "saw")      pos = 2.0f;
+            else if (a == "tri")      pos = 3.0f;
+            else if (a == "pulse")    pos = 4.0f;
+            else if (a == "super")    pos = 5.0f;
+            else if (a == "metal")    pos = 6.0f;
+            else if (a == "spec")     pos = 7.0f;
+            else if (a == "formA")    pos = 8.0f;
+            else if (a == "formO")    pos = 9.0f;
+            else                      pos = parseFloat(a, 0.0f); // numeric morph
+            shared.staging.multiwtPosition = pos;
         }
         if (tokens.size() > 2)
             shared.staging.frequency = parseFloat(tokens[2], 440.0f);

@@ -18,7 +18,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Noise** | xorshift32 white noise generator |
 | **BandlimitedNoise** | xorshift32 noise + one-pole LP (Bandwidth: white → pink-ish → brown → random walk) |
 | **Saturation** | tanh drive + polynomial soft clip |
-| **Wavetable** | Wavetable oscillator (4-bit Game Boy style or arbitrary normalized data, nearest/linear interpolation) |
+| **Wavetable** | Chiptune wavetable oscillator (4-bit Game Boy WAV-RAM style, 256-sample max, no band-limiting — keep the lo-fi stairsteps) |
+| **MultiShapeWavetable** | General-purpose multi-shape band-limited wavetable engine (inboil-style). 10 shapes × 9 mipmap levels × 2048-sample tables, continuous morph between shapes, alias-free from ~10 Hz to Nyquist |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
 | **TapeDelay** | Tape-style delay with wow/flutter modulation, feedback tone shaping, saturation |
@@ -26,7 +27,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Portamento** | Exponential pitch/value glide |
 | **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
 | **Polyphony** | Multi-voice manager (pool allocation, voice stealing, mixing) |
-| **FMSynth** | 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612-inspired) |
+| **FMSynth** | Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 / Sega Mega Drive spec) |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
 | **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
 | **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |

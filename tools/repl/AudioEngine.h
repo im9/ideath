@@ -28,6 +28,7 @@
 #include <ideath/HarmonicOscillator.h>
 #include <ideath/BowedString.h>
 #include <ideath/LowPassGateVoice.h>
+#include <ideath/MultiShapeWavetable.h>
 
 namespace ideath { namespace repl {
 
@@ -77,6 +78,7 @@ private:
     HarmonicOscillator harmonic_;
     BowedString bowed_;
     LowPassGateVoice ping_;
+    MultiShapeWavetable multiwt_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;
