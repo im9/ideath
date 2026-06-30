@@ -69,6 +69,8 @@ than comparing cross-host.
 | HallReverb::process                |          56.732 µs |      110.80 |
 | ShimmerReverb::process             |          48.479 µs |       94.69 |
 | FMSynth::process                   |          19.455 µs |       38.00 |
+| DXFMSynth::process (algo 1)        |          55.222 µs |      107.86 |
+| DXFMSynth::process (algo 32 add)   |          29.006 µs |       56.65 |
 | Voice::process                     |           4.694 µs |        9.17 |
 | Voice::process (LP filter, Q=4)    |           6.315 µs |       12.33 |
 | Osc → SVFilter → ADSR → Sat → Rvb  |          21.277 µs |       41.56 |
@@ -112,6 +114,18 @@ than comparing cross-host.
   (`setLowpass`) + one Biquad sample step + one multiply. `LowPassGateVoice`
   adds the Oscillator hot path (saw↔square morph, ~1.3 ns over the bare
   oscillator bench) on top.
+- `DXFMSynth` measured 2026-06-30 on the same Apple M2 Max host.
+  Algorithm 1 (2 carriers + 4 modulators in two stacks) is the realistic
+  "DX7 brass" workload: 108 ns/sample, ~2.8× FMSynth's 38 ns/sample at
+  1.5× the operator count plus modulator-modulator `sin()` calls. Algorithm
+  32 (additive, 6 parallel carriers, no inter-op modulation) measures 57
+  ns/sample — ~10 ns per operator, matching the per-operator `sin + env +
+  level mult` cost. At 16-voice polyphony this is ~1700 ns/sample for the
+  worst-case algo 1, still <4% of a 44.1 kHz audio thread's budget. SIMD
+  on the operator loop (4-op parallel sine + envelope tick) is the natural
+  optimisation when the iOS A15 ceiling tightens. Not landed in v1 — the
+  data-driven `kAlgorithms[32][6]` dispatch is what keeps the code
+  auditable against dexed and would need careful refactoring for SIMD.
 - `MultiShapeWavetable` measured 2026-06-30 on the same Apple M2 Max host.
   Inner loop: branchy `mipmapLevelFor` (≤8 compares) + bilinear sample
   interpolation. Snap-to-shape costs ~5.48 ns/sample, ~2% over plain `Wavetable`

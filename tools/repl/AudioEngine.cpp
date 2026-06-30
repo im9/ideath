@@ -31,6 +31,7 @@ void AudioEngine::prepare(float sampleRate)
     bowed_.prepare(sampleRate);
     ping_.prepare(sampleRate);
     multiwt_.prepare(sampleRate);
+    dxfm_.prepare(sampleRate);
     // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
     // up to 2 s of recall material at positionScatter=1.0.
     granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
@@ -137,6 +138,17 @@ void AudioEngine::applyPendingState(SharedState& shared)
         // per-sample under modulation, but the REPL keeps it as a static
         // selection per command).
         multiwt_.setShapePosition(params_.multiwtPosition);
+
+        // DXFMSynth: algorithm + per-op ratio/level/feedback are block-rate.
+        // Feedback is applied to every op (only the algorithm's feedback op
+        // actually responds — others ignore it per the DXFMSynth contract).
+        dxfm_.setAlgorithm(params_.dxfmAlgorithm);
+        for (int op = 0; op < DXFMSynth::kNumOperators; ++op)
+        {
+            dxfm_.setRatio(op, params_.dxfmRatios[op]);
+            dxfm_.setLevel(op, params_.dxfmLevels[op]);
+            dxfm_.setFeedback(op, params_.dxfmFeedback);
+        }
     }
 
     if (shared.stopRequested.load(std::memory_order_acquire))
@@ -193,6 +205,11 @@ void AudioEngine::applyPendingState(SharedState& shared)
             fm_.noteOn(baseFreq_);
         }
 
+        // DXFMSynth note on — per-op ratio/level/feedback are already
+        // pushed in applyPendingState above; here we just trigger the env.
+        if (params_.source == SourceType::DXFM)
+            dxfm_.noteOn(baseFreq_);
+
         // Karplus-Strong: re-pluck on note-on. Pitch/decay/damping/exciter
         // are applied per-sample inside process() (setters are modulation-
         // safe and cheap).
@@ -222,6 +239,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
         lastNoteOff_ = noteOff;
         env_.noteOff();
         fm_.noteOff();
+        dxfm_.noteOff();
         // BowedString: release the bow on note-off; loop rings out under
         // damping-controlled decay.
         if (params_.source == SourceType::Bowed)
@@ -270,6 +288,8 @@ void AudioEngine::applyPendingState(SharedState& shared)
                     fg_.trigger();
                 if (params_.source == SourceType::FM)
                     fm_.noteOn(freq);
+                if (params_.source == SourceType::DXFM)
+                    dxfm_.noteOn(freq, seqVelocity_);
                 if (params_.source == SourceType::KarplusStrong)
                     karplus_.pluck();
                 if (params_.source == SourceType::Modal)
@@ -298,6 +318,7 @@ void AudioEngine::advanceSequencer()
     {
         env_.noteOff();
         fm_.noteOff();
+        dxfm_.noteOff();
         // When envelope is on, the ADSR release handles the fade —
         // don't ramp gain to avoid direction-change clicks.
         // When envelope is off, the gain smoother is the only amplitude
@@ -357,6 +378,7 @@ void AudioEngine::advanceSequencer()
         // Rest: let envelope release naturally
         env_.noteOff();
         fm_.noteOff();
+        dxfm_.noteOff();
         if (!params_.envelopeEnabled)
             gainSmoother_.setTarget(0.0f);
         seqGateOpen_ = false;
@@ -516,6 +538,13 @@ float AudioEngine::process()
             // (applyPendingState).
             multiwt_.setFrequency(freq);
             sample = multiwt_.process();
+            break;
+
+        case SourceType::DXFM:
+            // Pitch tracked per-sample via noteOn at the seq step level —
+            // here we just pull the next sample.  Per-op ratios / levels /
+            // feedback are block-rate (applyPendingState above).
+            sample = dxfm_.process();
             break;
 
         case SourceType::None:

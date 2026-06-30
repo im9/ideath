@@ -44,7 +44,11 @@ ideath REPL commands:
                                 metal, spec, formA, formO. Numeric arg = morph
                                 position 0-9 (fractional crossfades between shapes).
   noise                         Noise source
-  fm <algo> [ratios] [levels]   FM synth source (algo 0-7)
+  fm <algo> [ratios] [levels]   FM synth source (YM2612 chiptune, algo 0-7)
+  dxfm <algo 1-32> [r1:l1 ... r6:l6]
+                                DXFMSynth source (DX7-style, 32 algorithms,
+                                6 operators). Left-to-right: OP1, OP2, ... OP6.
+  dxfb <amount>                 Feedback amount for dxfm (algorithm's FB op only)
   unison <saw|square> <freq> [voices] [detune_cents]
                                 Unison oscillator source
   pluck [freq] [decay] [damp] [exciter]
@@ -221,6 +225,56 @@ bool parseCommand(const std::string& line, SharedState& shared)
             }
         }
         shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "dxfm")
+    {
+        // dxfm <algo 1-32> [r1:l1] [r2:l2] ... [r6:l6]
+        // Algorithm uses DX7 numbering (1-32) externally; stored internally
+        // 0-indexed.  Operator order matches DX7 lingo (OP1..OP6 = op[5]..op[0]),
+        // i.e. the first ratio:level slot maps to op[5] (typically a carrier).
+        shared.staging.source = SourceType::DXFM;
+        if (tokens.size() > 1)
+        {
+            int algoOneBased = parseInt(tokens[1], 32);
+            int idx = std::clamp(algoOneBased - 1, 0, 31);
+            shared.staging.dxfmAlgorithm = idx;
+        }
+        for (size_t i = 2; i < tokens.size() && (i - 2) < 6; ++i)
+        {
+            // op[5] corresponds to DX7 OP1, op[4] to OP2, ... — but the
+            // command surfaces it left-to-right as the user types.  We map
+            // tokens[i] for i=2 → op[5], i=3 → op[4], ..., i=7 → op[0].
+            int op = 5 - static_cast<int>(i - 2);
+            auto colonPos = tokens[i].find(':');
+            if (colonPos != std::string::npos)
+            {
+                shared.staging.dxfmRatios[op] = parseFloat(tokens[i].substr(0, colonPos), 1.0f);
+                shared.staging.dxfmLevels[op] = parseFloat(tokens[i].substr(colonPos + 1), 1.0f);
+            }
+            else
+            {
+                shared.staging.dxfmRatios[op] = parseFloat(tokens[i], 1.0f);
+            }
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "dxfb")
+    {
+        // dxfb <amount 0-1>  — feedback for the DXFMSynth's algorithm-defined
+        // feedback operator (only the FB op responds; others ignore it).
+        if (tokens.size() > 1)
+        {
+            shared.staging.dxfmFeedback = std::clamp(parseFloat(tokens[1], 0.0f), 0.0f, 1.0f);
+            shared.paramsReady.store(true, std::memory_order_release);
+        }
+        else
+        {
+            std::cout << "Usage: dxfb <amount 0-1>" << std::endl;
+        }
         return true;
     }
 

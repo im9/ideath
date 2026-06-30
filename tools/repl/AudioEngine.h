@@ -29,6 +29,7 @@
 #include <ideath/BowedString.h>
 #include <ideath/LowPassGateVoice.h>
 #include <ideath/MultiShapeWavetable.h>
+#include <ideath/DXFMSynth.h>
 
 namespace ideath { namespace repl {
 
@@ -79,6 +80,7 @@ private:
     BowedString bowed_;
     LowPassGateVoice ping_;
     MultiShapeWavetable multiwt_;
+    DXFMSynth dxfm_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;

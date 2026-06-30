@@ -64,8 +64,10 @@ Each stage can be independently enabled/disabled. LFO and Portamento act as modu
 | `wt <square\|saw\|tri\|sine> <freq>` | Wavetable source (Game Boy 4-bit, chiptune) |
 | `multiwt <shape\|pos> <freq>` | MultiShapeWavetable source (inboil-style, mipmap anti-aliased). Shape names: `sine`, `square`, `saw`, `tri`, `pulse`, `super`, `metal`, `spec`, `formA`, `formO`. Numeric arg = morph position 0-9 (fractional crossfades between shapes). |
 | `noise` | White noise source |
-| `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FM synth source (algo 0-7) |
-| `fmfb <op 0-3> <amount>` | Set FM operator feedback |
+| `fm <algo> [r1:l1] [r2:l2] [r3:l3] [r4:l4]` | FMSynth source (YM2612 chiptune, 4 op × 8 algo) |
+| `fmfb <op 0-3> <amount>` | Set FMSynth operator feedback |
+| `dxfm <algo 1-32> [r1:l1 ... r6:l6]` | DXFMSynth source (DX7-style, 6 op × 32 algo). Left-to-right slots map to OP1..OP6. |
+| `dxfb <amount>` | dxfm feedback amount (applies to the algorithm's feedback operator) |
 | `unison <saw\|square> <freq> [voices] [detune_cents]` | Unison oscillator (default 5 voices, 15 cents) |
 | `pluck [freq] [decay_sec] [damping] [exciter]` | Karplus-Strong plucked string (defaults: 220 Hz, 1 s, 0.3, 1.0). Re-plucks on every `note` / sequencer step. |
 | `modal <fund> [partials] [decay] [inharm]` | Bell / chime engine. `partials` 1-16, `decay` seconds (uniform across partials), `inharm` 0-1 stretches upper partials. Struck on every note-on / sequencer step. e.g. `modal 220 12 1.5 0.4` then `note C3`. |

@@ -71,7 +71,8 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
 - **Polyphony** — Multi-voice manager (pool allocation, voice stealing, mixing)
-- **FMSynth** — Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 spec — Sega Mega Drive sound). Algorithm 0-7 maps directly to YM2612 hardware; for general-purpose / DX7-class FM, a separate primitive would be needed
+- **FMSynth** — Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 spec — Sega Mega Drive sound). Algorithm 0-7 maps directly to YM2612 hardware. For general-purpose / DX7-class FM use `DXFMSynth`
+- **DXFMSynth** — General-purpose DX7-style FM synthesizer: 6 operators × 32 algorithms (DX7 wiring table sourced from dexed/msfa). Per-op continuous ratio + fine detune (cents) + ADSR + feedback + velocity sensitivity, plus per-op PMS/AMS for the global LFO (sine/tri/sq/saw/S&H). NOT DX7-patch-compatible (no rate scaling, no key scaling level, uses ADSR instead of DX7's 4-stage rate/level envelope); just borrows the algorithm topology. Operator indexing `op[0]` = DX7 OP6, `op[5]` = DX7 OP1 (matches dexed storage order)
 - **Reverb** — Freeverb (8 comb + 4 allpass, size/damp/freeze, stereo out)
 - **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
 - **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
@@ -115,6 +116,7 @@ Polyphony) are excluded because the REPL itself serves that role.
   | BowedString | ±2.0 | output is `mainTap − pickupTap`; each tap saturates inside `tanh()` to `[−1, 1]`, so the comb difference is bounded by `|tap| + |tap| = 2` by triangle inequality |
   | LowPassGate / LowPassGateVoice | ±1.3 | LP DC gain = 1, RBJ LP Q=0.707 peaks at ≈ +1 dB ≈ ×1.12; envelope ∈ [0, velocity], velocity ≤ 1, carrier ∈ [−1, 1] → `LP-peak × envelope × carrier` ≤ 1.12 with brief cutoff-sweep transients up to ~1.2 |
   | MultiShapeWavetable | ±1.05 | each per-shape table is peak-normalised to 1.0, linear sample interpolation cannot exceed the max table value; small headroom (0.05) covers the worst-case shape-morph crossfade where two shapes' peaks land in phase |
+  | DXFMSynth | ±1.5 | output is `Σ carriers / carrierCount × 0.85`; each carrier saturates at ±1 (sin × env × level × velFactor ≤ 1 × 1 × 1 × 1), so the worst-case in-phase sum equals `numCarriers × 1 ÷ numCarriers × 0.85 = 0.85`. Headroom up to ±1.5 covers transient overshoot from heavy feedback (op feedback × 2π can push the operator output above 1 briefly before the 2-sample averaging tail damps it) |
   | All others | ±1.0 | oscillators, envelopes, noise, saturation, delay, etc. |
 
 ## Conventions

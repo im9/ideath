@@ -8,6 +8,7 @@
 #include <ideath/DelayLine.h>
 #include <ideath/Envelope.h>
 #include <ideath/FMSynth.h>
+#include <ideath/DXFMSynth.h>
 #include <ideath/FeedbackBuffer.h>
 #include <ideath/FunctionGenerator.h>
 #include <ideath/GranularProcessor.h>
@@ -524,6 +525,57 @@ TEST_CASE("Bench: FMSynth", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += fm.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: DXFMSynth", "[bench]")
+{
+    // Algorithm 0 (DX7 algo 1) — two carriers, four modulators in two stacks.
+    // Realistic "DX7 brass" config: all six ops contribute to the render.
+    ideath::DXFMSynth fm;
+    fm.prepare(kSR);
+    fm.setAlgorithm(0);
+    for (int op = 0; op < ideath::DXFMSynth::kNumOperators; ++op)
+    {
+        fm.setRatio(op, 1.0f + 0.5f * static_cast<float>(op));
+        fm.setLevel(op, op >= 3 ? 1.0f : 0.6f);
+        fm.setFeedback(op, op == 0 ? 0.5f : 0.0f);
+        fm.setAttack(op, 0.005f);
+        fm.setDecay(op, 0.1f);
+        fm.setSustain(op, 0.5f);
+        fm.setRelease(op, 0.2f);
+    }
+    fm.noteOn(440.0f);
+
+    BENCHMARK("DXFMSynth::process (algo 1)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += fm.process();
+        return acc;
+    };
+
+    // Algorithm 31 (DX7 algo 32) — all 6 carriers, additive.  Same operator
+    // count to render but no inter-op modulation (modIn always 0).  Measures
+    // upper bound on the carrier-summing path.
+    ideath::DXFMSynth fmAdd;
+    fmAdd.prepare(kSR);
+    fmAdd.setAlgorithm(31);
+    for (int op = 0; op < ideath::DXFMSynth::kNumOperators; ++op)
+    {
+        fmAdd.setRatio(op, 1.0f + 0.5f * static_cast<float>(op));
+        fmAdd.setLevel(op, 0.7f);
+        fmAdd.setAttack(op, 0.005f);
+        fmAdd.setSustain(op, 1.0f);
+    }
+    fmAdd.noteOn(440.0f);
+
+    BENCHMARK("DXFMSynth::process (algo 32, additive)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += fmAdd.process();
         return acc;
     };
 }

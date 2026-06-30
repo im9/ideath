@@ -4,6 +4,7 @@
 #include <ideath/BowedString.h>
 #include <ideath/LowPassGate.h>
 #include <ideath/MultiShapeWavetable.h>
+#include <ideath/DXFMSynth.h>
 #include <atomic>
 #include <cstdint>
 
@@ -11,7 +12,7 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
-enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, MultiShape, None };
+enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, MultiShape, DXFM, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
 enum class FilterType { Off, Lowpass, Highpass, Bandpass };
@@ -180,6 +181,16 @@ struct VoiceParams
     // 8=FormantA, 9=FormantO).  Fractional values crossfade between adjacent
     // shapes; the REPL command accepts a shape name OR a float position.
     float multiwtPosition = 0.0f;
+
+    // DXFMSynth (DX7-style general-purpose FM, distinct from chiptune-focused
+    // FMSynth).  32 algorithms, 6 ops, per-op ratio/level/feedback/detune.
+    // The REPL exposes only the common-case knobs (algorithm, ratios, levels,
+    // feedback); per-op envelope and LFO sensitivity stay at sensible defaults
+    // until a deeper command is added.
+    int   dxfmAlgorithm = 31;       // DX7 alg 32 (additive) as default
+    float dxfmRatios[6] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+    float dxfmLevels[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f }; // last op = single carrier
+    float dxfmFeedback  = 0.0f;     // applied to the algorithm's feedback op
 
     // GranularProcessor (input-consuming, like delay)
     bool  granularEnabled = false;

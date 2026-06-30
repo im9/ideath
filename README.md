@@ -28,6 +28,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
 | **Polyphony** | Multi-voice manager (pool allocation, voice stealing, mixing) |
 | **FMSynth** | Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 / Sega Mega Drive spec) |
+| **DXFMSynth** | DX7-style 6-operator FM synth (32 algorithms from dexed/msfa table, per-op ratio/detune/level/ADSR/feedback/velocity/LFO sensitivities, global LFO with PMS/AMS routing). Not DX7-patch-compatible — uses ADSR envelopes and continuous-ratio parameters instead of DX7's quantized/rate-scaled originals |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
 | **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
 | **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
