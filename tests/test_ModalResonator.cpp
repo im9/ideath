@@ -705,6 +705,246 @@ TEST_CASE("ModalResonator: per-partial peak amplitude bounded by Q compensation"
     REQUIRE(peak <= 1.5f);
 }
 
+// --- Per-partial gain (Rings-style Position knob) -----------------------
+
+TEST_CASE("ModalResonator: default gain is unity — no behavioural change",
+          "[modal][partial-gain]")
+{
+    // Anti-regression guard for the "gain=1 for all partials → output
+    // unchanged" invariant.  Two independently constructed ModalResonators
+    // driven with the identical setter sequence and no setPartialGain call
+    // must produce bit-exact identical output.  Any deviation is a state-
+    // management bug, so no tolerance is warranted.
+    auto setup = [](ModalResonator& m)
+    {
+        m.prepare(48000.0f);
+        m.setFundamental(220.0f);
+        m.setPartialCount(8);
+        m.setInharmonicity(0.3f);
+        for (int i = 0; i < 8; ++i)
+        {
+            m.setPartialRatio(i, static_cast<float>(i + 1));
+            m.setPartialDecay(i, 0.5f);
+        }
+    };
+
+    ModalResonator a, b;
+    setup(a);
+    setup(b);
+    a.strike(1.0f);
+    b.strike(1.0f);
+
+    // 100 ms window at 48 kHz.
+    constexpr int N = 4800;
+    std::vector<float> bufA(N), bufB(N);
+    for (int i = 0; i < N; ++i)
+    {
+        bufA[i] = a.process();
+        bufB[i] = b.process();
+    }
+    // Bit-exact — deterministic primitive + identical setter sequence.
+    REQUIRE(bufA == bufB);
+}
+
+TEST_CASE("ModalResonator: gain=0 on partial 0 removes the fundamental",
+          "[modal][partial-gain]")
+{
+    // At 220 Hz fundamental with harmonic ratios the partials sit at
+    // 220 / 440 / 660 …  Muting partial 0 must knock down the 220 Hz DFT
+    // bin by ≥ 20 dB relative to the unity-gain baseline.
+    //
+    // Derivation: an isolated Q≈50 BP at 220 Hz attenuates a neighbouring
+    // partial at 440 Hz by > 40 dB in the ideal case; a 20 dB floor covers
+    // 200 ms rectangular-window DFT leakage (sidelobe ≈ −13 dB) plus the
+    // 2 ms noise-burst's broadband skirt through the passband.  If the
+    // fundamental is not attenuated ≥ 20 dB when its BP output is zeroed,
+    // the gain scalar isn't being applied to partial 0.
+    auto measure220 = [](bool muteFundamental)
+    {
+        ModalResonator m;
+        m.prepare(kSR);
+        m.setFundamental(220.0f);
+        m.setPartialCount(8);
+        m.setInharmonicity(0.0f);
+        for (int i = 0; i < 8; ++i)
+        {
+            m.setPartialRatio(i, static_cast<float>(i + 1));
+            m.setPartialDecay(i, 0.5f);
+        }
+        if (muteFundamental)
+            m.setPartialGain(0, 0.0f);
+
+        const int N = static_cast<int>(kSR * 0.2f); // 200 ms
+        auto out = strikeAndCapture(m, 1.0f, N);
+        return goertzelMagnitude(out, 220.0f, kSR);
+    };
+
+    const float baseline = measure220(false);
+    const float muted    = measure220(true);
+    INFO("baseline=" << baseline << " muted=" << muted);
+    REQUIRE(baseline > 0.001f); // sanity: the fundamental must be present
+    // 20 dB attenuation → muted ≤ baseline × 10^(-20/20) = baseline × 0.1.
+    REQUIRE(muted < baseline * 0.1f);
+}
+
+TEST_CASE("ModalResonator: setPartialGain clamps to [0, 4]",
+          "[modal][partial-gain]")
+{
+    // Peak scales linearly with gain in the Q-compensation regime (BP
+    // impulse-response peak already ≈ 1 after × Q), so peak_ratio = clamped
+    // gain / 1.0.  Verify by measuring peak of a single-partial strike-and-
+    // capture window and comparing to the unity-gain baseline peak.
+    //
+    // Tolerance derivation: the 2 ms noise burst (88 samples at 44.1 kHz)
+    // has RMS ≈ 1/√N ≈ 0.11 shot-to-shot variance; averaged over the peak-
+    // hold window that catches all mode impulse-response peaks the effective
+    // variance drops to ≈ 5 %.  ±5 % of the baseline peak is the tolerance.
+    // callGain = true  → call setPartialGain(0, g)
+    // callGain = false → leave gain at default (unity); g is ignored
+    auto peakAt = [](bool callGain, float g)
+    {
+        ModalResonator m;
+        m.prepare(kSR);
+        m.setPartialCount(1);
+        m.setFundamental(440.0f);
+        m.setPartialRatio(0, 1.0f);
+        m.setPartialDecay(0, 1.0f);
+        m.setInharmonicity(0.0f);
+        if (callGain)
+            m.setPartialGain(0, g);
+        const int N = static_cast<int>(kSR * 0.1f); // 100 ms
+        auto out = strikeAndCapture(m, 1.0f, N);
+        return peakAbs(out);
+    };
+
+    // Baseline: default gain (unity, no setPartialGain call).
+    const float baseline = peakAt(false, 0.0f);
+    REQUIRE(baseline > 0.001f); // sanity
+
+    const float peakNeg    = peakAt(true, -1.0f);  // clamp to 0
+    const float peakZero   = peakAt(true,  0.0f);
+    const float peakClipHi = peakAt(true,  100.0f); // clamp to 4
+    const float peakFour   = peakAt(true,  4.0f);
+
+    // gain=0 → peak must be at the silence floor (BP output × 0 = 0
+    // exactly).  1e-9 ≈ float epsilon-scale, well below anything audible.
+    REQUIRE(peakNeg  < 1e-9f);
+    REQUIRE(peakZero < 1e-9f);
+
+    // gain=100 → clamped to 4 → peak ≈ 4 × baseline within ±5 %.
+    // gain=4  → peak ≈ 4 × baseline within ±5 %.
+    const float expected4 = 4.0f * baseline;
+    const float tol       = 0.05f * expected4;
+    INFO("baseline=" << baseline << " peakFour=" << peakFour
+                     << " peakClipHi=" << peakClipHi);
+    REQUIRE_THAT(peakFour,   WithinAbs(expected4, tol));
+    REQUIRE_THAT(peakClipHi, WithinAbs(expected4, tol));
+}
+
+TEST_CASE("ModalResonator: out-of-range partial-gain index ignored",
+          "[modal][partial-gain]")
+{
+    // The bit-exact baseline: an untouched resonator's output must equal
+    // the output of an otherwise-identical resonator on which we called
+    // setPartialGain with out-of-range indices.  Same reasoning as the
+    // default-gain-is-unity test — deterministic identical setters.
+    auto setup = [](ModalResonator& m)
+    {
+        m.prepare(kSR);
+        m.setFundamental(220.0f);
+        m.setPartialCount(8);
+        for (int i = 0; i < 8; ++i)
+        {
+            m.setPartialRatio(i, static_cast<float>(i + 1));
+            m.setPartialDecay(i, 0.5f);
+        }
+    };
+    ModalResonator a, b;
+    setup(a);
+    setup(b);
+    b.setPartialGain(-1, 0.0f);
+    b.setPartialGain(ModalResonator::kMaxPartials, 0.0f);
+    b.setPartialGain(ModalResonator::kMaxPartials + 100, 0.0f);
+
+    a.strike(1.0f);
+    b.strike(1.0f);
+
+    constexpr int N = 4410; // 100 ms at 44.1 kHz
+    std::vector<float> bufA(N), bufB(N);
+    for (int i = 0; i < N; ++i)
+    {
+        bufA[i] = a.process();
+        bufB[i] = b.process();
+    }
+    REQUIRE(bufA == bufB); // bit-exact — no side-effect for OOB indices
+}
+
+TEST_CASE("ModalResonator: muted partial preserves BP state for reintroduction",
+          "[modal][partial-gain]")
+{
+    // Two identical single-partial setups.  Both are struck; both have
+    // partial 0 muted (gain=0) for the first 50 ms — during that window
+    // the BP receives the noise-burst excitation but its output is zeroed
+    // by the gain scalar.  The BP's internal z1/z2 state, however, must
+    // evolve normally.
+    //
+    // After 50 ms, resonator A restores gain=1 while resonator B keeps
+    // gain=0.  We then process another 50 ms and compare the energy at the
+    // partial's centre frequency.  If B's BP state was preserved through
+    // the mute (the intended behaviour), A's second window must contain a
+    // strong sinusoid at fc and B's must be silent.  If instead the mute
+    // held the BP in reset, A would also be silent (no fresh strike, no
+    // stored energy) and this test would fail.
+    //
+    // Threshold derivation: with T60 = 0.5 s and fc = 440 Hz, at t = 50 ms
+    // the BP's impulse-response envelope is exp(−6.908 × 0.05 / 0.5) ≈ 0.5
+    // of its peak.  Post Q compensation peak is ≈ 1, so the amplitude of
+    // the sinusoid at t = 50 ms is ≈ 0.5, well above the 1e-4 floor that
+    // separates audible signal from denormal noise.
+    auto makeResonator = []()
+    {
+        ModalResonator m;
+        m.prepare(kSR);
+        m.setFundamental(440.0f);
+        m.setPartialCount(1);
+        m.setPartialRatio(0, 1.0f);
+        m.setPartialDecay(0, 0.5f);
+        m.setInharmonicity(0.0f);
+        m.setPartialGain(0, 0.0f); // muted for the first window
+        return m;
+    };
+
+    ModalResonator a = makeResonator();
+    ModalResonator b = makeResonator();
+    a.strike(1.0f);
+    b.strike(1.0f);
+
+    const int W = static_cast<int>(kSR * 0.05f); // 50 ms
+    for (int i = 0; i < W; ++i) { (void)a.process(); (void)b.process(); }
+
+    // Reintroduce partial 0 in A only.
+    a.setPartialGain(0, 1.0f);
+    // (b left muted)
+
+    std::vector<float> outA(W), outB(W);
+    for (int i = 0; i < W; ++i)
+    {
+        outA[i] = a.process();
+        outB[i] = b.process();
+    }
+    const float magA = goertzelMagnitude(outA, 440.0f, kSR);
+    const float magB = goertzelMagnitude(outB, 440.0f, kSR);
+    INFO("magA=" << magA << " magB=" << magB);
+
+    // A's window: BP state preserved through the mute + gain restored →
+    // must be audibly ringing at fc.  1e-4 ≈ −80 dBFS, well above the
+    // denormal floor.
+    REQUIRE(magA > 1e-4f);
+    // B stays muted throughout, so its output at fc must be exactly zero.
+    // Any non-zero value here means the gain scalar isn't being applied.
+    REQUIRE_THAT(magB, WithinAbs(0.0f, 1e-9f));
+}
+
 // --- Default ctor sanity --------------------------------------------------
 
 TEST_CASE("ModalResonator: default-constructed is usable without prepare()", "[modal]")

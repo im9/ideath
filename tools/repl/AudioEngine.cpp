@@ -108,7 +108,10 @@ void AudioEngine::applyPendingState(SharedState& shared)
         modal_.setPartialCount(params_.modalPartials);
         modal_.setInharmonicity(params_.modalInharmonicity);
         for (int i = 0; i < ideath::ModalResonator::kMaxPartials; ++i)
+        {
             modal_.setPartialDecay(i, params_.modalDecay);
+            modal_.setPartialGain(i, params_.modalPartialGain[i]);
+        }
 
         // HarmonicOscillator: bands + partial count are block-rate.  The
         // fundamental is pitch-modulated and so pushed per-sample below.

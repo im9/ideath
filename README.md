@@ -43,7 +43,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
 | **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
 | **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain |
-| **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch |
+| **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch, per-partial output gain for Rings-style Position-knob amplitude shaping |
 | **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze |
 | **HarmonicOscillator** | Plaits-style additive engine — up to 32 harmonically-related sines with LOW/MID/HIGH band controls and within-band taper |
 | **BowedString** | Friction-driven bowed-string physical model — waveguide delay loop + analytical slip-stick friction + pickup-position comb on the output (Pressure / Position / Damping) |

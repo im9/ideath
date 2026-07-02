@@ -19,6 +19,7 @@ ModalResonator::ModalResonator()
         decay_[i]    = 0.5f;
         qCached_[i]  = kMinQ;
         alive_[i]    = true;
+        gain_[i]     = 1.0f;
     }
 }
 
@@ -87,6 +88,14 @@ void ModalResonator::setPartialDecay(int idx, float seconds)
     updatePartial(idx);
 }
 
+void ModalResonator::setPartialGain(int idx, float gain)
+{
+    if (idx < 0 || idx >= kMaxPartials)
+        return;
+    // Clamp to [0, 4] — see header comment for the ceiling derivation.
+    gain_[idx] = std::clamp(gain, 0.0f, 4.0f);
+}
+
 void ModalResonator::setInharmonicity(float amount)
 {
     const float clamped = std::clamp(amount, 0.0f, 1.0f);
@@ -127,7 +136,7 @@ float ModalResonator::process()
         if (!alive_[i])
             continue;
         const float bp = partial_[i].process(excitation);
-        sum += bp * qCached_[i];
+        sum += bp * qCached_[i] * gain_[i];
     }
     return sum;
 }

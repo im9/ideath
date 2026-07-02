@@ -3,8 +3,10 @@
 #include <ideath/HarmonicOscillator.h>
 #include <ideath/BowedString.h>
 #include <ideath/LowPassGate.h>
+#include <ideath/ModalResonator.h>
 #include <ideath/MultiShapeWavetable.h>
 #include <ideath/DXFMSynth.h>
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -137,6 +139,13 @@ struct VoiceParams
     int   modalPartials      = 8;
     float modalDecay         = 0.7f;
     float modalInharmonicity = 0.0f;
+    // Per-partial gain (Rings-style Position knob).  Default 1.0 → unity
+    // per partial (matches pre-partial-gain behaviour bit-exactly).
+    // Written from the REPL via `partialgain <idx> <value>`; pushed to
+    // ModalResonator::setPartialGain at block-rate.
+    std::array<float, ideath::ModalResonator::kMaxPartials> modalPartialGain
+        = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+           1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 
     // HarmonicOscillator (Plaits-style additive engine, Loom).  Fundamental
     // tracks `frequency`; the three Plaits-style band levels and within-band

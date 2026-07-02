@@ -56,6 +56,10 @@ ideath REPL commands:
   modal <fund> [partials] [decay] [inharm]
                                 Bell engine (struck on note-on / seq step).
                                 fund Hz, partials 1-16, decay sec, inharm 0-1.
+  partialgain <idx> <value>     Modal per-partial output gain (Rings-style
+                                Position knob). idx 0-15, value 0-4.
+                                Default 1.0. gain=0 mutes idx audibly but
+                                preserves its BP state.
   harmonic <fund> [low] [mid] [high] [shape] [partials]
                                 Additive engine (Plaits-style sum of sines).
                                 fund Hz, band levels 0-1 (LOW=harm 1-3,
@@ -960,6 +964,33 @@ bool parseCommand(const std::string& line, SharedState& shared)
                   << " partials=" << shared.staging.modalPartials
                   << " decay=" << shared.staging.modalDecay << "s"
                   << " inharm=" << shared.staging.modalInharmonicity << std::endl;
+        return true;
+    }
+
+    if (cmd == "partialgain")
+    {
+        // partialgain <idx> <value>
+        // Sets the modal-resonator per-partial output gain.  Rings-style
+        // Position knob: shape which modes ring loudest without changing
+        // pitch or decay.  idx in [0, kMaxPartials); value clamped to
+        // [0, 4] by the primitive.  Out-of-range idx is silently ignored.
+        if (tokens.size() < 3)
+        {
+            std::cout << "usage: partialgain <idx> <value>" << std::endl;
+            return true;
+        }
+        const int   idx = parseInt(tokens[1], -1);
+        const float val = parseFloat(tokens[2], 1.0f);
+        if (idx < 0 || idx >= ideath::ModalResonator::kMaxPartials)
+        {
+            std::cout << "partialgain: idx out of range [0, "
+                      << ideath::ModalResonator::kMaxPartials
+                      << ")" << std::endl;
+            return true;
+        }
+        shared.staging.modalPartialGain[idx] = val;
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "partialgain[" << idx << "]=" << val << std::endl;
         return true;
     }
 
