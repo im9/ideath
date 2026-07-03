@@ -317,6 +317,130 @@ TEST_CASE("Compressor: default-constructible and produces finite output", "[comp
 // Long-run stability
 // ---------------------------------------------------------------------------
 
+TEST_CASE("Compressor: threshold clamped to [-120, 0] dB", "[comp]")
+{
+    // Setters must not trust caller input (CLAUDE.md convention). Threshold
+    // above 0 dB is meaningless for the library's ±1 signal convention:
+    // envDb = 20·log10(|input|) ≤ 0 for |input| ≤ 1, so a positive threshold
+    // would keep the compressor permanently inert. Clamping collapses
+    // positive input onto 0 dB — the effective ceiling — so a hot signal is
+    // still compressed. Similarly a threshold below -120 dB is below the
+    // envDb floor and clamps to -120 (already max-compression regime).
+    ideath::Compressor comp;
+    comp.prepare(kSampleRate);
+    comp.setRatio(4.0f);
+    comp.setAttack(0.001f);
+    comp.setRelease(0.05f);
+    comp.setMakeup(0.0f);
+
+    // Positive threshold → clamp to 0 dB. Drive with a 0.9-amp DC signal:
+    // envelope settles to 0.9 → envDb ≈ -0.915 dB, which is BELOW clamped
+    // threshold (0 dB), so gr = 0 and output = 0.9 exactly.
+    // Instead drive a DC of 1.0 → envDb = 0 = T → gr = 0 at the boundary,
+    // then step to 1.5×clip check via saturating input: use |input| exactly
+    // at 1.0 for 20·releaseτ = 1000 ms to settle envelope=1.0, then verify
+    // gainDb reaches the analytical value gr = -(0 - 0)·(1 - 1/4) = 0. At the
+    // boundary compression is transparent — the clamp is verified indirectly
+    // by requiring positive threshold does NOT leave the compressor inert
+    // for envDb > 0. Since our signal convention caps at ±1, we instead
+    // verify that a huge positive threshold behaves identically to threshold=0.
+    comp.setThreshold(0.0f);
+    float refOut = 0.0f;
+    for (int i = 0; i < 44100; ++i) refOut = comp.process(0.8f);
+
+    ideath::Compressor comp2;
+    comp2.prepare(kSampleRate);
+    comp2.setRatio(4.0f);
+    comp2.setAttack(0.001f);
+    comp2.setRelease(0.05f);
+    comp2.setMakeup(0.0f);
+    comp2.setThreshold(1000.0f);  // must clamp to 0 dB
+    float clampedOut = 0.0f;
+    for (int i = 0; i < 44100; ++i) clampedOut = comp2.process(0.8f);
+
+    // Bit-exact identity: both configurations must produce the same output.
+    REQUIRE(clampedOut == refOut);
+
+    // Lower bound: threshold below -120 clamps to -120.
+    ideath::Compressor comp3;
+    comp3.prepare(kSampleRate);
+    comp3.setRatio(4.0f);
+    comp3.setAttack(0.001f);
+    comp3.setRelease(0.05f);
+    comp3.setMakeup(0.0f);
+    comp3.setThreshold(-120.0f);
+    float refLow = 0.0f;
+    for (int i = 0; i < 44100; ++i) refLow = comp3.process(0.8f);
+
+    ideath::Compressor comp4;
+    comp4.prepare(kSampleRate);
+    comp4.setRatio(4.0f);
+    comp4.setAttack(0.001f);
+    comp4.setRelease(0.05f);
+    comp4.setMakeup(0.0f);
+    comp4.setThreshold(-1000.0f);  // must clamp to -120 dB
+    float clampedLow = 0.0f;
+    for (int i = 0; i < 44100; ++i) clampedLow = comp4.process(0.8f);
+
+    REQUIRE(clampedLow == refLow);
+}
+
+TEST_CASE("Compressor: makeup gain clamped to [-40, +40] dB", "[comp]")
+{
+    // Setters must not trust caller input (CLAUDE.md convention). Unclamped
+    // makeup lets a caller set +100 dB → 100 000× linear amplification, which
+    // breaks the plugin layer's ±1 output budget (see output-levels table in
+    // CLAUDE.md). Clamp to ±40 dB (0.01×…100× linear).
+    //
+    // Verify by pushing 0.001-amp signal through ratio=1 (transparent
+    // compression) with makeup at +∞ vs +40 dB — outputs must be identical.
+    ideath::Compressor comp;
+    comp.prepare(kSampleRate);
+    comp.setThreshold(-20.0f);
+    comp.setRatio(1.0f);  // transparent — isolates the makeup path
+    comp.setAttack(0.001f);
+    comp.setRelease(0.05f);
+    comp.setMakeup(40.0f);
+
+    ideath::Compressor comp2;
+    comp2.prepare(kSampleRate);
+    comp2.setThreshold(-20.0f);
+    comp2.setRatio(1.0f);
+    comp2.setAttack(0.001f);
+    comp2.setRelease(0.05f);
+    comp2.setMakeup(1000.0f);  // must clamp to +40 dB
+
+    for (int i = 0; i < 100; ++i)
+    {
+        const float x = 0.001f * static_cast<float>(i);
+        REQUIRE(comp.process(x) == comp2.process(x));
+    }
+
+    // Lower bound: -1000 dB clamps to -40 dB. At -40 dB makeup, 0.5 input →
+    // 0.5 × 0.01 = 0.005 output (ratio=1, transparent compression).
+    ideath::Compressor comp3;
+    comp3.prepare(kSampleRate);
+    comp3.setThreshold(-20.0f);
+    comp3.setRatio(1.0f);
+    comp3.setAttack(0.001f);
+    comp3.setRelease(0.05f);
+    comp3.setMakeup(-40.0f);
+
+    ideath::Compressor comp4;
+    comp4.prepare(kSampleRate);
+    comp4.setThreshold(-20.0f);
+    comp4.setRatio(1.0f);
+    comp4.setAttack(0.001f);
+    comp4.setRelease(0.05f);
+    comp4.setMakeup(-1000.0f);  // must clamp to -40 dB
+
+    for (int i = 0; i < 100; ++i)
+    {
+        const float x = 0.001f * static_cast<float>(i);
+        REQUIRE(comp3.process(x) == comp4.process(x));
+    }
+}
+
 TEST_CASE("Compressor: 10-second stability at extreme settings", "[comp][stability]")
 {
     // 10 s × 44.1 kHz = 441 000 samples with aggressive compression

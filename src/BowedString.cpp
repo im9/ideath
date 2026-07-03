@@ -136,7 +136,13 @@ float BowedString::process()
     const float loopInput = std::tanh(vString * loopGain_ + fricForce);
 
     // 4. Low-pass in the feedback path (timbre + decay).
-    filterState_ = (1.0f - damping_) * loopInput + damping_ * filterState_;
+    //    +1e-25f DC injection: filterState_ is a linear one-pole accumulator
+    //    on the loop feedback path. With damping near 1.0 and near-silent
+    //    excitation the state can drift into denormal range and pay the
+    //    per-sample FPU slowdown. Matches the library-wide convention (see
+    //    CLAUDE.md "Denormal protection").
+    filterState_ = (1.0f - damping_) * loopInput + damping_ * filterState_
+                 + 1e-25f;
 
     // 5. Write the post-filter value into BOTH delay lines so the two
     //    taps share the same circulating wave.

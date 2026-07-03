@@ -13,6 +13,7 @@ public:
     void reset();
 
     /// Threshold in dB (e.g., -20.0). Signal above this is compressed.
+    /// Clamped to [-120, 0]; positive values collapse to 0 dB.
     void setThreshold(float dB);
 
     /// Compression ratio (1.0 = no compression, inf = limiting).
@@ -24,7 +25,7 @@ public:
     /// Release time in seconds. How fast gain recovers.
     void setRelease(float seconds);
 
-    /// Makeup gain in dB. Applied after compression.
+    /// Makeup gain in dB. Applied after compression. Clamped to [-40, +40].
     void setMakeup(float dB);
 
     /// Knee width in dB (0 = hard knee). Soft knee smooths the transition.

@@ -29,7 +29,11 @@ void Compressor::reset()
 
 void Compressor::setThreshold(float dB)
 {
-    thresholdDb_ = dB;
+    // Clamp to [-120, 0] dB. Upper bound 0 dB: for |input| ≤ 1 (the library's
+    // ±1 convention) envDb ≤ 0 always, so any positive threshold would leave
+    // the compressor permanently inert — collapse to the effective ceiling.
+    // Lower bound -120 dB matches the envDb floor used inside process().
+    thresholdDb_ = std::clamp(dB, -120.0f, 0.0f);
 }
 
 void Compressor::setRatio(float ratio)
@@ -51,7 +55,12 @@ void Compressor::setRelease(float seconds)
 
 void Compressor::setMakeup(float dB)
 {
-    makeupLinear_ = std::pow(10.0f, dB / 20.0f);
+    // Clamp to ±40 dB (i.e. 0.01×…100× linear). 40 dB matches the widest
+    // makeup ranges found on commercial compressors, and caps the linear
+    // gain factor so the plugin layer's PeakLimiter downstream can still
+    // hold the ±1 output convention without unbounded pre-amplification.
+    const float clampedDb = std::clamp(dB, -40.0f, 40.0f);
+    makeupLinear_ = std::pow(10.0f, clampedDb / 20.0f);
 }
 
 void Compressor::setKnee(float dB)
