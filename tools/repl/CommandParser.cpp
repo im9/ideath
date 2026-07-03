@@ -87,6 +87,7 @@ ideath REPL commands:
                                 Tape delay (or "tape off")
   comb <time> <feedback> [damp] [mix]
                                 Comb filter / resonator (or "comb off")
+  allpass <time> <g>            Schroeder allpass diffusor (or "allpass off")
   granular <rate> <size> [pitchSpread] [scatter] [mix]
                                 Granular cloud (or "granular off")
   granular freeze [on|off]      Freeze granular ring buffer
@@ -522,6 +523,24 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.combDamp = parseFloat(tokens[3], 0.3f);
             if (tokens.size() > 4)
                 shared.staging.combMix = parseFloat(tokens[4], 1.0f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "allpass")
+    {
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.allpassEnabled = false;
+        }
+        else
+        {
+            shared.staging.allpassEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.allpassDelay = parseFloat(tokens[1], 0.005f);
+            if (tokens.size() > 2)
+                shared.staging.allpassFeedback = parseFloat(tokens[2], 0.6f);
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;

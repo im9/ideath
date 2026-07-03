@@ -123,6 +123,11 @@ struct VoiceParams
     float combDamp = 0.3f;
     float combMix = 1.0f;
 
+    // AllpassFilter (Schroeder diffusor)
+    bool  allpassEnabled  = false;
+    float allpassDelay    = 0.005f;
+    float allpassFeedback = 0.6f;
+
     // Unison oscillator
     int unisonVoices = 5;
     float unisonDetune = 15.0f;

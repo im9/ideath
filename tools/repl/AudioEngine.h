@@ -11,6 +11,7 @@
 #include <ideath/DelayLine.h>
 #include <ideath/TapeDelay.h>
 #include <ideath/CombFilter.h>
+#include <ideath/AllpassFilter.h>
 #include <ideath/LFO.h>
 #include <ideath/FunctionGenerator.h>
 #include <ideath/Portamento.h>
@@ -62,6 +63,7 @@ private:
     DelayLine delay_;
     TapeDelay tapeDelay_;
     CombFilter comb_;
+    AllpassFilter allpass_;
     LFO lfo_;
     FunctionGenerator fg_;
     Portamento porta_;

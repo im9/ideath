@@ -44,6 +44,7 @@ Source (osc | wt | noise | fm | unison | pluck | modal | harmonic | bowed | ping
   → DelayLine
   → TapeDelay
   → CombFilter
+  → AllpassFilter
   → Looper (FeedbackBuffer)
   → GranularProcessor
   → Reverb
@@ -90,6 +91,7 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `delay <time_sec> <feedback>` | Delay line |
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
 | `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
+| `allpass <time_sec> <g>` | Schroeder allpass diffusor (flat magnitude). `g` clamped to ±0.99. Typical diffusion coefficient 0.5–0.7. `allpass off` to disable. |
 | `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix]` | Granular cloud (2 s ring buffer) |
 | `granular freeze [on\|off]` | Freeze granular ring buffer (no on/off arg toggles) |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |

@@ -14,6 +14,7 @@ void AudioEngine::prepare(float sampleRate)
     delay_.prepare(sampleRate, 2.0f); // max 2 seconds delay
     tapeDelay_.prepare(sampleRate, 2.0f);
     comb_.prepare(sampleRate, 0.1f);
+    allpass_.prepare(sampleRate, 0.1f);
     lfo_.prepare(sampleRate);
     fg_.prepare(sampleRate);
     porta_.prepare(sampleRate);
@@ -657,6 +658,14 @@ float AudioEngine::process()
         comb_.setDamp(params_.combDamp);
         comb_.setMix(params_.combMix);
         sample = comb_.process(sample);
+    }
+
+    // --- AllpassFilter (Schroeder diffusor) ---
+    if (params_.allpassEnabled)
+    {
+        allpass_.setDelay(params_.allpassDelay);
+        allpass_.setFeedback(params_.allpassFeedback);
+        sample = allpass_.process(sample);
     }
 
     // --- Looper (FeedbackBuffer) ---

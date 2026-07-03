@@ -39,6 +39,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **UnisonOscillator** | Stacked detuned oscillators with optional analog pitch drift (unison spread) |
 | **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
 | **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
+| **AllpassFilter** | Schroeder allpass diffusor (direct-form II, integer-sample delay). Flat magnitude, phase-only reshaping — building block for diffusion networks (Freeverb tails, Gardner reverbs, sparse-impulse diffusors) |
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
 | **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
 | **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
