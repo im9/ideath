@@ -92,7 +92,7 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
 | `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
 | `allpass <time_sec> <g>` | Schroeder allpass diffusor (flat magnitude). `g` clamped to ±0.99. Typical diffusion coefficient 0.5–0.7. `allpass off` to disable. |
-| `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix]` | Granular cloud (2 s ring buffer) |
+| `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix] [pitchOffset_st]` | Granular cloud (2 s ring buffer). `pitchOffset` shifts the random spread window's centre (bipolar transposition, 0 = unity, clamped ±24 st) |
 | `granular freeze [on\|off]` | Freeze granular ring buffer (no on/off arg toggles) |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
 | `loop feedback <0-1>` | Looper overdub feedback |
@@ -288,6 +288,7 @@ ideath[1]> seq C3 E3 G3 B3 C4 B3 G3 E3 110
 ideath[1]> preset pad
 ideath[1]> note C3
 ideath[1]> granular 40 0.08 5 0.5 0.7    # 40 grains/sec, 80 ms, ±5 st, mid scatter, 70% wet
+ideath[1]> granular 40 0.08 3 0.5 0.7 12 # same, centred an octave up (bipolar transposition)
 ideath[1]> granular freeze on            # capture current buffer, keep scrubbing
 ```
 

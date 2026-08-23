@@ -681,6 +681,7 @@ float AudioEngine::process()
         granular_.setGrainRate(params_.granularRate);
         granular_.setGrainSize(params_.granularSize);
         granular_.setPitchSpread(params_.granularPitchSpread);
+        granular_.setPitchOffset(params_.granularPitchOffset);
         granular_.setPositionScatter(params_.granularScatter);
         granular_.setFreeze(params_.granularFreeze);
         granular_.writeSample(sample);

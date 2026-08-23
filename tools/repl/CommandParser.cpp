@@ -88,7 +88,7 @@ ideath REPL commands:
   comb <time> <feedback> [damp] [mix]
                                 Comb filter / resonator (or "comb off")
   allpass <time> <g>            Schroeder allpass diffusor (or "allpass off")
-  granular <rate> <size> [pitchSpread] [scatter] [mix]
+  granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
                                 Granular cloud (or "granular off")
   granular freeze [on|off]      Freeze granular ring buffer
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
@@ -550,7 +550,7 @@ bool parseCommand(const std::string& line, SharedState& shared)
     {
         // granular off                                  → disable
         // granular freeze [on|off]                      → toggle / set freeze
-        // granular <rate> <size> [pitchSpread] [scatter] [mix]
+        // granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
         if (tokens.size() > 1 && tokens[1] == "off")
         {
             shared.staging.granularEnabled = false;
@@ -577,6 +577,8 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.granularScatter = parseFloat(tokens[4], 0.5f);
             if (tokens.size() > 5)
                 shared.staging.granularMix = parseFloat(tokens[5], 0.5f);
+            if (tokens.size() > 6)
+                shared.staging.granularPitchOffset = parseFloat(tokens[6], 0.0f);
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;

@@ -11,9 +11,11 @@ namespace ideath {
 /// spawn-timer periodically launches Hann-windowed grains that read from
 /// pseudo-random positions in the buffer (scattered behind the current write
 /// head).  Each grain has an independent pitch ratio drawn from
-/// `[-pitchSpread, +pitchSpread]` semitones, played back via linear-
-/// interpolated varispeed read.  Outputs are summed and gain-compensated for
-/// the expected overlap (`grainRate * grainSize` grains in flight).
+/// `pitchOffset + [-pitchSpread, +pitchSpread]` semitones, played back via
+/// linear-interpolated varispeed read.  `pitchOffset` is the bipolar centre
+/// (default 0 = unity) and `pitchSpread` is the random deviation around it.
+/// Outputs are summed and gain-compensated for the expected overlap
+/// (`grainRate * grainSize` grains in flight).
 ///
 /// When `freeze` is enabled `writeSample()` becomes a no-op (the write
 /// pointer holds its position), so the buffer becomes a static sample source
@@ -63,9 +65,16 @@ public:
     void setGrainSize(float seconds);
 
     /// Pitch randomisation amount in semitones.  Each grain is launched at a
-    /// random pitch in `[-pitchSpread, +pitchSpread]`.  Clamped to
-    /// `[0, 24]` (two octaves either side).
+    /// random pitch in `[-pitchSpread, +pitchSpread]` around `pitchOffset`.
+    /// Clamped to `[0, 24]` (two octaves either side).
     void setPitchSpread(float semitones);
+
+    /// Global pitch centre in semitones (bipolar transposition).  Every
+    /// grain is launched at `pitchOffset + uniform(-pitchSpread, +pitchSpread)`
+    /// semitones, so this shifts the spread window without introducing
+    /// randomness.  Default 0 = unity.  Clamped to `[-24, +24]` (two octaves
+    /// either side), matching `setPitchSpread`.
+    void setPitchOffset(float semitones);
 
     /// Random read-position scatter, `[0, 1]`.  At 0 every grain starts
     /// reading at the current write head; at 1 grains may start as far back
@@ -109,7 +118,8 @@ private:
     // Parameters (raw, post-clamp).
     float grainRate_       = 20.0f;     // Hz
     float grainSize_       = 0.1f;      // seconds
-    float pitchSpread_     = 0.0f;      // semitones
+    float pitchSpread_     = 0.0f;      // semitones (±)
+    float pitchOffset_     = 0.0f;      // semitones (centre of spread window)
     float positionScatter_ = 0.5f;
     bool  frozen_          = false;
 

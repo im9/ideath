@@ -65,6 +65,15 @@ void GranularProcessor::setPitchSpread(float semitones)
     pitchSpread_ = std::clamp(semitones, 0.0f, 24.0f);
 }
 
+void GranularProcessor::setPitchOffset(float semitones)
+{
+    // Bipolar transposition centre.  Same ±24 st range as pitchSpread_ so
+    // the combined semis window (offset ± spread) stays inside ±48 st;
+    // beyond that the varispeed read aliases badly for the same reasons
+    // called out on setPitchSpread.
+    pitchOffset_ = std::clamp(semitones, -24.0f, 24.0f);
+}
+
 void GranularProcessor::setPositionScatter(float amount)
 {
     positionScatter_ = std::clamp(amount, 0.0f, 1.0f);
@@ -117,8 +126,8 @@ void GranularProcessor::trySpawnGrain()
     }
     if (!slot) return;
 
-    // Pitch: ratio = 2^(semis/12), semis ∈ [-pitchSpread, +pitchSpread].
-    const float semis = nextUniformPM1() * pitchSpread_;
+    // Pitch: ratio = 2^(semis/12), semis ∈ pitchOffset ± pitchSpread.
+    const float semis = pitchOffset_ + nextUniformPM1() * pitchSpread_;
     const float pitch = std::pow(2.0f, semis * (1.0f / 12.0f));
 
     // Read start position: a uniform offset in [0, scatter · bufferSize)

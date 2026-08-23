@@ -211,6 +211,7 @@ struct VoiceParams
     float granularRate = 40.0f;          // grains per second
     float granularSize = 0.08f;          // seconds per grain
     float granularPitchSpread = 0.0f;    // ±semitones
+    float granularPitchOffset = 0.0f;    // bipolar centre, semitones
     float granularScatter = 0.5f;        // [0, 1]
     float granularMix = 0.5f;            // dry/wet
     bool  granularFreeze = false;
