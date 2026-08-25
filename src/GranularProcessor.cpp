@@ -76,7 +76,21 @@ void GranularProcessor::setPitchOffset(float semitones)
 
 void GranularProcessor::setPositionScatter(float amount)
 {
-    positionScatter_ = std::clamp(amount, 0.0f, 1.0f);
+    // Legacy convenience form: window `[0, amount]`.  All clamping happens
+    // inside setReadWindow so both entry points share one code path.
+    setReadWindow(0.0f, amount);
+}
+
+void GranularProcessor::setReadWindow(float nearOffset01, float farOffset01)
+{
+    float n = std::clamp(nearOffset01, 0.0f, 1.0f);
+    float f = std::clamp(farOffset01, 0.0f, 1.0f);
+    // Canonicalise: if the caller passes them reversed (e.g. from a UI whose
+    // "near" marker was dragged past its "far" marker), swap so the window
+    // stays in `[min, max]` order.  Documented behaviour in the header.
+    if (n > f) std::swap(n, f);
+    readWindowNear_ = n;
+    readWindowFar_  = f;
 }
 
 void GranularProcessor::setFreeze(bool on)
@@ -130,10 +144,17 @@ void GranularProcessor::trySpawnGrain()
     const float semis = pitchOffset_ + nextUniformPM1() * pitchSpread_;
     const float pitch = std::pow(2.0f, semis * (1.0f / 12.0f));
 
-    // Read start position: a uniform offset in [0, scatter · bufferSize)
-    // samples *behind* the current write head.  Wrap into [0, bufferSize).
+    // Read start position: a uniform offset in
+    //   [readWindowNear · bufferSize, readWindowFar · bufferSize)
+    // samples *behind* the current write head, wrapped into [0, bufferSize).
+    // Note nextUniform01() is called unconditionally (even for degenerate
+    // windows where near == far) to keep RNG consumption per spawn constant
+    // — this preserves determinism across all readWindow configurations,
+    // including the equivalence setPositionScatter(x) == setReadWindow(0, x).
     const float u = nextUniform01();
-    const float offset = u * positionScatter_ * static_cast<float>(bufferSize_);
+    const float offset = (readWindowNear_
+                          + u * (readWindowFar_ - readWindowNear_))
+                         * static_cast<float>(bufferSize_);
     float readPos = static_cast<float>(writePos_) - offset;
     // Modulo into [0, bufferSize_) — keep it as float for sub-sample
     // interp.  std::floor on a negative float gives the correct positive

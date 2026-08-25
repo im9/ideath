@@ -1035,6 +1035,292 @@ TEST_CASE("GranularProcessor: determinism preserved with non-zero pitchOffset",
     }
 }
 
+// -----------------------------------------------------------------------------
+// 13. setReadWindow — [near, far] read-position bounds
+// -----------------------------------------------------------------------------
+//
+// setReadWindow(near, far) generalises setPositionScatter:
+//   offset = (near + u · (far - near)) · bufferSize     where u ~ U[0, 1)
+//   readPos = writePos - offset  (mod bufferSize)
+// Both operands are clamped to [0, 1]; if the caller passes them reversed
+// they are swapped to canonical order.
+//
+// Verified below:
+//   • setReadWindow(0.0, x) is bit-exact equivalent to setPositionScatter(x)
+//     — proves the "convenience wrapper" contract stated in the header
+//   • setReadWindow(0.5, 0.5) is a zero-width window → all grains launch at
+//     writePos - 0.5·bufferSize (no position randomness) → consecutive
+//     grains produce bit-identical waveforms against a frozen buffer
+//   • setReadWindow(0.9, 1.0) reads the OLDEST 10% of the buffer, and
+//     setReadWindow(0.0, 0.1) reads the NEWEST 10% — with a distinctive
+//     signal placed only in the oldest 10% region, the two configurations
+//     produce clearly separated output levels
+//   • setReadWindow(0.5, 0.3) is normalised to setReadWindow(0.3, 0.5)
+//     (swap-on-reverse) → bit-identical output
+//   • determinism preserved with a non-default read window (same seed +
+//     same params → bit-identical output)
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: setReadWindow(0.0, x) matches setPositionScatter(x) bit-exact",
+          "[granular]")
+{
+    // Documented equivalence: setPositionScatter(x) is a convenience wrapper
+    // for setReadWindow(0.0f, x).  Both entry points must go through the
+    // same code path in trySpawnGrain (same RNG draws per spawn, same
+    // offset arithmetic) so the outputs are bit-identical.  This test
+    // pins that contract: if a future refactor accidentally diverges the
+    // two paths (e.g. an extra RNG call, a different clamp order), this
+    // test fires immediately.
+    ideath::GranularProcessor a, b;
+    a.prepare(kSampleRate, 22050);
+    b.prepare(kSampleRate, 22050);
+    for (auto* gp : { &a, &b })
+    {
+        gp->setGrainRate(50.0f);
+        gp->setGrainSize(0.04f);
+        gp->setPitchSpread(7.0f);
+    }
+    a.setPositionScatter(0.5f);
+    b.setReadWindow(0.0f, 0.5f);
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = 0.5f * std::sin(static_cast<float>(i) * 0.01f);
+        a.writeSample(x);
+        b.writeSample(x);
+        REQUIRE(a.process() == b.process());
+    }
+}
+
+TEST_CASE("GranularProcessor: setReadWindow(0.5, 0.5) yields deterministic single-position reads",
+          "[granular]")
+{
+    // A zero-width window (near == far) pins every grain's start offset to
+    // exactly `near * bufferSize` samples behind writePos.  Combined with
+    // pitchSpread=0 (pitch = 1.0) and a frozen buffer, every grain must
+    // produce a bit-identical waveform because everything determining grain
+    // output is now constant across spawns:
+    //   - readPos: fixed (writePos frozen, window degenerate)
+    //   - pitch:   fixed at 1.0 (spread zero)
+    //   - envelope: starts at envPhase=0, advances by fixed envInc
+    //   - buffer content at read range: fixed (freeze)
+    // The RNG is still advanced twice per spawn (pitch + position), but its
+    // outputs are multiplied by 0 so they don't affect grain parameters.
+    ideath::GranularProcessor gp;
+    const int bufLen = static_cast<int>(kSampleRate);   // 1 s
+    gp.prepare(kSampleRate, bufLen);
+    gp.setGrainRate(1.0f);           // 1 spawn / s
+    gp.setGrainSize(0.1f);           // 4410-sample grain — no overlap
+    gp.setPitchSpread(0.0f);
+    gp.setReadWindow(0.5f, 0.5f);
+
+    // Fill buffer with a 200 Hz sine (arbitrary distinctive non-zero content).
+    for (int i = 0; i < bufLen; ++i)
+    {
+        gp.writeSample(sineAt(i, 200.0f, kSampleRate));
+        (void)gp.process();
+    }
+    gp.setFreeze(true);
+
+    // Drain any grain that was in flight when we froze, so both captured
+    // grains come from the frozen steady state.
+    while (gp.activeGrainCount() > 0)
+    {
+        gp.writeSample(0.0f);   // no-op under freeze
+        (void)gp.process();
+    }
+
+    auto captureNextGrain = [&]() -> std::vector<float>
+    {
+        while (gp.activeGrainCount() == 0)
+        {
+            gp.writeSample(0.0f);
+            (void)gp.process();
+        }
+        const int grainLen = static_cast<int>(0.1f * kSampleRate);
+        std::vector<float> out(static_cast<std::size_t>(grainLen));
+        for (int i = 0; i < grainLen; ++i)
+        {
+            gp.writeSample(0.0f);
+            out[static_cast<std::size_t>(i)] = gp.process();
+        }
+        return out;
+    };
+
+    const auto g1 = captureNextGrain();
+    const auto g2 = captureNextGrain();
+
+    REQUIRE(g1.size() == g2.size());
+    // Bit-exact equality proves the position spread is zero.  With any
+    // residual randomness the two grains would read from different offsets
+    // and their waveforms would differ (fails immediately at Hann peak,
+    // where the amplitude of a 200 Hz sine differs by up to 2·gain_comp
+    // between two random buffer positions).
+    for (std::size_t i = 0; i < g1.size(); ++i)
+        REQUIRE(g1[i] == g2[i]);
+
+    // Sanity floor: not silence.  Peak = Hann_peak · sine_peak · gain_comp
+    // with O = 1·0.1 = 0.1 → denom = max(0.05, 0.5) = 0.5 → gain = √2.
+    // Ideal peak = 1 · 1 · √2 ≈ 1.414.  Floor 0.5 = -6 dB below ideal,
+    // catching catastrophic silence without brittleness against the
+    // per-grain sine-phase alignment at the fixed read position.
+    float maxAbs = 0.0f;
+    for (float x : g1) maxAbs = std::max(maxAbs, std::fabs(x));
+    REQUIRE(maxAbs > 0.5f);
+}
+
+TEST_CASE("GranularProcessor: setReadWindow selects the correct buffer region — oldest vs newest",
+          "[granular]")
+{
+    // Two processors warmed identically:
+    //   - Fill a DC=0.7 band in the middle of the buffer (indices
+    //     [dcStart, dcEnd)); silence everywhere else.
+    //   - Freeze.
+    // The DC band is placed so that:
+    //   - readWindow(0.9, 1.0) (which reads readPos ∈ [0, 0.1·bs]) plus
+    //     grain length lands squarely inside the DC band, and
+    //   - readWindow(0.0, 0.1) (which reads readPos ∈ [0.9·bs, bs] wrapping
+    //     into [0, grainSize·sr]) sits entirely in silence — the wrap tail
+    //     is placed BEFORE the DC band, not inside it.
+    // Then the first configuration produces meaningful output (grains
+    // reading DC=0.7 through Hann); the second is silent (grains reading
+    // zeros).  This directly verifies that the window bounds map to the
+    // correct buffer region.
+    //
+    // Layout for bufLen = kSampleRate = 44100 samples (1 s):
+    //   writePos at freeze = 0 (writes wrap after exactly 1 buffer).
+    //   offset behind writePos:  index = (writePos - offset) mod bs
+    //     - offset = k  → index (bs - k)  for k ∈ (0, bs]
+    //     - offset = 0  → index 0
+    //   So the region [1, bs] behind writePos corresponds to indices
+    //   [bs-1, 0] running BACKWARD.
+    //   readWindow(0.9, 1.0): offset ∈ [0.9·bs, bs] → indices ∈ [0, 0.1·bs]
+    //   readWindow(0.0, 0.1): offset ∈ [0, 0.1·bs] → indices ∈ {0} ∪ [0.9·bs, bs)
+    // With grainSize·sr = 220 samples, the grain at readPos advances to
+    // readPos + 220, wrapping.  For readWindow(0.9, 1.0) grains span
+    // [0, 4410 + 220] = [0, 4630].  For readWindow(0.0, 0.1) grains span
+    // [39690, 44100) ∪ [0, 220) via wrap.
+    //
+    // Place the DC band at indices [1000, 5000):
+    //   - readWindow(0.9, 1.0) grains hit DC if readPos ∈ (780, 4410]
+    //     (grain end > 1000, grain start < 5000).  Fraction: 82%; the
+    //     remaining 18% hit only silence.  Peak grain output is achieved
+    //     by any grain whose read range lies fully inside [1000, 5000),
+    //     i.e. readPos ∈ [1000, 4780] — fraction 86% of the window.
+    //   - readWindow(0.0, 0.1) grains read [39690, 44100) ∪ [0, 220).
+    //     Both regions are silence — the 220-sample wrap tail sits BEFORE
+    //     the DC band which starts at index 1000.  Every read returns 0.
+    //
+    // Expected level for readWindow(0.9, 1.0):
+    //   O = grainRate · grainSize = 40 · 0.005 = 0.2 → denom = max(0.1, 0.5) = 0.5
+    //   gain_comp = 1/√0.5 = √2 ≈ 1.414
+    //   Peak grain output (fully inside DC, Hann peak):
+    //     Hann_peak · 0.7 · √2 = 1 · 0.7 · 1.414 ≈ 0.99
+    //   Threshold 0.5 is ≈ half of ideal peak — catches broken windows
+    //   without brittleness against the 14% of grains that miss the DC band.
+    //
+    // Expected level for readWindow(0.0, 0.1):
+    //   Every read hits silence → output is bit-exact 0.  Threshold 1e-6
+    //   tolerates the u=0 corner where offset=0 → readPos=0 (which reads
+    //   the first silence sample at index 0, still 0).  Probability of any
+    //   sample above the threshold: essentially zero.
+    const int bufLen  = static_cast<int>(kSampleRate);
+    const int dcStart = 1000;
+    const int dcEnd   = 5000;
+    auto warmup = [&](ideath::GranularProcessor& gp)
+    {
+        gp.prepare(kSampleRate, bufLen);
+        gp.setGrainRate(40.0f);
+        gp.setGrainSize(0.005f);   // 220 samples — fits inside DC band
+        gp.setPitchSpread(0.0f);
+        for (int i = 0; i < bufLen; ++i)
+        {
+            const float x = (i >= dcStart && i < dcEnd) ? 0.7f : 0.0f;
+            gp.writeSample(x);
+            (void)gp.process();
+        }
+        gp.setFreeze(true);
+    };
+
+    ideath::GranularProcessor readsOldest;
+    ideath::GranularProcessor readsNewest;
+    warmup(readsOldest);
+    warmup(readsNewest);
+    readsOldest.setReadWindow(0.9f, 1.0f);   // oldest 10% → DC band via indices [0, 4410]
+    readsNewest.setReadWindow(0.0f, 0.1f);   // newest 10% → silence via [39690, 44100) ∪ wrap [0, 220)
+
+    float maxOldest = 0.0f;
+    float maxNewest = 0.0f;
+    for (int i = 0; i < static_cast<int>(kSampleRate); ++i)   // 1 s
+    {
+        readsOldest.writeSample(0.0f);       // no-op (frozen)
+        readsNewest.writeSample(0.0f);
+        maxOldest = std::max(maxOldest, std::fabs(readsOldest.process()));
+        maxNewest = std::max(maxNewest, std::fabs(readsNewest.process()));
+    }
+
+    REQUIRE(maxOldest > 0.5f);   // grains hit the 0.7 DC band
+    REQUIRE(maxNewest < 1e-6f);  // grains hit only silence
+}
+
+TEST_CASE("GranularProcessor: setReadWindow(near > far) is normalised via swap",
+          "[granular]")
+{
+    // Documented contract: if the caller passes nearOffset > farOffset the
+    // two are swapped so the window is stored in canonical [min, max]
+    // order.  Two instances configured with the swapped and canonical
+    // arguments must produce bit-identical output.
+    ideath::GranularProcessor a, b;
+    a.prepare(kSampleRate, 22050);
+    b.prepare(kSampleRate, 22050);
+    for (auto* gp : { &a, &b })
+    {
+        gp->setGrainRate(50.0f);
+        gp->setGrainSize(0.04f);
+        gp->setPitchSpread(7.0f);
+    }
+    a.setReadWindow(0.5f, 0.3f);   // reversed input
+    b.setReadWindow(0.3f, 0.5f);   // canonical input
+
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = 0.5f * std::sin(static_cast<float>(i) * 0.01f);
+        a.writeSample(x);
+        b.writeSample(x);
+        REQUIRE(a.process() == b.process());
+    }
+}
+
+TEST_CASE("GranularProcessor: determinism preserved with non-default setReadWindow",
+          "[granular]")
+{
+    // Same seed + same params (including a non-default readWindow, chosen so
+    // the arithmetic exercises both endpoints of the window) + same input
+    // → bit-identical output.  Same guarantee as the pre-existing seed
+    // test, extended to cover the new setter's code path in trySpawnGrain.
+    ideath::GranularProcessor a, b;
+    a.prepare(kSampleRate, 22050);
+    b.prepare(kSampleRate, 22050);
+    for (auto* gp : { &a, &b })
+    {
+        gp->setGrainRate(50.0f);
+        gp->setGrainSize(0.04f);
+        gp->setPitchSpread(7.0f);
+        gp->setPitchOffset(-3.0f);
+        gp->setReadWindow(0.2f, 0.8f);
+    }
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = 0.5f * std::sin(static_cast<float>(i) * 0.01f);
+        a.writeSample(x);
+        b.writeSample(x);
+        REQUIRE(a.process() == b.process());
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 14. setPitchOffset clamping (pre-existing test, kept below the new block)
+// -----------------------------------------------------------------------------
+
 TEST_CASE("GranularProcessor: setPitchOffset clamps to [-24, +24] semitones",
           "[granular]")
 {

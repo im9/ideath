@@ -9,13 +9,15 @@ namespace ideath {
 ///
 /// `writeSample()` pushes incoming audio into a circular buffer.  An internal
 /// spawn-timer periodically launches Hann-windowed grains that read from
-/// pseudo-random positions in the buffer (scattered behind the current write
-/// head).  Each grain has an independent pitch ratio drawn from
-/// `pitchOffset + [-pitchSpread, +pitchSpread]` semitones, played back via
-/// linear-interpolated varispeed read.  `pitchOffset` is the bipolar centre
-/// (default 0 = unity) and `pitchSpread` is the random deviation around it.
-/// Outputs are summed and gain-compensated for the expected overlap
-/// (`grainRate * grainSize` grains in flight).
+/// pseudo-random positions inside a configurable read window behind the
+/// current write head (see `setReadWindow` for the window definition; the
+/// legacy `setPositionScatter` is a single-parameter convenience for the
+/// window `[0, amount]`).  Each grain has an independent pitch ratio drawn
+/// from `pitchOffset + [-pitchSpread, +pitchSpread]` semitones, played back
+/// via linear-interpolated varispeed read.  `pitchOffset` is the bipolar
+/// centre (default 0 = unity) and `pitchSpread` is the random deviation
+/// around it.  Outputs are summed and gain-compensated for the expected
+/// overlap (`grainRate * grainSize` grains in flight).
 ///
 /// When `freeze` is enabled `writeSample()` becomes a no-op (the write
 /// pointer holds its position), so the buffer becomes a static sample source
@@ -76,10 +78,28 @@ public:
     /// either side), matching `setPitchSpread`.
     void setPitchOffset(float semitones);
 
-    /// Random read-position scatter, `[0, 1]`.  At 0 every grain starts
-    /// reading at the current write head; at 1 grains may start as far back
-    /// as one full buffer length.
+    /// Convenience wrapper for `setReadWindow(0.0f, amount)`.  Preserves the
+    /// pre-`setReadWindow` API: every grain starts reading somewhere in the
+    /// range `[0, amount * bufferSize]` samples behind the write head.
+    /// `amount` is clamped to `[0, 1]`.
     void setPositionScatter(float amount);
+
+    /// Read window bounds, expressed as fractional offsets BEHIND the
+    /// current write head.  Grains launch at a random position uniformly
+    /// drawn from `[nearOffset * bufferSize, farOffset * bufferSize]`
+    /// samples behind the write head.  Both operands are clamped to
+    /// `[0, 1]`; if `nearOffset > farOffset` after clamping the two are
+    /// swapped so the window is always stored in canonical `[min, max]`
+    /// order.
+    ///
+    /// A degenerate window (`nearOffset == farOffset`) pins every grain to
+    /// the same relative offset (zero position randomness).  When `freeze`
+    /// is on, the write head is stationary, so the window becomes
+    /// effectively absolute within the frozen buffer.
+    ///
+    /// Default: `[0.0f, 0.5f]` — matches the previous `setPositionScatter(0.5f)`
+    /// default so callers that don't touch this API see identical behaviour.
+    void setReadWindow(float nearOffset01, float farOffset01);
 
     /// Freeze the write pointer.  When `true`, `writeSample()` becomes a
     /// no-op so the buffer contents stop changing — grain reads continue,
@@ -120,7 +140,11 @@ private:
     float grainSize_       = 0.1f;      // seconds
     float pitchSpread_     = 0.0f;      // semitones (±)
     float pitchOffset_     = 0.0f;      // semitones (centre of spread window)
-    float positionScatter_ = 0.5f;
+    // Read window [near, far] in fractional buffer offsets behind writePos_.
+    // Default [0.0, 0.5] reproduces the pre-setReadWindow default of
+    // setPositionScatter(0.5).
+    float readWindowNear_  = 0.0f;
+    float readWindowFar_   = 0.5f;
     bool  frozen_          = false;
 
     // Spawn timer.  Counts down by 1/sampleRate per call; when it reaches 0
