@@ -1318,7 +1318,321 @@ TEST_CASE("GranularProcessor: determinism preserved with non-default setReadWind
 }
 
 // -----------------------------------------------------------------------------
-// 14. setPitchOffset clamping (pre-existing test, kept below the new block)
+// 14. snapshotGrains / writePos / bufferSize — visualisation accessors
+// -----------------------------------------------------------------------------
+//
+// snapshotGrains(GrainSnapshot* out) copies the live grain pool into `out`,
+// writing exactly kMaxGrains entries (inactive slots have `active=false`).
+// writePos() and bufferSize() expose the ring-buffer geometry so a UI can
+// compute an "offset behind write head" coordinate.
+//
+// Verified below:
+//   • after a warm-up with grainRate > 0, at least one active slot appears
+//   • envPhase strictly increases per active grain per process(), and the
+//     grain deactivates when envPhase would cross 1.0
+//   • determinism: same seed + same params + same input → bit-identical
+//     snapshot at the same process-call count across two instances
+//   • freeze does NOT halt grain playback — envPhase keeps advancing while
+//     writePos() stays put
+//   • writePos() advances by exactly one per unfrozen writeSample() and
+//     wraps at bufferSize()
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: snapshotGrains reports active grain after warm-up",
+          "[granular]")
+{
+    // A short warm-up at grainRate=50 Hz (spawn period 20 ms) with grainSize
+    // 40 ms guarantees at least one spawn well before the first process()
+    // call — steady-state O = 2.  After 2000 samples (~45 ms, > 2 spawn
+    // periods) at least one slot must be active.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setGrainRate(50.0f);
+    gp.setGrainSize(0.04f);
+    gp.setPitchSpread(0.0f);
+    gp.setPositionScatter(0.5f);
+
+    for (int i = 0; i < 2000; ++i)
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+    }
+
+    ideath::GranularProcessor::GrainSnapshot snap[
+        ideath::GranularProcessor::kMaxGrains];
+    gp.snapshotGrains(snap);
+
+    int activeCount = 0;
+    for (int i = 0; i < ideath::GranularProcessor::kMaxGrains; ++i)
+    {
+        if (snap[i].active)
+        {
+            ++activeCount;
+            // Sanity: readPos ∈ [0, bufferSize).  Sub-sample is fine, but
+            // the value must land inside the ring.
+            REQUIRE(snap[i].readPos >= 0.0f);
+            REQUIRE(snap[i].readPos <  static_cast<float>(gp.bufferSize()));
+            // envPhase ∈ [0, 1).  Grains at exactly 1.0 would have been
+            // deactivated in renderGrain().
+            REQUIRE(snap[i].envPhase >= 0.0f);
+            REQUIRE(snap[i].envPhase <  1.0f);
+            // pitchSpread=0 → every grain plays at unity ratio.  Bit-exact
+            // because 2^(0/12) = 1 exactly in float.
+            REQUIRE(snap[i].pitch == 1.0f);
+        }
+    }
+    REQUIRE(activeCount >= 1);
+    REQUIRE(activeCount == gp.activeGrainCount());   // agrees with counter
+}
+
+TEST_CASE("GranularProcessor: snapshotGrains envPhase strictly increases per process",
+          "[granular]")
+{
+    // For any active grain, envPhase must advance by envInc = 1/grainSamples
+    // per process() call.  We pick a slow grainRate + long grainSize so at
+    // most one grain is alive at a time and its slot index stays put, then
+    // sample envPhase across consecutive process() calls and require
+    // monotonic strict increase (envPhase_{n+1} > envPhase_n) until the
+    // grain deactivates.
+    //
+    // Config: grainRate=1 (spawn every 1 s), grainSize=0.1 (4410 samples).
+    // grainSize < spawn period → at most one grain in flight.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, static_cast<int>(kSampleRate));
+    gp.setGrainRate(1.0f);
+    gp.setGrainSize(0.1f);
+    gp.setPitchSpread(0.0f);
+    gp.setPositionScatter(0.0f);
+
+    // Advance until a grain appears (≤ 1 s spawn timer).
+    int waited = 0;
+    while (gp.activeGrainCount() == 0 && waited < static_cast<int>(1.1f * kSampleRate))
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+        ++waited;
+    }
+    REQUIRE(gp.activeGrainCount() == 1);
+
+    ideath::GranularProcessor::GrainSnapshot snap[
+        ideath::GranularProcessor::kMaxGrains];
+    gp.snapshotGrains(snap);
+
+    // Find the active slot.  Only one grain in flight, so exactly one match.
+    int slot = -1;
+    for (int i = 0; i < ideath::GranularProcessor::kMaxGrains; ++i)
+        if (snap[i].active) { slot = i; break; }
+    REQUIRE(slot >= 0);
+
+    // Walk 100 process() calls and check monotonic envPhase.  100 samples
+    // is well short of grainSize (4410 samples) so the grain stays alive
+    // in the same slot for the whole window.
+    float prevPhase = snap[slot].envPhase;
+    for (int i = 0; i < 100; ++i)
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+        gp.snapshotGrains(snap);
+        REQUIRE(snap[slot].active);
+        // Strict increase.  envInc = 1/4410 ≈ 2.27e-4 per sample; well
+        // above float epsilon (~1e-7 at 0.01), so > (not >=) is safe.
+        REQUIRE(snap[slot].envPhase > prevPhase);
+        prevPhase = snap[slot].envPhase;
+    }
+
+    // Continue until the grain deactivates.  From here we've consumed
+    // ~100 samples out of ~4410; run enough more (~5000) to guarantee
+    // envPhase crosses 1.0.
+    bool sawDeactivation = false;
+    for (int i = 0; i < 5000; ++i)
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+        gp.snapshotGrains(snap);
+        if (!snap[slot].active) { sawDeactivation = true; break; }
+        REQUIRE(snap[slot].envPhase < 1.0f);   // never reported ≥ 1 alive
+    }
+    REQUIRE(sawDeactivation);
+}
+
+TEST_CASE("GranularProcessor: snapshotGrains is bit-identical across instances with same seed",
+          "[granular]")
+{
+    // Determinism: two instances configured identically and driven with
+    // identical input must have byte-identical grain pools at any given
+    // process-call count.  The pre-existing seed-reproducibility test
+    // (line ~115) proves the output signal matches; this test extends that
+    // guarantee to the internal grain state that the visualisation reads.
+    ideath::GranularProcessor a, b;
+    a.prepare(kSampleRate, 22050);
+    b.prepare(kSampleRate, 22050);
+    for (auto* gp : { &a, &b })
+    {
+        gp->setGrainRate(50.0f);
+        gp->setGrainSize(0.04f);
+        gp->setPitchSpread(7.0f);
+        gp->setPositionScatter(0.6f);
+    }
+
+    ideath::GranularProcessor::GrainSnapshot sa[
+        ideath::GranularProcessor::kMaxGrains];
+    ideath::GranularProcessor::GrainSnapshot sb[
+        ideath::GranularProcessor::kMaxGrains];
+
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = 0.5f * std::sin(static_cast<float>(i) * 0.01f);
+        a.writeSample(x);
+        b.writeSample(x);
+        (void)a.process();
+        (void)b.process();
+        // Snapshot every 128 samples to keep the loop overhead in check
+        // while still hitting many different spawn/expire boundary states.
+        if ((i & 127) == 0)
+        {
+            a.snapshotGrains(sa);
+            b.snapshotGrains(sb);
+            for (int g = 0; g < ideath::GranularProcessor::kMaxGrains; ++g)
+            {
+                REQUIRE(sa[g].active == sb[g].active);
+                if (sa[g].active)
+                {
+                    // Bit-exact — identical RNG state + identical envInc
+                    // + identical process() count means the float fields
+                    // must match exactly.
+                    REQUIRE(sa[g].readPos  == sb[g].readPos);
+                    REQUIRE(sa[g].envPhase == sb[g].envPhase);
+                    REQUIRE(sa[g].pitch    == sb[g].pitch);
+                }
+            }
+        }
+    }
+    // Sanity: also check writePos determinism — trivial but pins the API.
+    REQUIRE(a.writePos()   == b.writePos());
+    REQUIRE(a.bufferSize() == b.bufferSize());
+}
+
+TEST_CASE("GranularProcessor: freeze halts writePos but grains keep advancing envPhase",
+          "[granular]")
+{
+    // Freeze semantics for the visualisation:
+    //   - writePos() stops advancing (writeSample is a no-op)
+    //   - Existing grains continue playback (envPhase increases per sample,
+    //     readPos advances by pitch, grains eventually deactivate at
+    //     envPhase ≥ 1)
+    // Verify both directly through the snapshot / geometry accessors.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setGrainRate(20.0f);
+    gp.setGrainSize(0.1f);      // long grain — will still be alive after
+                                // the freeze-window we measure
+    gp.setPitchSpread(0.0f);    // pitch = 1 → envInc = 1/4410
+    gp.setPositionScatter(0.5f);
+
+    // Warm up so we have grains in flight.
+    for (int i = 0; i < 4410; ++i)
+    {
+        gp.writeSample(0.5f);
+        (void)gp.process();
+    }
+    REQUIRE(gp.activeGrainCount() > 0);
+
+    gp.setFreeze(true);
+    const int writePosBefore = gp.writePos();
+
+    ideath::GranularProcessor::GrainSnapshot before[
+        ideath::GranularProcessor::kMaxGrains];
+    gp.snapshotGrains(before);
+
+    // Pick any active grain we can track.
+    int slot = -1;
+    for (int i = 0; i < ideath::GranularProcessor::kMaxGrains; ++i)
+        if (before[i].active) { slot = i; break; }
+    REQUIRE(slot >= 0);
+
+    // Advance 200 samples under freeze.
+    for (int i = 0; i < 200; ++i)
+    {
+        gp.writeSample(-1.0f);   // ignored — freeze
+        (void)gp.process();
+    }
+
+    ideath::GranularProcessor::GrainSnapshot after[
+        ideath::GranularProcessor::kMaxGrains];
+    gp.snapshotGrains(after);
+
+    // writePos must not have moved.  Exact-int equality — no rounding.
+    REQUIRE(gp.writePos() == writePosBefore);
+
+    // The tracked grain either advanced OR (if it happened to expire mid-
+    // window) is now in a fresh slot after respawn.  In the "still alive"
+    // case its envPhase must have increased by ~200/4410 ≈ 0.0454.  We
+    // check the "still alive" case; if the tracked slot expired, at least
+    // one *other* slot must show a live grain with a fresh envPhase — i.e.
+    // freeze did not silence grain playback.
+    if (after[slot].active
+        && after[slot].pitch == before[slot].pitch
+        && after[slot].envPhase >= before[slot].envPhase)
+    {
+        // Same grain still playing.  Expected delta = 200 · envInc =
+        // 200 / (0.1 · 44100) = 200 / 4410 ≈ 0.04535.  Tolerance 1e-4
+        // covers accumulated float error over 200 add-steps: at envPhase
+        // ~0.5, float precision is ~6e-8 per add → 200 · 6e-8 = 1.2e-5,
+        // well inside 1e-4.
+        const float delta = after[slot].envPhase - before[slot].envPhase;
+        REQUIRE_THAT(delta, WithinAbs(200.0f / (0.1f * kSampleRate), 1e-4f));
+    }
+    else
+    {
+        // Tracked grain expired; verify freeze didn't stall grain playback
+        // globally by requiring at least one live grain in the snapshot.
+        int alive = 0;
+        for (int i = 0; i < ideath::GranularProcessor::kMaxGrains; ++i)
+            if (after[i].active) ++alive;
+        REQUIRE(alive > 0);
+    }
+}
+
+TEST_CASE("GranularProcessor: writePos advances one per writeSample and wraps at bufferSize",
+          "[granular]")
+{
+    // writePos() must expose the raw ring-buffer index used by writeSample.
+    // Advance manually and verify:
+    //   - starts at 0 after prepare()/reset()
+    //   - increments by 1 per writeSample()
+    //   - wraps to 0 after bufferSize() writes
+    //   - freeze suppresses the increment
+    //   - bufferSize() reports the value passed to prepare (subject to the
+    //     documented 16-sample floor — 128 is well above it, so exact match)
+    const int bufLen = 128;
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, bufLen);
+
+    REQUIRE(gp.bufferSize() == bufLen);
+    REQUIRE(gp.writePos()   == 0);
+
+    for (int i = 0; i < bufLen; ++i)
+    {
+        gp.writeSample(0.0f);
+        // After the (i+1)-th writeSample, writePos = (i+1) mod bufLen.
+        REQUIRE(gp.writePos() == (i + 1) % bufLen);
+    }
+    REQUIRE(gp.writePos() == 0);   // wrapped exactly once
+
+    // Freeze halts advancement.
+    gp.setFreeze(true);
+    for (int i = 0; i < 50; ++i)
+        gp.writeSample(0.0f);
+    REQUIRE(gp.writePos() == 0);
+
+    // Unfreeze resumes.
+    gp.setFreeze(false);
+    gp.writeSample(0.0f);
+    REQUIRE(gp.writePos() == 1);
+}
+
+// -----------------------------------------------------------------------------
+// 15. setPitchOffset clamping (pre-existing test, kept below the new block)
 // -----------------------------------------------------------------------------
 
 TEST_CASE("GranularProcessor: setPitchOffset clamps to [-24, +24] semitones",

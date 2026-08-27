@@ -106,6 +106,32 @@ int GranularProcessor::activeGrainCount() const
     return n;
 }
 
+void GranularProcessor::snapshotGrains(GrainSnapshot* out) const
+{
+    // Flat copy of the pool.  No allocation, no locks — a concurrent
+    // process() call may tear individual grain fields (readPos/envPhase
+    // advance every sample) but the snapshot is used at UI framerate so a
+    // one-frame smear is invisible.  See the header docblock for rationale.
+    for (int i = 0; i < kMaxGrains; ++i)
+    {
+        const Grain& g = grains_[i];
+        out[i].active   = g.active;
+        out[i].readPos  = g.readPos;
+        out[i].envPhase = g.envPhase;
+        out[i].pitch    = g.pitch;
+    }
+}
+
+int GranularProcessor::writePos() const
+{
+    return writePos_;
+}
+
+int GranularProcessor::bufferSize() const
+{
+    return bufferSize_;
+}
+
 // xorshift32, matching ideath::Noise — same algorithm, separated state so
 // we don't disturb Noise instances elsewhere.
 float GranularProcessor::nextUniform01()

@@ -32,6 +32,12 @@ namespace ideath {
 /// - Random pitch and position are driven by a deterministic xorshift32 RNG
 ///   seeded in `reset()`; two instances with identical input and identical
 ///   parameter histories produce bit-identical output.
+///
+/// Visualisation hooks (`snapshotGrains`, `writePos`, `bufferSize`) expose
+/// the current grain-pool state and ring-buffer geometry so that UIs can
+/// draw the actual live grains inside the tape read window rather than a
+/// procedural preview keyed off knob values (which would drift out of sync
+/// with the audio due to independent RNG draws).
 class GranularProcessor
 {
 public:
@@ -112,6 +118,39 @@ public:
 
     /// Number of grains currently active.  Exposed for tests and metering.
     int activeGrainCount() const;
+
+    /// Per-grain state exposed for visualisation.  `readPos` is a float index
+    /// into the ring buffer (0..bufferSize) — sub-sample because grains read
+    /// with linear interpolation.  `envPhase` is the grain's normalised
+    /// lifetime position in `[0, 1)`.  `pitch` is the varispeed playback
+    /// ratio (2^(semis/12)).  Inactive slots have `active=false` and the
+    /// other fields are undefined.
+    struct GrainSnapshot
+    {
+        bool  active;
+        float readPos;
+        float envPhase;
+        float pitch;
+    };
+
+    /// Copy the current grain-pool state into `out`.  Writes exactly
+    /// `kMaxGrains` entries — caller sizes the buffer to `kMaxGrains` and
+    /// filters by `active`.  Non-blocking; snapshot may see torn reads on
+    /// individual grain fields since the audio thread advances them per
+    /// sample, but each grain is small enough that a torn read affects only
+    /// a single frame of visual and averages out at UI framerate.
+    void snapshotGrains(GrainSnapshot* out) const;
+
+    /// Current ring-buffer write index in samples.  Combined with `readPos`
+    /// from `snapshotGrains` this lets a UI compute `offsetBehindHead =
+    /// ((writePos - readPos) mod bufferSize) / bufferSize` for a cloud
+    /// visualisation whose right edge tracks the write head.  When frozen
+    /// (`setFreeze(true)`), this value stops advancing.
+    int writePos() const;
+
+    /// Ring-buffer length in samples (as passed to `prepare`, subject to the
+    /// 16-sample floor documented there).  Zero before `prepare` is called.
+    int bufferSize() const;
 
 private:
     struct Grain
