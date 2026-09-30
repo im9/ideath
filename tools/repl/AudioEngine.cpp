@@ -33,6 +33,8 @@ void AudioEngine::prepare(float sampleRate)
     ping_.prepare(sampleRate);
     multiwt_.prepare(sampleRate);
     dxfm_.prepare(sampleRate);
+    chorus_.prepare(sampleRate);
+    phaser_.prepare(sampleRate);
     // 2-second ring buffer matches DelayLine / TapeDelay headroom; gives
     // up to 2 s of recall material at positionScatter=1.0.
     granular_.prepare(sampleRate, static_cast<int>(2.0f * sampleRate));
@@ -406,6 +408,8 @@ float AudioEngine::process()
         lfo_.reset();
         fg_.reset();
         granular_.reset();
+        chorus_.reset();
+        phaser_.reset();
         delayCleared_ = true;
         }
         return 0.0f;
@@ -623,6 +627,34 @@ float AudioEngine::process()
         wavefolder_.setDrive(params_.foldDrive);
         wavefolder_.setMix(params_.foldMix);
         sample = wavefolder_.process(sample);
+    }
+
+    // --- Chorus (multi-voice detune) ---
+    // Positioned before delay-based effects so the chorus width is preserved
+    // as the delay/reverb tail spreads it out spatially.
+    if (params_.chorusEnabled)
+    {
+        chorus_.setVoiceCount(params_.chorusVoices);
+        chorus_.setRate(params_.chorusRate);
+        chorus_.setDepth(params_.chorusDepth);
+        chorus_.setSpread(params_.chorusSpread);
+        chorus_.setFeedback(params_.chorusFeedback);
+        chorus_.setMix(params_.chorusMix);
+        sample = chorus_.process(sample);
+    }
+
+    // --- Phaser (LFO-swept allpass cascade) ---
+    // After chorus so pad + chorus width feeds a coherent spectrum into the
+    // notch sweep; before delay so the notch character enters the delay tail.
+    if (params_.phaserEnabled)
+    {
+        phaser_.setStages(params_.phaserStages);
+        phaser_.setRate(params_.phaserRate);
+        phaser_.setDepth(params_.phaserDepth);
+        phaser_.setCenterHz(params_.phaserCenter);
+        phaser_.setFeedback(params_.phaserFeedback);
+        phaser_.setMix(params_.phaserMix);
+        sample = phaser_.process(sample);
     }
 
     // --- Delay ---

@@ -50,6 +50,8 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **BowedString** | Friction-driven bowed-string physical model — waveguide delay loop + analytical slip-stick friction + pickup-position comb on the output (Pressure / Position / Damping) |
 | **LowPassGate** | Buchla 292-style vactrol Low-Pass Gate — single envelope drives both VCA and VCF cutoff (Damping / Brightness); takes an external carrier |
 | **LowPassGateVoice** | LowPassGate + morphing saw↔square carrier oscillator bundled for the slothrop Ping engine (Tone / Damping / Brightness) |
+| **Chorus** | Multi-voice bucket-brigade chorus — 1–8 voices at LFO-modulated fractional delays around a fixed ~12 ms base, `spread` staggers voice-to-voice LFO phase, `processStereo` pans voices across L/R for decorrelation; negative feedback + short depth yields flanger tone from the same primitive |
+| **Phaser** | Serial first-order allpass phaser (2–8 stages, LFO-swept break frequency in log-Hz around a fixed centre). Feedback path is `tanh`-limited (analog-op-amp behaviour) so peaks stay ≤ ±1.0 even at max resonance |
 
 ## Design Principles
 

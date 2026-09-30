@@ -74,6 +74,10 @@ than comparing cross-host.
 | Voice::process                     |           4.694 µs |        9.17 |
 | Voice::process (LP filter, Q=4)    |           6.315 µs |       12.33 |
 | Osc → SVFilter → ADSR → Sat → Rvb  |          21.277 µs |       41.56 |
+| Chorus::process (3 voices)         |          11.680 µs |       22.81 |
+| Chorus::process (8 voices)         |          21.641 µs |       42.27 |
+| Phaser::process (4 stages)         |          13.303 µs |       25.98 |
+| Phaser::process (8 stages)         |          19.956 µs |       38.98 |
 
 ## Notes
 
@@ -126,6 +130,15 @@ than comparing cross-host.
   optimisation when the iOS A15 ceiling tightens. Not landed in v1 — the
   data-driven `kAlgorithms[32][6]` dispatch is what keeps the code
   auditable against dexed and would need careful refactoring for SIMD.
+- `Chorus` and `Phaser` measured 2026-09-30 on the same Apple M2 Max host
+  (cross-checked via `DelayLine::process` = 4.30 ns/sample vs. the prior
+  4.08 ns/sample baseline, well within run-to-run jitter). Chorus per-sample
+  cost scales linearly with voice count — dominated by one `std::sin` per
+  voice inside `voiceDelay()` (fractional-delay read is cheap by comparison).
+  Phaser cost is dominated by the once-per-sample `std::sin` (LFO) +
+  `std::exp2` (log-freq map) + `std::tan` (coefficient) + `std::tanh`
+  (feedback tap) — the per-stage inner cost (four float ops) is small, so
+  4→8 stages adds only ≈ 13 ns/sample.
 - `MultiShapeWavetable` measured 2026-06-30 on the same Apple M2 Max host.
   Inner loop: branchy `mipmapLevelFor` (≤8 compares) + bilinear sample
   interpolation. Snap-to-shape costs ~5.48 ns/sample, ~2% over plain `Wavetable`

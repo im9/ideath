@@ -31,6 +31,8 @@
 #include <ideath/LowPassGateVoice.h>
 #include <ideath/MultiShapeWavetable.h>
 #include <ideath/DXFMSynth.h>
+#include <ideath/Chorus.h>
+#include <ideath/Phaser.h>
 
 namespace ideath { namespace repl {
 
@@ -83,6 +85,8 @@ private:
     LowPassGateVoice ping_;
     MultiShapeWavetable multiwt_;
     DXFMSynth dxfm_;
+    Chorus chorus_;
+    Phaser phaser_;
 
     DecayEnvelope pitchEnv_;
     float baseFreq_ = 440.0f;

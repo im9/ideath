@@ -41,6 +41,8 @@ Source (osc | wt | noise | fm | unison | pluck | modal | harmonic | bowed | ping
   → BitCrusher
   → Saturation
   → Wavefolder
+  → Chorus
+  → Phaser
   → DelayLine
   → TapeDelay
   → CombFilter
@@ -92,6 +94,8 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
 | `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
 | `allpass <time_sec> <g>` | Schroeder allpass diffusor (flat magnitude). `g` clamped to ±0.99. Typical diffusion coefficient 0.5–0.7. `allpass off` to disable. |
+| `chorus <rate_hz> <depth_ms> [voices] [spread] [feedback] [mix]` | Multi-voice bucket-brigade chorus. `voices` 1–8 (default 3), `spread` 0–1 (voice-to-voice LFO phase offset, drives stereo decorrelation), `feedback` ±0.9 (negative = flanger flavour with short depth), `mix` 0–1. Base delay fixed at ~12 ms (ambient chorus territory). `chorus off` to disable. |
+| `phaser <rate_hz> <depth> [stages] [center_hz] [feedback] [mix]` | Serial first-order allpass phaser. `stages` 2–8 (even preferred, default 4), `depth` 0–1 (± octaves around centre; 1 = ±2 oct), `center_hz` 50–8000 (default 800), `feedback` ±0.95 (tanh-limited on the feedback tap for op-amp-style saturation), `mix` 0–1. Notches at ~0.414·centre and ~2.414·centre for a 4-stage cascade. `phaser off` to disable. |
 | `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix] [pitchOffset_st]` | Granular cloud (2 s ring buffer). `pitchOffset` shifts the random spread window's centre (bipolar transposition, 0 = unity, clamped ±24 st) |
 | `granular freeze [on\|off]` | Freeze granular ring buffer (no on/off arg toggles) |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |

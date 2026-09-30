@@ -128,6 +128,24 @@ struct VoiceParams
     float allpassDelay    = 0.005f;
     float allpassFeedback = 0.6f;
 
+    // Chorus (multi-voice bucket-brigade)
+    bool  chorusEnabled  = false;
+    int   chorusVoices   = 3;
+    float chorusRate     = 0.5f;   // Hz
+    float chorusDepth    = 3.0f;   // ms
+    float chorusSpread   = 0.5f;
+    float chorusFeedback = 0.0f;
+    float chorusMix      = 0.5f;
+
+    // Phaser (serial first-order allpass, LFO-swept)
+    bool  phaserEnabled  = false;
+    int   phaserStages   = 4;
+    float phaserRate     = 0.5f;   // Hz
+    float phaserDepth    = 0.5f;
+    float phaserCenter   = 800.0f; // Hz
+    float phaserFeedback = 0.0f;
+    float phaserMix      = 0.5f;
+
     // Unison oscillator
     int unisonVoices = 5;
     float unisonDetune = 15.0f;

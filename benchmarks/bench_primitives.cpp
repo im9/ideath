@@ -34,6 +34,8 @@
 #include <ideath/Wavefolder.h>
 #include <ideath/Wavetable.h>
 #include <ideath/MultiShapeWavetable.h>
+#include <ideath/Chorus.h>
+#include <ideath/Phaser.h>
 
 #include <cmath>
 
@@ -853,6 +855,91 @@ TEST_CASE("Bench: HarmonicOscillator", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += h32.process();
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: Chorus", "[bench]")
+{
+    // Representative ambient-pad config: 3 voices, moderate depth, mid-Hz LFO.
+    // Inner loop per sample: N × (fractional read + sin lookup for LFO
+    // phase-offset) + write with feedback + mix.  Cost scales linearly with
+    // voice count (dominated by the sin() call per voice inside voiceDelay()).
+    ideath::Chorus ch3;
+    ch3.prepare(kSR);
+    ch3.setVoiceCount(3);
+    ch3.setRate(0.5f);
+    ch3.setDepth(3.0f);
+    ch3.setSpread(0.5f);
+    ch3.setFeedback(0.2f);
+    ch3.setMix(0.5f);
+
+    BENCHMARK("Chorus::process (3 voices)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += ch3.process(sineAt(i));
+        return acc;
+    };
+
+    // 8-voice worst case: max parallelism the primitive supports.
+    ideath::Chorus ch8;
+    ch8.prepare(kSR);
+    ch8.setVoiceCount(8);
+    ch8.setRate(0.5f);
+    ch8.setDepth(3.0f);
+    ch8.setSpread(1.0f);
+    ch8.setFeedback(0.2f);
+    ch8.setMix(0.5f);
+
+    BENCHMARK("Chorus::process (8 voices)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += ch8.process(sineAt(i));
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: Phaser", "[bench]")
+{
+    // 4-stage default: MXR-style classic phaser topology.  Inner loop per
+    // sample: 1 × sin (LFO) + 1 × exp2 (log-freq map) + 1 × tan (allpass
+    // coeff) + N × (multiply-add-store per stage) + 1 × tanh (feedback tap).
+    // Cost is dominated by the transcendentals — the per-stage inner cost
+    // is small.
+    ideath::Phaser ph4;
+    ph4.prepare(kSR);
+    ph4.setStages(4);
+    ph4.setRate(0.5f);
+    ph4.setDepth(0.6f);
+    ph4.setCenterHz(800.0f);
+    ph4.setFeedback(0.5f);
+    ph4.setMix(0.5f);
+
+    BENCHMARK("Phaser::process (4 stages)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += ph4.process(sineAt(i));
+        return acc;
+    };
+
+    // 8-stage worst case: deeper resonance, denser notch structure.
+    ideath::Phaser ph8;
+    ph8.prepare(kSR);
+    ph8.setStages(8);
+    ph8.setRate(0.5f);
+    ph8.setDepth(0.6f);
+    ph8.setCenterHz(800.0f);
+    ph8.setFeedback(0.5f);
+    ph8.setMix(0.5f);
+
+    BENCHMARK("Phaser::process (8 stages)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += ph8.process(sineAt(i));
         return acc;
     };
 }

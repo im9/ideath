@@ -88,6 +88,17 @@ ideath REPL commands:
   comb <time> <feedback> [damp] [mix]
                                 Comb filter / resonator (or "comb off")
   allpass <time> <g>            Schroeder allpass diffusor (or "allpass off")
+  chorus <rate> <depth_ms> [voices] [spread] [feedback] [mix]
+                                Multi-voice bucket-brigade chorus. voices 1-8,
+                                spread/feedback/mix 0-1 (feedback bipolar).
+                                Negative feedback + tiny depth = flanger tone.
+                                (or "chorus off")
+  phaser <rate> <depth> [stages] [center_hz] [feedback] [mix]
+                                Serial first-order allpass phaser. stages 2-8
+                                (even preferred), depth 0-1 (± octaves around
+                                centre), feedback ±0.95 (tanh-limited). Notches
+                                sit at ~0.414·centre and ~2.414·centre for the
+                                default 4-stage cascade. (or "phaser off")
   granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
                                 Granular cloud (or "granular off")
   granular freeze [on|off]      Freeze granular ring buffer
@@ -543,6 +554,78 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.allpassFeedback = parseFloat(tokens[2], 0.6f);
         }
         shared.paramsReady.store(true, std::memory_order_release);
+        return true;
+    }
+
+    if (cmd == "chorus")
+    {
+        // chorus off                                     → disable
+        // chorus <rate> <depth_ms> [voices] [spread] [feedback] [mix]
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.chorusEnabled = false;
+        }
+        else
+        {
+            shared.staging.chorusEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.chorusRate = parseFloat(tokens[1], 0.5f);
+            if (tokens.size() > 2)
+                shared.staging.chorusDepth = parseFloat(tokens[2], 3.0f);
+            if (tokens.size() > 3)
+                shared.staging.chorusVoices = parseInt(tokens[3], 3);
+            if (tokens.size() > 4)
+                shared.staging.chorusSpread = parseFloat(tokens[4], 0.5f);
+            if (tokens.size() > 5)
+                shared.staging.chorusFeedback = parseFloat(tokens[5], 0.0f);
+            if (tokens.size() > 6)
+                shared.staging.chorusMix = parseFloat(tokens[6], 0.5f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Chorus: " << (shared.staging.chorusEnabled ? "ON" : "OFF")
+                  << " rate=" << shared.staging.chorusRate
+                  << "Hz depth=" << shared.staging.chorusDepth
+                  << "ms voices=" << shared.staging.chorusVoices
+                  << " spread=" << shared.staging.chorusSpread
+                  << " fb=" << shared.staging.chorusFeedback
+                  << " mix=" << shared.staging.chorusMix
+                  << std::endl;
+        return true;
+    }
+
+    if (cmd == "phaser")
+    {
+        // phaser off                                     → disable
+        // phaser <rate> <depth> [stages] [center_hz] [feedback] [mix]
+        if (tokens.size() > 1 && tokens[1] == "off")
+        {
+            shared.staging.phaserEnabled = false;
+        }
+        else
+        {
+            shared.staging.phaserEnabled = true;
+            if (tokens.size() > 1)
+                shared.staging.phaserRate = parseFloat(tokens[1], 0.5f);
+            if (tokens.size() > 2)
+                shared.staging.phaserDepth = parseFloat(tokens[2], 0.5f);
+            if (tokens.size() > 3)
+                shared.staging.phaserStages = parseInt(tokens[3], 4);
+            if (tokens.size() > 4)
+                shared.staging.phaserCenter = parseFloat(tokens[4], 800.0f);
+            if (tokens.size() > 5)
+                shared.staging.phaserFeedback = parseFloat(tokens[5], 0.0f);
+            if (tokens.size() > 6)
+                shared.staging.phaserMix = parseFloat(tokens[6], 0.5f);
+        }
+        shared.paramsReady.store(true, std::memory_order_release);
+        std::cout << "Phaser: " << (shared.staging.phaserEnabled ? "ON" : "OFF")
+                  << " rate=" << shared.staging.phaserRate
+                  << "Hz depth=" << shared.staging.phaserDepth
+                  << " stages=" << shared.staging.phaserStages
+                  << " centre=" << shared.staging.phaserCenter
+                  << "Hz fb=" << shared.staging.phaserFeedback
+                  << " mix=" << shared.staging.phaserMix
+                  << std::endl;
         return true;
     }
 

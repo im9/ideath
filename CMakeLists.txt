@@ -49,6 +49,8 @@ add_library(ideath STATIC
     src/MultiShapeWavetable.cpp
     src/DXFMSynth.cpp
     src/AllpassFilter.cpp
+    src/Chorus.cpp
+    src/Phaser.cpp
 )
 
 add_library(ideath::ideath ALIAS ideath)
@@ -156,6 +158,8 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_MultiShapeWavetable.cpp
         tests/test_DXFMSynth.cpp
         tests/test_AllpassFilter.cpp
+        tests/test_Chorus.cpp
+        tests/test_Phaser.cpp
     )
 
     target_link_libraries(ideath_tests PRIVATE ideath Catch2::Catch2WithMain)
