@@ -164,7 +164,7 @@ TEST_CASE("Oscillator: reset returns phase to zero", "[osc]")
     REQUIRE_THAT(osc.getPhase(), WithinAbs(0.0f, 1e-6f));
 }
 
-TEST_CASE("Oscillator: nudgePhase advances phase by delta, wraps to [0,1)",
+TEST_CASE("Oscillator: nudgePhase advances phase by delta and wraps modulo 1",
           "[osc]")
 {
     // nudgePhase is the hook for external phase coupling (Kuramoto-style
