@@ -374,3 +374,30 @@ TEST_CASE("UnisonOscillator: near-Nyquist frequency with detune", "[unison]")
         REQUIRE(out <= bound);
     }
 }
+
+TEST_CASE("UnisonOscillator: nudgeFundamentalPhase shifts stack uniformly",
+          "[unison]")
+{
+    // Kuramoto hook: nudging the fundamental phase must rotate every
+    // voice by the SAME delta so the detune spread stays intact
+    // (relative phases unchanged).
+    ideath::UnisonOscillator uni;
+    uni.prepare(kSampleRate);
+    uni.setVoiceCount(4);
+    uni.setFrequency(220.0f);
+    uni.setDetune(10.0f);
+
+    // Advance to let detune diverge voices' phases.
+    for (int i = 0; i < 200; ++i) uni.process(1.0f);
+    const float phaseBefore = uni.getFundamentalPhase();
+
+    // Nudge by 0.25 cycles — all voices shift by the same amount.
+    uni.nudgeFundamentalPhase(0.25f);
+
+    const float phaseAfter = uni.getFundamentalPhase();
+    float expected = phaseBefore + 0.25f;
+    expected -= std::floor(expected);
+    REQUIRE_THAT(phaseAfter, WithinAbs(expected, 1e-6f));
+    REQUIRE(phaseAfter >= 0.0f);
+    REQUIRE(phaseAfter < 1.0f);
+}

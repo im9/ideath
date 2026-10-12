@@ -19,6 +19,12 @@ public:
 
     float getPhase() const { return phase_; }
 
+    /// Advance phase by `delta` cycles and wrap to [0, 1). Hook for
+    /// external phase coupling (e.g. Kuramoto-style audio-rate alignment
+    /// driven by a consensus signal computed in the plugin layer).
+    /// Positive delta pushes forward, negative retards.
+    void nudgePhase(float delta);
+
 private:
     float sampleRate_ = 44100.0f;
     float phase_ = 0.0f;

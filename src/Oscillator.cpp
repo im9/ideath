@@ -38,6 +38,12 @@ void Oscillator::setFrequency(float freqHz)
     phaseInc_ = freqHz / sampleRate_;
 }
 
+void Oscillator::nudgePhase(float delta)
+{
+    phase_ += delta;
+    phase_ -= std::floor(phase_);
+}
+
 float Oscillator::process(float waveform)
 {
     phase_ += phaseInc_;

@@ -164,6 +164,48 @@ TEST_CASE("Oscillator: reset returns phase to zero", "[osc]")
     REQUIRE_THAT(osc.getPhase(), WithinAbs(0.0f, 1e-6f));
 }
 
+TEST_CASE("Oscillator: nudgePhase advances phase by delta, wraps to [0,1)",
+          "[osc]")
+{
+    // nudgePhase is the hook for external phase coupling (Kuramoto-style
+    // audio-rate alignment driven by a consensus signal computed in the
+    // plugin layer).  Positive delta advances, negative retards; the sum
+    // wraps modulo 1 per ideath "phase accumulators must wrap via
+    // phase -= floor(phase)" convention.
+    ideath::Oscillator osc;
+    osc.prepare(kSampleRate);
+    osc.setFrequency(440.0f);
+
+    // Advance to a known phase (0.3 should match a specific
+    // sample-count close enough; just read it after some processing).
+    for (int i = 0; i < 100; ++i) osc.process(1.0f);
+    const float before = osc.getPhase();
+
+    // +0.25 shifts phase a quarter cycle forward.
+    osc.nudgePhase(0.25f);
+    const float after = osc.getPhase();
+    const float expected = before + 0.25f - std::floor(before + 0.25f);
+    REQUIRE_THAT(after, WithinAbs(expected, 1e-6f));
+    REQUIRE(after >= 0.0f);
+    REQUIRE(after < 1.0f);
+
+    // Negative wraps up: start at ~0.1, nudge by -0.3 → wraps to 0.8.
+    ideath::Oscillator osc2;
+    osc2.prepare(kSampleRate);
+    osc2.setFrequency(100.0f);
+    // Advance until phase lands near 0.1 (~ 44 samples at 100 Hz, 44100 sr).
+    for (int i = 0; i < 44; ++i) osc2.process(1.0f);
+    const float b2 = osc2.getPhase();
+    osc2.nudgePhase(-0.3f);
+    const float a2 = osc2.getPhase();
+    REQUIRE(a2 >= 0.0f);
+    REQUIRE(a2 < 1.0f);
+    // Expected: (b2 - 0.3) mod 1 (positive)
+    float raw = b2 - 0.3f;
+    const float expWrap = raw - std::floor(raw);
+    REQUIRE_THAT(a2, WithinAbs(expWrap, 1e-6f));
+}
+
 TEST_CASE("Oscillator: reset preserves frequency", "[osc]")
 {
     // reset() clears runtime state (phase) but must preserve parameter-derived

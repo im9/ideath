@@ -126,4 +126,15 @@ float UnisonOscillator::process(float waveform)
     return sum / std::sqrt(static_cast<float>(voiceCount_));
 }
 
+float UnisonOscillator::getFundamentalPhase() const
+{
+    return voices_[0].getPhase();
+}
+
+void UnisonOscillator::nudgeFundamentalPhase(float delta)
+{
+    for (int i = 0; i < voiceCount_; ++i)
+        voices_[i].nudgePhase(delta);
+}
+
 } // namespace ideath

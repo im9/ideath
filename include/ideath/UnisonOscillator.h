@@ -41,6 +41,16 @@ public:
 
     int getVoiceCount() const { return voiceCount_; }
 
+    /// Representative phase of the unison stack (voice 0's phase in
+    /// [0, 1)). Used as the Kuramoto consensus input when externally
+    /// synchronising unison fundamental phases across instances.
+    float getFundamentalPhase() const;
+
+    /// Nudge every unison voice's phase by the same `delta` cycles.
+    /// Preserves the detune spread (relative phase differences)
+    /// while rotating the stack as a whole toward a Kuramoto target.
+    void nudgeFundamentalPhase(float delta);
+
     /// Test/debug: instantaneous drift offset (in cents) currently
     /// applied to voice `i`. Zero when drift is disabled.
     float getVoiceDriftCents(int i) const;
