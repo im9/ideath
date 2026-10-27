@@ -45,6 +45,7 @@ private:
     static constexpr int kNumAllpasses = 4;
     static constexpr float kInputGain = 0.015f;   // canonical Freeverb fixedgain
     static constexpr float kWetScale  = 3.0f;     // canonical Freeverb scalewet
+    static constexpr float kDampScale = 0.4f;     // canonical Freeverb scaledamp
     static constexpr int kStereoSpread = 23;
     static constexpr float kMaxPreDelay = 0.1f; // 100ms max
 

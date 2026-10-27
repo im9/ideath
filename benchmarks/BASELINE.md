@@ -67,7 +67,7 @@ than comparing cross-host.
 | PeakLimiter::process               |           3.376 µs |        6.59 |
 | Reverb::process                    |          11.359 µs |       22.19 |
 | HallReverb::process                |          56.732 µs |      110.80 |
-| ShimmerReverb::process             |          48.479 µs |       94.69 |
+| ShimmerReverb::process             |          53.239 µs |      103.98 |
 | FMSynth::process                   |          19.455 µs |       38.00 |
 | DXFMSynth::process (algo 1)        |          55.222 µs |      107.86 |
 | DXFMSynth::process (algo 32 add)   |          29.006 µs |       56.65 |
@@ -147,3 +147,10 @@ than comparing cross-host.
   (`setShapePosition` between two shapes) doubles the table reads + adds a
   lerp, ~5.93 ns/sample (+8% vs snap). Both fit well inside any plugin's
   per-voice budget.
+- `ShimmerReverb` re-measured 2026-10-27 on the same Apple M2 Max host
+  (cross-checked via `HallReverb::process` = 108.9 ns/sample vs. the prior
+  110.8 ns/sample, within run-to-run jitter). +9.8 % over the previous
+  94.69 ns/sample, attributable to the two anti-alias Biquad LPs added in
+  front of the octave-up pitch shifters (one per channel) plus the
+  direct/shifted feedback blend; the true-Schroeder allpass form adds one
+  multiply per stage. Within the 20 % regression threshold.

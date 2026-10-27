@@ -164,7 +164,9 @@ void Reverb::updateParams()
 
 std::pair<float, float> Reverb::process(float input)
 {
-    float in = input * kInputGain;
+    // Canonical Freeverb mutes the comb input while frozen: the combs run
+    // at fb = 1, so anything added would recirculate forever and grow.
+    float in = freeze_ ? 0.0f : input * kInputGain;
 
     // Parallel comb filters
     float outL = 0.0f;

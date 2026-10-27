@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/HallReverb.h>
+#include <ideath/Biquad.h>
 #include <cmath>
 #include <vector>
 
@@ -200,6 +201,10 @@ TEST_CASE("HallReverb: freeze holds tail", "[hallreverb]")
     rev.prepare(kSampleRate);
     rev.setSize(0.7f);
     rev.setMix(1.0f);
+    // No comb modulation: the LFO-swept fractional read uses linear
+    // interpolation, whose |H| < 1 above DC would make the frozen loop
+    // slightly lossy and void the lossless-loop derivation below.
+    rev.setModDepth(0.0f);
 
     for (int i = 0; i < 4410; ++i)
         rev.process(0.5f);
@@ -207,23 +212,30 @@ TEST_CASE("HallReverb: freeze holds tail", "[hallreverb]")
     rev.setFreeze(true);
 
     float energy1 = 0.0f;
-    for (int i = 0; i < 4410; ++i)
+    for (int i = 0; i < 44100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
         energy1 += l * l + r * r;
     }
 
     float energy2 = 0.0f;
-    for (int i = 0; i < 4410; ++i)
+    for (int i = 0; i < 44100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
         energy2 += l * l + r * r;
     }
 
-    // Freeze: fb=1.0, damp1=0, damp2=1 → perfect recirculation.
-    // Allpasses are unity-gain. Energy preserved within float precision.
+    // Freeze: fb = 1, damp1 = 0 and the comb input muted, so every comb
+    // recirculates its buffer unchanged — each comb output is periodic with
+    // its own length L ≤ 1617 + 23 = 1640 samples (longest tuning + stereo
+    // spread).  The output allpasses (Freeverb's y = w[n−D] − x form, which
+    // is not unity-gain) are LTI and sit outside the loops, so they reshape
+    // but cannot drain the held energy.  A block's energy can fall short of
+    // the previous block's only by the partial period at its edge:
+    // ≤ L / N = 1640 / 44100 ≈ 3.7 % for 1 s blocks.  0.95 = 1 − 3.7 %
+    // rounded down by ~1 % for float recirculation over 2 s.
     REQUIRE(energy1 > 0.0f);
-    REQUIRE(energy2 > energy1 * 0.99f);
+    REQUIRE(energy2 > energy1 * 0.95f);
 }
 
 TEST_CASE("HallReverb: dry/wet mix", "[hallreverb]")
@@ -338,4 +350,108 @@ TEST_CASE("HallReverb: long-run stability (10 seconds)", "[hallreverb]")
         REQUIRE(std::isfinite(l));
         REQUIRE(std::isfinite(r));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Damping audibility
+// ---------------------------------------------------------------------------
+
+// Energy (dB re full scale) above 4 kHz in the 0.3–1.3 s window after a
+// 0.26 s, 220 Hz naive-saw note is released.  The saw supplies harmonics
+// across the whole band, the 4th-order (two cascaded RBJ Q=0.707) highpass
+// isolates the region that damping is meant to darken, and the window skips
+// the early reflections so the measurement reflects the recirculating tail
+// where the in-loop lowpass acts once per comb pass.
+static double hallTailHfDb(float size, float damp)
+{
+    ideath::HallReverb rev;
+    rev.prepare(kSampleRate);
+    rev.setSize(size);
+    rev.setDamp(damp);
+    rev.setMix(1.0f);
+
+    ideath::Biquad hp1, hp2;
+    hp1.setHighpass(4000.0f, 0.7071f, kSampleRate);
+    hp2.setHighpass(4000.0f, 0.7071f, kSampleRate);
+
+    const int noteLen = static_cast<int>(0.26f * kSampleRate);
+    const int winStart = noteLen + static_cast<int>(0.3f * kSampleRate);
+    const int winEnd = noteLen + static_cast<int>(1.3f * kSampleRate);
+
+    double energy = 0.0;
+    for (int i = 0; i < winEnd; ++i)
+    {
+        float in = 0.0f;
+        if (i < noteLen)
+        {
+            const float ph = std::fmod(220.0f * static_cast<float>(i) / kSampleRate, 1.0f);
+            in = 0.5f * (2.0f * ph - 1.0f);
+        }
+        auto [l, r] = rev.process(in);
+        const float hf = hp2.process(hp1.process(0.5f * (l + r)));
+        if (i >= winStart)
+            energy += static_cast<double>(hf) * hf;
+    }
+    return 10.0 * std::log10(energy / (winEnd - winStart) + 1e-30);
+}
+
+TEST_CASE("HallReverb: damp darkens the long tail audibly", "[hallreverb]")
+{
+    const double hf0 = hallTailHfDb(0.9f, 0.0f);
+    const double hf5 = hallTailHfDb(0.9f, 0.5f);
+    const double hf1 = hallTailHfDb(0.9f, 1.0f);
+
+    INFO("HF tail dB: damp 0 = " << hf0 << ", 0.5 = " << hf5 << ", 1 = " << hf1);
+    // 6 dB = half amplitude, the smallest difference the TONE control must
+    // produce across its range to read as a clear change of brightness.
+    REQUIRE(hf1 <= hf0 - 6.0);
+    // Monotone: more damping never brightens the tail.
+    REQUIRE(hf5 < hf0);
+    REQUIRE(hf1 < hf5);
+}
+
+TEST_CASE("HallReverb: input during freeze does not enter the held tail", "[hallreverb]")
+{
+    // Canonical Freeverb mutes the comb input while frozen (gain = 0) —
+    // the combs then run at fb = 1 with nothing added, so the held tail is
+    // exactly what was captured at engagement.  With mix = 1 the dry term
+    // is input × 0 = 0 exactly, so the output of a reverb that keeps
+    // receiving input after freeze must be bit-identical to one fed
+    // silence.  Any difference means input leaks into the lossless loop,
+    // where it accumulates without bound.
+    ideath::HallReverb held;
+    ideath::HallReverb fed;
+    for (auto* rev : { &held, &fed })
+    {
+        rev->prepare(kSampleRate);
+        rev->setSize(0.7f);
+        rev->setMix(1.0f);
+    }
+
+    auto stim = [](int i) {
+        const float t = static_cast<float>(i) / kSampleRate;
+        return 0.1f * (std::sin(2.0f * 3.14159265f * 997.0f * t)
+                     + std::sin(2.0f * 3.14159265f * 1447.0f * t)
+                     + std::sin(2.0f * 3.14159265f * 2011.0f * t));
+    };
+
+    int t = 0;
+    for (; t < 44100; ++t)
+    {
+        held.process(stim(t));
+        fed.process(stim(t));
+    }
+    held.setFreeze(true);
+    fed.setFreeze(true);
+
+    int mismatches = 0;
+    for (int i = 0; i < 44100 * 2; ++i, ++t)
+    {
+        auto [hl, hr] = held.process(0.0f);
+        auto [fl, fr] = fed.process(stim(t));
+        if (hl != fl || hr != fr)
+            ++mismatches;
+    }
+    INFO("samples where fed output differs from held: " << mismatches);
+    REQUIRE(mismatches == 0);
 }

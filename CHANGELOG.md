@@ -62,6 +62,30 @@ The format is based on Keep a Changelog, adapted for the project's current stage
 - README usage examples now prefer `ideath::ideath`
 - README now links to project governance and assessment docs
 - REPL signal-chain documentation now reflects the current processing order
+- `HallReverb::setDamp` uses the canonical Freeverb damping scale (0–0.4,
+  was 0–0.12) so damp 1 audibly darkens the tail; damp 0 is bit-identical
+- `ShimmerReverb::setSize` now sets the decay time (nominal T60 0.5 s →
+  ≈ 30 s, exponential in size); `setShimmer` is now the equal-power blend
+  of unshifted and octave-up feedback instead of a feedback-gain offset
+- `ShimmerReverb::setDamp` is linear in dB of per-pass attenuation at
+  4 kHz (0–12 dB), removing the cliff in the last 10 % of the range
+
+### Fixed
+
+- `ShimmerReverb` modulated allpasses wrapped their read position past the
+  64-sample headroom for size > 0.32 (LFO excursion reaches 147 samples)
+- `ShimmerReverb` modulated allpasses used `y = w[n−D] − g·x`, which is not
+  allpass (peaks ≈ +1.5 dB per stage); now the textbook Schroeder form
+- `ShimmerReverb` octave-up shifter is preceded by an anti-alias lowpass
+  (sr/8) so content above sr/4 cannot fold back onto itself and make the
+  loop gain exceed 1
+- `Reverb` / `HallReverb` freeze now mutes the comb input (canonical
+  Freeverb); input during freeze previously accumulated in the lossless loop
+- `ShimmerReverb::reset()` restores the allpass LFO phases, so output after
+  reset matches a freshly prepared instance
+- `ShimmerReverb` allpass LFO depth scales with sample rate (≈ 1.1 ms at
+  modScale 1); it was fixed at 49 samples, halving the modulation at 96 kHz
+  and wrapping the read pointer below ~11 kHz
 
 ## Release Notes Template
 

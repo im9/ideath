@@ -255,8 +255,14 @@ void HallReverb::updateParams()
     {
         // Hall: wider feedback range (0.50–0.99)
         feedback_ = 0.5f + size_ * 0.49f;
-        // Hall: low damping for bright, open character (0–0.12)
-        damp1_ = damp_ * 0.12f;
+        // Canonical Freeverb scaledamp (0–0.4), same as Reverb.  The
+        // former 0–0.12 cap left damp at 1 only ~2 dB darker than damp 0 in
+        // a long tail; 0.4 attenuates 4 kHz by ~1.1–1.3 dB (48 / 44.1 kHz)
+        // per comb pass, which compounds over the 25–37 ms pass period into
+        // a clearly darker tail.  damp 0 → damp1 = 0, so the brightest
+        // setting is bit-identical; for any damp > 0 (including the 0.1
+        // default) damp1 is 0.4 / 0.12 ≈ 3.3× its former value.
+        damp1_ = damp_ * kDampScale;
         damp2_ = 1.0f - damp1_;
     }
 }
@@ -266,7 +272,9 @@ std::pair<float, float> HallReverb::process(float input)
     // Pre-delay
     float delayed = preDelay_.process(input);
 
-    float in = delayed * kInputGain;
+    // Mute the comb input while frozen (canonical Freeverb): the combs run
+    // at fb = 1, so anything added would recirculate forever and grow.
+    float in = freeze_ ? 0.0f : delayed * kInputGain;
 
     // Modulation depth in samples (0–7)
     float modSamples = modDepth_ * 7.0f;

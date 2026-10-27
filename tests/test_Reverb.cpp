@@ -170,25 +170,30 @@ TEST_CASE("Reverb: freeze holds reverb tail", "[reverb]")
 
     // Measure energy over time — it should sustain, not decay
     float energy1 = 0.0f;
-    for (int i = 0; i < 4410; ++i)
+    for (int i = 0; i < 44100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
         energy1 += l * l + r * r;
     }
 
     float energy2 = 0.0f;
-    for (int i = 0; i < 4410; ++i)
+    for (int i = 0; i < 44100; ++i)
     {
         auto [l, r] = rev.process(0.0f);
         energy2 += l * l + r * r;
     }
 
-    // Freeze: feedback=1.0, damp1=0, damp2=1 → perfect recirculation.
-    // Allpasses have unity gain at all frequencies (|H|=1).
-    // Energy should be perfectly preserved. 0.99 allows 1% for float
-    // accumulation error over 8820 samples.
+    // Freeze: fb = 1, damp1 = 0 and the comb input muted, so every comb
+    // recirculates its buffer unchanged — each comb output is periodic with
+    // its own length L ≤ 1617 + 23 = 1640 samples (longest tuning + stereo
+    // spread).  The output allpasses (Freeverb's y = w[n−D] − x form, which
+    // is not unity-gain) are LTI and sit outside the loops, so they reshape
+    // but cannot drain the held energy.  A block's energy can fall short of
+    // the previous block's only by the partial period at its edge:
+    // ≤ L / N = 1640 / 44100 ≈ 3.7 % for 1 s blocks.  0.95 = 1 − 3.7 %
+    // rounded down by ~1 % for float recirculation over 2 s.
     REQUIRE(energy1 > 0.0f);
-    REQUIRE(energy2 > energy1 * 0.99f);
+    REQUIRE(energy2 > energy1 * 0.95f);
 }
 
 TEST_CASE("Reverb: size affects decay time", "[reverb]")
@@ -356,4 +361,50 @@ TEST_CASE("Reverb: long-run silence doesn't accumulate DC", "[reverb]")
     // 1e−21..1e−23 range — 12+ orders below the 1e−9 bound.
     REQUIRE(std::fabs(lastL) < 1e-9f);
     REQUIRE(std::fabs(lastR) < 1e-9f);
+}
+
+TEST_CASE("Reverb: input during freeze does not enter the held tail", "[reverb]")
+{
+    // Canonical Freeverb mutes the comb input while frozen (gain = 0) —
+    // the combs then run at fb = 1 with nothing added, so the held tail is
+    // exactly what was captured at engagement.  With mix = 1 the dry term
+    // is input × 0 = 0 exactly, so the output of a reverb that keeps
+    // receiving input after freeze must be bit-identical to one fed
+    // silence.  Any difference means input leaks into the lossless loop,
+    // where it accumulates without bound.
+    ideath::Reverb held;
+    ideath::Reverb fed;
+    for (auto* rev : { &held, &fed })
+    {
+        rev->prepare(kSampleRate);
+        rev->setSize(0.7f);
+        rev->setMix(1.0f);
+    }
+
+    auto stim = [](int i) {
+        const float t = static_cast<float>(i) / kSampleRate;
+        return 0.1f * (std::sin(2.0f * 3.14159265f * 997.0f * t)
+                     + std::sin(2.0f * 3.14159265f * 1447.0f * t)
+                     + std::sin(2.0f * 3.14159265f * 2011.0f * t));
+    };
+
+    int t = 0;
+    for (; t < 44100; ++t)
+    {
+        held.process(stim(t));
+        fed.process(stim(t));
+    }
+    held.setFreeze(true);
+    fed.setFreeze(true);
+
+    int mismatches = 0;
+    for (int i = 0; i < 44100 * 2; ++i, ++t)
+    {
+        auto [hl, hr] = held.process(0.0f);
+        auto [fl, fr] = fed.process(stim(t));
+        if (hl != fl || hr != fr)
+            ++mismatches;
+    }
+    INFO("samples where fed output differs from held: " << mismatches);
+    REQUIRE(mismatches == 0);
 }
