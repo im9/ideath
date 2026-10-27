@@ -13,19 +13,22 @@ static constexpr float kAntiDenormal = 1e-25f;
 void ShimmerReverb::ModAllpass::prepare(int size, float fb, float lfoRate,
                                          float phase, float sampleRate)
 {
-    bufSize = size + 64; // headroom for modulation
+    modDepth = kModDepthAt44k * sampleRate / 44100.0f;
+    headroom = static_cast<int>(std::ceil(modDepth * kMaxModScale)) + 2;
+    bufSize = size + headroom;
     buffer.resize(bufSize, 0.0f);
     writeIndex = 0;
     feedback = fb;
+    initialPhase = phase;
     lfoPhase = phase;
     lfoInc = lfoRate / sampleRate;
-    modDepth = 49.0f; // max ±49 samples
 }
 
 void ShimmerReverb::ModAllpass::clear()
 {
     std::fill(buffer.begin(), buffer.end(), 0.0f);
     writeIndex = 0;
+    lfoPhase = initialPhase;
 }
 
 float ShimmerReverb::ModAllpass::process(float input, float modScale)
@@ -34,7 +37,7 @@ float ShimmerReverb::ModAllpass::process(float input, float modScale)
     lfoPhase += lfoInc;
     if (lfoPhase >= 1.0f) lfoPhase -= 1.0f;
 
-    int baseDelay = bufSize - 64;
+    int baseDelay = bufSize - headroom;
     float readPos = static_cast<float>(writeIndex) - static_cast<float>(baseDelay) + lfo;
     while (readPos < 0.0f) readPos += static_cast<float>(bufSize);
 
@@ -45,8 +48,13 @@ float ShimmerReverb::ModAllpass::process(float input, float modScale)
 
     float bufOut = buffer[idx0] * (1.0f - frac) + buffer[idx1] * frac;
 
-    float output = bufOut - input * feedback;
-    buffer[writeIndex] = input + bufOut * feedback + kAntiDenormal;
+    // Schroeder allpass: w = x + g·w[n−D], y = w[n−D] − g·w (|H| = 1).
+    // The earlier `y = w[n−D] − g·x` form peaks at (1−g+g²)/(1−g) ≈ 1.19
+    // per stage for g = 0.35; four in the loop could push the unshifted
+    // feedback path's loop gain above 1.
+    float w = input + bufOut * feedback + kAntiDenormal;
+    float output = bufOut - w * feedback;
+    buffer[writeIndex] = w;
 
     if (++writeIndex >= bufSize)
         writeIndex = 0;
@@ -178,9 +186,9 @@ float ShimmerReverb::DcBlocker::process(float input)
 // Forward AP
 static constexpr int kFwdApL[] = { 601, 613 };
 static constexpr int kFwdApR[] = { 2043, 2087 };
-// Feedback AP (cross-coupled)
-static constexpr int kFbApL[] = { 2337, 2377 }; // fed from R
-static constexpr int kFbApR[] = { 1087, 1113 }; // fed from L
+// Feedback AP (independent L / R loops)
+static constexpr int kFbApL[] = { 2337, 2377 };
+static constexpr int kFbApR[] = { 1087, 1113 };
 // Forward AP feedback coefficients (scaled by diffusion=0.5)
 static constexpr float kFwdApFb[] = { 0.35f, 0.375f }; // 0.7×0.5, 0.75×0.5
 // Feedback AP feedback coefficients (asymmetric)
@@ -218,11 +226,11 @@ void ShimmerReverb::prepare(float sampleRate)
         fwdApR_[i].prepare(scaleDelay(kFwdApR[i], sampleRate), kFwdApFb[i],
                            kLfoRates[i + 2], kLfoPhases[i + 2], sampleRate);
 
-    // Feedback allpass — L (fed from R)
+    // Feedback allpass — L
     for (int i = 0; i < 2; ++i)
         fbApL_[i].prepare(scaleDelay(kFbApL[i], sampleRate), kFbApFbL[i],
                           kLfoRates[i], kLfoPhases[i] + 0.1f, sampleRate);
-    // Feedback allpass — R (fed from L)
+    // Feedback allpass — R
     for (int i = 0; i < 2; ++i)
         fbApR_[i].prepare(scaleDelay(kFbApR[i], sampleRate), kFbApFbR[i],
                           kLfoRates[i + 2], kLfoPhases[i + 2] + 0.1f, sampleRate);
@@ -244,6 +252,23 @@ void ShimmerReverb::prepare(float sampleRate)
     // Pitch shifters (buffer = 2 × window for safety)
     pitchL_.prepare(PitchShifter::kWindowSize * 2);
     pitchR_.prepare(PitchShifter::kWindowSize * 2);
+
+    // Anti-alias lowpass ahead of the octave-up shifter.  Content above
+    // sr/4 lands above Nyquist when doubled and folds back; at sr/3 it folds
+    // onto itself (sr − 2f = f) and adds coherently to the unshifted path,
+    // so the loop gain there is fb·(cos θ + h·sin θ) ≤ fb·√(1 + h²) with
+    // h = |H(sr/4…)|.  Staying below 1 at fb = 0.93 needs h ≤ 0.39; a
+    // Butterworth LP at sr/8 gives h ≤ 1/√(1 + 2⁴) ≈ 0.24 at sr/4.
+    pitchAaL_.setLowpass(sampleRate * 0.125f, 0.7071f, sampleRate);
+    pitchAaR_.setLowpass(sampleRate * 0.125f, 0.7071f, sampleRate);
+
+    // Direct (unshifted) loop period: forward APs → pre delay → feedback
+    // APs → post delay.  Mean of L and R; drives the size → feedback map.
+    const int loopL = kFwdApL[0] + kFwdApL[1] + kFbDelayPreL + kFbApL[0]
+                    + kFbApL[1] + kFbDelayPostL;
+    const int loopR = kFwdApR[0] + kFwdApR[1] + kFbDelayPreR + kFbApR[0]
+                    + kFbApR[1] + kFbDelayPostR;
+    loopSeconds_ = 0.5f * static_cast<float>(loopL + loopR) / 44100.0f;
 
     fbL_ = 0.0f;
     fbR_ = 0.0f;
@@ -276,6 +301,8 @@ void ShimmerReverb::reset()
 
     pitchL_.clear();
     pitchR_.clear();
+    pitchAaL_.reset();
+    pitchAaR_.reset();
 
     fbL_ = 0.0f;
     fbR_ = 0.0f;
@@ -332,18 +359,41 @@ void ShimmerReverb::updateParams()
     if (freeze_)
     {
         // Freeze: keep shimmer path alive during crossfade to Freeverb
-        feedback_ = 0.93f;
+        feedback_ = kMaxFeedback;
         dampCoeff_ = 0.0f;
     }
     else
     {
-        // Shimmer drives feedback into the typical shimmer range (0.7–0.95)
-        // Base reverb tail (0.25) + shimmer contribution + size contribution
-        feedback_ = 0.25f + shimmer_ * 0.50f + size_ * 0.20f;
-        feedback_ = std::min(feedback_, 0.93f);
-        // Damp coefficient: 0–0.995
-        dampCoeff_ = 0.005f + damp_ * 0.99f;
+        // Size → decay time.  A loop of period T with gain g reaches −60 dB
+        // after T60 = 3·T / −log10(g) seconds.  T60 runs exponentially (even
+        // steps per unit of size) from kMinT60 to the T60 of the
+        // kMaxFeedback ceiling, then g = 10^(−3·T / T60).  The octave-up
+        // share of the feedback climbs out of band and decays faster, so the
+        // measured T60 is below nominal when shimmer > 0.
+        const float maxT60 = 3.0f * loopSeconds_ / -std::log10(kMaxFeedback);
+        const float t60 = kMinT60 * std::pow(maxT60 / kMinT60, size_);
+        feedback_ = std::min(kMaxFeedback,
+                             std::pow(10.0f, -3.0f * loopSeconds_ / t60));
+
+        // Damp → one-pole coefficient c whose gain at kDampRefHz is
+        // G = 10^(−kMaxDampDb·damp/20), linear in dB so each step of damp
+        // darkens the tail equally.  From |(1−c)/(1−c·e^−jω)|² = G²:
+        //   k·c² − 2m·c + k = 0,  k = 1 − G²,  m = 1 − G²·cos ω
+        // and the root inside the unit circle is c = (m − √(m² − k²)) / k,
+        // evaluated as k / (m + √(m² − k²)) to avoid cancellation at small k.
+        const float refHz = std::min(kDampRefHz, 0.45f * sampleRate_);
+        const float cosW = std::cos(kTwoPi * refHz / sampleRate_);
+        const float g = std::pow(10.0f, -kMaxDampDb * damp_ / 20.0f);
+        const float k = 1.0f - g * g;
+        const float m = 1.0f - g * g * cosW;
+        dampCoeff_ = k / (m + std::sqrt(m * m - k * k));
     }
+
+    // Equal-power blend: the octave-up signal is decorrelated from the
+    // unshifted one, so cos²+sin² = 1 keeps the fed-back power constant
+    // across the shimmer range.
+    directGain_ = std::cos(0.5f * kPi * shimmer_);
+    shiftedGain_ = std::sin(0.5f * kPi * shimmer_);
 
     // Scale allpass feedback coefficients with size for longer diffusion tail
     float sizeScale = 0.5f + size_ * 0.5f; // 0.5–1.0
@@ -388,13 +438,15 @@ std::pair<float, float> ShimmerReverb::process(float input)
     for (auto& ap : fbApL_)
         fbPathL = ap.process(fbPathL, modScale);
     fbPathL = fbDelayPostL_.process(fbPathL);
-    fbPathL = pitchL_.process(fbPathL);
+    fbPathL = directGain_ * fbPathL
+            + shiftedGain_ * pitchL_.process(pitchAaL_.process(fbPathL));
 
     float fbPathR = fbDelayPreR_.process(dcFreeR);
     for (auto& ap : fbApR_)
         fbPathR = ap.process(fbPathR, modScale);
     fbPathR = fbDelayPostR_.process(fbPathR);
-    fbPathR = pitchR_.process(fbPathR);
+    fbPathR = directGain_ * fbPathR
+            + shiftedGain_ * pitchR_.process(pitchAaR_.process(fbPathR));
 
     fbL_ = fbPathL * feedback_;
     fbR_ = fbPathR * feedback_;

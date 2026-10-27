@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Biquad.h"
 #include "Reverb.h"
 #include <array>
 #include <utility>
@@ -7,7 +8,7 @@
 
 namespace ideath {
 
-/// Shimmer reverb — cross-coupled stereo allpass network with octave-shifted
+/// Shimmer reverb — stereo (independent L/R loops) allpass network with octave-shifted
 /// pitch feedback. Produces ethereal, metallic, evolving tails.
 /// Faust shimmer.dsp lineage.
 /// Mono in, stereo out.
@@ -21,13 +22,19 @@ public:
     void prepare(float sampleRate);
     void reset();
 
-    /// Reverb size (0.0–1.0). Scales delay line lengths and diffusion.
+    /// Reverb size (0.0–1.0). Sets the decay time: nominal T60 runs
+    /// exponentially from 0.5 s (size 0) to the T60 of the 0.93 loop-gain
+    /// ceiling (≈ 30 s, size 1). Also scales diffusion and modulation.
     void setSize(float size);
 
-    /// Damping (0.0–1.0). High-frequency absorption in feedback paths.
+    /// Damping (0.0–1.0). High-frequency absorption in the feedback loop:
+    /// attenuation at 4 kHz per loop pass rises linearly in dB from 0 to
+    /// 12 dB, so the tail darkens evenly across the range.
     void setDamp(float damp);
 
-    /// Shimmer amount (0.0–1.0). Controls pitch-shifted feedback blend.
+    /// Shimmer amount (0.0–1.0). Equal-power blend of unshifted and
+    /// octave-up signal in the feedback loop (0 = plain reverb,
+    /// 1 = every pass is shifted up an octave).
     void setShimmer(float amount);
 
     /// Dry/wet mix (0.0 = fully dry, 1.0 = fully wet).
@@ -48,9 +55,21 @@ private:
     bool freeze_ = false;
     bool prevFreeze_ = false;
 
+    // Loop gain ceiling outside freeze. Below 1 so the direct (unshifted)
+    // loop always decays; also the freeze-time loop gain.
+    static constexpr float kMaxFeedback = 0.93f;
+    // Nominal T60 at size 0.
+    static constexpr float kMinT60 = 0.5f;
+    // Per-pass damping at kDampRefHz when damp = 1.
+    static constexpr float kMaxDampDb = 12.0f;
+    static constexpr float kDampRefHz = 4000.0f;
+
     // Derived
     float feedback_ = 0.0f;
     float dampCoeff_ = 0.0f;
+    float directGain_ = 0.0f;  // unshifted share of the feedback signal
+    float shiftedGain_ = 0.0f; // octave-up share of the feedback signal
+    float loopSeconds_ = 0.0f; // mean L/R direct-loop period
 
     // Freeze crossfade: shimmer → Freeverb over 200ms
     Reverb freezeReverb_;
@@ -67,8 +86,20 @@ private:
         int writeIndex = 0;
         float feedback = 0.5f;
 
+        // Peak LFO excursion at modScale = 1: 49 samples at 44.1 kHz,
+        // scaled with sample rate like the delay lengths (≈ 1.1 ms).
+        static constexpr float kModDepthAt44k = 49.0f;
+        // modScale = 0.5 + 2.5·size ≤ 3.0.
+        static constexpr float kMaxModScale = 3.0f;
+
+        // Samples beyond the nominal delay reserved for the LFO excursion:
+        // ceil(modDepth × kMaxModScale) plus 2 for the linear-interpolation
+        // neighbour and rounding.
+        int headroom = 0;
+
         // LFO
         float lfoPhase = 0.0f;
+        float initialPhase = 0.0f; // restored by clear()
         float lfoInc = 0.0f;
         float modDepth = 0.0f; // in samples
 
@@ -148,9 +179,10 @@ private:
     DcBlocker dcL_;
     DcBlocker dcR_;
 
-    // Feedback allpass (cross-coupled): 2 per path
-    // L feedback path (fed from R): AP(2337) → AP(2377)
-    // R feedback path (fed from L): AP(1087) → AP(1113)
+    // Feedback allpass: 2 per path.  Each channel's loop feeds back into
+    // itself (no L↔R coupling); loopSeconds_ is derived from these lengths.
+    // L feedback path: AP(2337) → AP(2377)
+    // R feedback path: AP(1087) → AP(1113)
     std::array<ModAllpass, 2> fbApL_;
     std::array<ModAllpass, 2> fbApR_;
 
@@ -162,11 +194,13 @@ private:
     FixedDelay fbDelayPreR_;
     FixedDelay fbDelayPostR_;
 
-    // Pitch shifters in feedback
+    // Pitch shifters in feedback, each behind an anti-alias lowpass
     PitchShifter pitchL_;
     PitchShifter pitchR_;
+    Biquad pitchAaL_;
+    Biquad pitchAaR_;
 
-    // Feedback state (cross-coupled)
+    // Feedback state (per channel)
     float fbL_ = 0.0f;
     float fbR_ = 0.0f;
 };
