@@ -52,8 +52,8 @@ than comparing cross-host.
 | Wavefolder::process                |           3.445 µs |        6.73 |
 | BitCrusher::process                |           2.282 µs |        4.46 |
 | DelayLine::process                 |           2.091 µs |        4.08 |
-| TapeDelay::process                 |          13.184 µs |       25.75 |
-| TapeDelay::processStereo (ping-pong, diffusion) | 30.313 µs |  59.20 |
+| TapeDelay::process ¹               |                  — |  17.5–18.2 |
+| TapeDelay::processStereo (ping-pong, diffusion) ² | 30.313 µs |  59.20 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
 | KarplusStrong::process             |           2.636 µs |        5.15 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
@@ -164,13 +164,22 @@ than comparing cross-host.
   - `ShimmerReverb` (one active voice, the bench default) 109.9 → 111.5
     ns/sample (+1 %). Two active voices at ±24 st: 142.1 ns/sample. A voice
     at level 0 skips its grain reads and splice search.
-  - `TapeDelay::process` 22.7 → 25.8 ns/sample (+14 %, within the 20 %
-    rule; `Reverb` 20.7–22.0 in the same run).  A first version ran the
-    four-allpass diffuser on every sample (+59 %); it now runs only while
-    diffusion is above 0, with the read crossfaded in once the diffused
-    copy holds a full delay.  Reads are allpass-interpolated (two taps and
-    one divide — a 4-point Hermite read cost ≈ 3 ns more).  A min-of-30
-    A/B harness with tape settings (wow 3 ms, flutter 0.8 ms, drive 2)
-    reads 22.4 vs 18.2 ns (+23 %); the remaining gap is the read and the
-    stereo-ready loop structure.  Stereo ping-pong with diffusion on:
-    59.2 ns/sample.
+  - `TapeDelay::process` ¹: faster than before the rebuild.  The final
+    code could not be timed with `make bench`: the host was saturated by
+    unrelated iOS-simulator test runs (load average ≈ 700; `Reverb` read
+    2–841 ns).  It was timed instead with an A/B harness that runs the
+    origin/main TapeDelay and the new one back to back, same settings as
+    the bench case (48 kHz, 512-sample blocks, delay 0.3 s, fb 0.7, wow
+    3 ms, flutter 0.8 ms, LP 6 kHz, HP 80 Hz, drive 2), minimum of 30 runs
+    of 200 blocks each — the minimum is the least load-sensitive
+    statistic.  Two runs: new 18.21 / 17.54 ns vs. old 19.38 / 19.28 ns
+    (−6 … −9 %).  Re-measure with `make bench` on an idle host.
+    How it got there: a first version ran the four-allpass diffuser on
+    every sample (+59 %); it now runs only while diffusion is above 0.
+    Reads are 4-point Hermite (a first-order allpass read was cheaper but
+    added 16–21 dB of high-band artefacts under wow/flutter).  Wow and
+    flutter are rotating phasors instead of a sin() and cos() per LFO per
+    sample, which pays for the Hermite read.
+  - ² Stereo ping-pong with diffusion on: 59.2 ns/sample, measured before
+    the phasor LFOs and the Hermite read (official bench, idle host); not
+    re-measured.

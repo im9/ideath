@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <ideath/Biquad.h>
 #include <ideath/TapeDelay.h>
 #include <cmath>
 #include <vector>
@@ -427,9 +428,8 @@ TEST_CASE("TapeDelay: clean repeats stay bright at a fractional delay", "[tapede
     // Delay of 441.5 samples (worst-case fraction 0.5).  The 8 kHz content
     // of the 4th echo, corrected for fb³, must be within 3 dB (half power)
     // of the 1st echo's.  Linear interpolation loses 1.5 dB per pass at
-    // 8 kHz (|cos(πf/sr)|) → −4.5 dB after three passes; the allpass
-    // interpolator has unit magnitude (0 dB per pass; only the wide-open
-    // tone filters remain).
+    // 8 kHz (|cos(πf/sr)|) → −4.5 dB after three passes; 4-point Hermite
+    // loses 0.32 dB per pass.
     ideath::TapeDelay d;
     cleanDelay(d, 441.5f / kSampleRate, 0.8f);
     const int D = 442;
@@ -628,4 +628,58 @@ TEST_CASE("TapeDelay: switching diffusion on and off mid-stream is seamless", "[
     INFO("largest step " << maxStep << ", lowest 10 ms RMS " << minRms << " vs steady " << steady);
     REQUIRE(maxStep <= 2.0f * 0.0171f);
     REQUIRE(minRms >= 0.5 * steady);
+}
+
+TEST_CASE("TapeDelay: wow/flutter reads add no high-band artefacts", "[tapedelay]")
+{
+    // A modulated read must stay smooth: an interpolator whose state jumps
+    // each time the integer part of a moving delay changes sprays energy
+    // far above the tone.  Clean repeats, filters wide open, 0.3 sine,
+    // delay 250 ms, wow 3 ms @ 0.6 Hz, flutter 1 ms @ 7 Hz, at 48 kHz.
+    // Energy above 4·f + 4 kHz (8th-order high-pass) relative to the total
+    // must stay below −80 dB: 16-bit quantisation noise relative to this
+    // −10.5 dBFS tone is ≈ −87.5 dB, so −80 dB keeps the artefacts within
+    // ≈ 7.5 dB of a 16-bit floor.  (A first-order allpass read measured
+    // −66 dB at 3 kHz.)
+    const float sr = 48000.0f;
+    for (float fb : { 0.0f, 0.6f })
+        for (float hz : { 1000.0f, 3000.0f })
+        {
+            ideath::TapeDelay d;
+            d.prepare(sr, 1.0f);
+            d.setDelay(0.25f);
+            d.setFeedback(fb);
+            d.setMix(1.0f);
+            d.setSaturation(false);
+            d.setLowpass(20000.0f);
+            d.setHighpass(5.0f);
+            d.setWowDepth(0.003f);
+            d.setWowRate(0.6f);
+            d.setFlutterDepth(0.001f);
+            d.setFlutterRate(7.0f);
+            std::vector<float> y(static_cast<size_t>(5.0f * sr));
+            // Phase in double: a float argument this large (≈ 3·10⁴ rad)
+            // carries its own phase noise into the measured band.
+            for (size_t i = 0; i < y.size(); ++i)
+                y[i] = d.process(0.3f * static_cast<float>(std::sin(
+                    2.0 * 3.141592653589793 * hz * static_cast<double>(i) / sr)));
+            std::vector<float> high(y.begin() + static_cast<long>(sr), y.end());
+            const std::vector<float> all = high;
+            for (int k = 0; k < 4; ++k)
+            {
+                ideath::Biquad hp;
+                hp.setHighpass(4.0f * hz + 4000.0f, 0.7071f, sr);
+                for (float& v : high)
+                    v = hp.process(v);
+            }
+            double eh = 0.0, et = 0.0;
+            for (size_t i = static_cast<size_t>(0.5f * sr); i < high.size(); ++i)
+            {
+                eh += static_cast<double>(high[i]) * high[i];
+                et += static_cast<double>(all[i]) * all[i];
+            }
+            const double db = 10.0 * std::log10(eh / et + 1e-30);
+            INFO("fb " << fb << ", " << hz << " Hz: artefacts " << db << " dB re total");
+            REQUIRE(db <= -80.0);
+        }
 }

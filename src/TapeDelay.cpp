@@ -8,8 +8,8 @@ namespace ideath {
 static constexpr float kAntiDenormal = 1e-25f;
 static constexpr float kTwoPi = 6.283185307f;
 
-// Shortest read: the allpass-interpolated read takes N = ⌊d − 0.5⌋ ≥ 1
-// samples back (the current input is written after the read).
+// Shortest read: 4-point Hermite needs the sample one newer than the
+// interpolation interval, and the current input is written after the read.
 static constexpr float kMinDelaySamples = 2.0f;
 
 // In-loop diffuser: four Schroeder allpasses, mutually prime lengths at
@@ -54,8 +54,9 @@ void TapeDelay::prepare(float sampleRate, float maxDelaySec)
 {
     sampleRate_ = sampleRate;
     maxDelaySamples_ = std::max(kMinDelaySamples + 1.0f, maxDelaySec * sampleRate_);
-    // + 4 keeps the oldest tap clear of the write head; power of two, so
-    // the taps wrap with a mask instead of a branch.
+    // + 4: Hermite reads two samples past the integer delay; the extra
+    // keeps the oldest read clear of the write head.  Power of two, so the
+    // four taps wrap with a mask instead of a branch each.
     bufferSize_ = 1;
     while (bufferSize_ < static_cast<int>(maxDelaySamples_) + 4)
         bufferSize_ <<= 1;
@@ -101,9 +102,8 @@ void TapeDelay::reset()
     applyDiffuseG();
     offsetHighpass_.reset();
     offsetLowpass_.reset();
-    offsetTap_ = Tap{};
-    wowPhase_ = 0.0f;
-    flutterPhase_ = 0.0f;
+    wow_ = { 1.0f, 0.0f };
+    flutter_ = { 1.0f, 0.0f };
 }
 
 void TapeDelay::setDelay(float delaySec)
@@ -130,7 +130,7 @@ void TapeDelay::setWowDepth(float seconds)
 void TapeDelay::setWowRate(float rateHz)
 {
     rateHz = std::clamp(rateHz, 0.01f, 10.0f);
-    wowInc_ = rateHz / sampleRate_;
+    wowStep_ = { std::cos(kTwoPi * rateHz / sampleRate_), std::sin(kTwoPi * rateHz / sampleRate_) };
 }
 
 void TapeDelay::setFlutterDepth(float seconds)
@@ -142,7 +142,7 @@ void TapeDelay::setFlutterDepth(float seconds)
 void TapeDelay::setFlutterRate(float rateHz)
 {
     rateHz = std::clamp(rateHz, 0.1f, 20.0f);
-    flutterInc_ = rateHz / sampleRate_;
+    flutterStep_ = { std::cos(kTwoPi * rateHz / sampleRate_), std::sin(kTwoPi * rateHz / sampleRate_) };
 }
 
 void TapeDelay::setLowpass(float freqHz)
@@ -238,7 +238,6 @@ void TapeDelay::clearLoop(Loop& loop)
     std::fill(loop.diffused.begin(), loop.diffused.end(), 0.0f);
     loop.highpass.reset();
     loop.lowpass.reset();
-    loop.tap = Tap{};
     for (AllpassFilter& ap : loop.diffuser)
         ap.reset();
 }
@@ -264,21 +263,27 @@ void TapeDelay::updateFeedbackFilters()
 }
 
 float TapeDelay::readDelay(const std::vector<float>& buffer, int writePos,
-                           float delaySamples, float& state) const
+                           float delaySamples) const
 {
-    // First-order allpass (Thiran) fractional read: unit magnitude at every
-    // frequency, so clean repeats keep their top end at any fractional
-    // delay (a linear read is a low-pass applied once per repeat,
-    // |cos(πf/sr)| at fraction 0.5: −1.5 dB per pass at 8 kHz), for the cost
-    // of two taps.  d = N + Δ with Δ ∈ [0.5, 1.5) keeps η = (1 − Δ)/(1 + Δ)
-    // in (−0.2, 0.33]; an integer delay gives η = 0, an exact read.
-    const int n = static_cast<int>(delaySamples - 0.5f);
-    const float frac = delaySamples - static_cast<float>(n);
-    const float eta = (1.0f - frac) / (1.0f + frac);
-    const float xa = buffer[static_cast<size_t>((writePos - n) & bufferMask_)];
-    const float xb = buffer[static_cast<size_t>((writePos - n - 1) & bufferMask_)];
-    state = eta * xa + xb - eta * state;
-    return state;
+    // 4-point cubic Hermite (Catmull-Rom).  A linear read at a fractional
+    // delay is a low-pass applied once per repeat (|cos(πf/sr)| at fraction
+    // 0.5: −1.5 dB per pass at 8 kHz), so clean repeats would dull audibly;
+    // Hermite loses 0.3 dB there.  It is also smooth as a moving (wow /
+    // flutter) delay crosses sample boundaries: a first-order allpass read,
+    // whose state jumps at each crossing, measured 20 dB more high-band
+    // artefacts.
+    const int delayInt = static_cast<int>(delaySamples);
+    const float f = delaySamples - static_cast<float>(delayInt);
+
+    auto at = [&](int age) { return buffer[static_cast<size_t>((writePos - age) & bufferMask_)]; };
+    const float ym1 = at(delayInt - 1);
+    const float y0 = at(delayInt);
+    const float y1 = at(delayInt + 1);
+    const float y2 = at(delayInt + 2);
+    const float c1 = 0.5f * (y1 - ym1);
+    const float c2 = ym1 - 2.5f * y0 + 2.0f * y1 - 0.5f * y2;
+    const float c3 = 0.5f * (y2 - ym1) + 1.5f * (y0 - y1);
+    return ((c3 * f + c2) * f + c1) * f + y0;
 }
 
 float TapeDelay::color(Loop& loop, float wet)
@@ -289,7 +294,7 @@ float TapeDelay::color(Loop& loop, float wet)
     return saturation_ ? Saturation::tanhDrive(colored, drive_) : cleanClip(colored);
 }
 
-float TapeDelay::loopRead(const Loop& loop, float delay, Tap& tap) const
+float TapeDelay::loopRead(const Loop& loop, float delay) const
 {
     // Each loop is written twice: straight, and through the diffuser (an
     // allpass chain of total length diffuserSamples_).  An allpass's group
@@ -302,12 +307,12 @@ float TapeDelay::loopRead(const Loop& loop, float delay, Tap& tap) const
     // kDiffuseFadeSec rather than jumping the read point by ≈ 10 ms.
     const float direct = std::max(kMinDelaySamples, delay);
     if (diffuseMix_ <= 0.0f)
-        return readDelay(loop.buffer, loop.writePos, direct, tap.straight);
+        return readDelay(loop.buffer, loop.writePos, direct);
     const float shortened = std::max(kMinDelaySamples, delay - diffuserSamples_);
-    const float diffused = readDelay(loop.diffused, loop.writePos, shortened, tap.diffused);
+    const float diffused = readDelay(loop.diffused, loop.writePos, shortened);
     if (diffuseMix_ >= 1.0f)
         return diffused;
-    const float straight = readDelay(loop.buffer, loop.writePos, direct, tap.straight);
+    const float straight = readDelay(loop.buffer, loop.writePos, direct);
     return straight + diffuseMix_ * (diffused - straight);
 }
 
@@ -332,20 +337,29 @@ void TapeDelay::writeLoop(Loop& loop, float value)
     loop.writePos = (loop.writePos + 1) & bufferMask_;
 }
 
+// Wow and flutter are rotating phasors (cos, sin): one complex multiply a
+// sample instead of a sin() and a cos() per LFO.  The magnitude is pulled
+// back to 1 each sample (one Newton step for 1/√(re² + im²)), so it cannot
+// drift over a long run; this replaces the phase accumulator's wrap.
+void TapeDelay::rotate(Phasor& p, const Phasor& step)
+{
+    const float re = p.re * step.re - p.im * step.im;
+    const float im = p.re * step.im + p.im * step.re;
+    const float g = 1.5f - 0.5f * (re * re + im * im);
+    p = { re * g, im * g };
+}
+
 void TapeDelay::advanceLfos(float& wow, float& flutter, float* wowQ, float* flutterQ)
 {
-    wow = std::sin(kTwoPi * wowPhase_);
-    flutter = std::sin(kTwoPi * flutterPhase_);
+    wow = wow_.im;
+    flutter = flutter_.im;
     if (wowQ)
     {
-        *wowQ = std::cos(kTwoPi * wowPhase_);
-        *flutterQ = std::cos(kTwoPi * flutterPhase_);
+        *wowQ = wow_.re;
+        *flutterQ = flutter_.re;
     }
-
-    wowPhase_ += wowInc_;
-    flutterPhase_ += flutterInc_;
-    wowPhase_ -= std::floor(wowPhase_);
-    flutterPhase_ -= std::floor(flutterPhase_);
+    rotate(wow_, wowStep_);
+    rotate(flutter_, flutterStep_);
 }
 
 float TapeDelay::process(float input)
@@ -406,7 +420,7 @@ std::pair<float, float> TapeDelay::run(float input, bool stereo)
                                         + flutter * flutterDepthSamples_,
                                     kMinDelaySamples, maxDelaySamples_);
     const float dry = input * (1.0f - mix_);
-    const float coloredL = color(a_, loopRead(a_, delayL, a_.tap));
+    const float coloredL = color(a_, loopRead(a_, delayL));
 
     if (!stereo)
     {
@@ -424,7 +438,7 @@ std::pair<float, float> TapeDelay::run(float input, bool stereo)
     {
         // Two loops cross-fed: input enters the left loop, each loop's
         // repeat is written into the other → echoes alternate L, R, L, …
-        const float coloredR = color(b_, loopRead(b_, delayR, b_.tap));
+        const float coloredR = color(b_, loopRead(b_, delayR));
         writeLoop(a_, input + coloredR * feedback_);
         writeLoop(b_, coloredL * feedback_);
         return { dry + coloredL * mix_, dry + coloredR * mix_ };
@@ -433,7 +447,7 @@ std::pair<float, float> TapeDelay::run(float input, bool stereo)
     // Offset: one loop (the mono one), right channel read stereoOffset
     // later through its own coloring filters.
     float coloredR = offsetHighpass_.process(
-        loopRead(a_, std::min(delayR + offsetSamples_, maxDelaySamples_), offsetTap_));
+        loopRead(a_, std::min(delayR + offsetSamples_, maxDelaySamples_)));
     coloredR = offsetLowpass_.process(coloredR);
     coloredR = saturation_ ? Saturation::tanhDrive(coloredR, drive_) : cleanClip(coloredR);
 

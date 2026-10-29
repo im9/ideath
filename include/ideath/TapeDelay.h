@@ -16,8 +16,9 @@ namespace ideath {
 /// `stereoOffset` later; PingPong: two cross-fed loops, echoes alternate
 /// L → R).  Use one or the other on an instance, not both.
 ///
-/// Reads use first-order allpass interpolation (unit magnitude: repeats stay
-/// bright at fractional delays); the shortest delay is 2 samples.
+/// Reads use 4-point cubic Hermite interpolation (repeats stay bright at
+/// fractional delays, and moving reads stay smooth), so the shortest delay
+/// is 2 samples.
 ///
 /// Output ceiling for ±1 input: ±1 (saturation on: tanh; saturation off:
 /// transparent below 0.8, soft ceiling at 1).
@@ -84,14 +85,6 @@ public:
     float getDelaySamples() const { return delaySamples_; }
 
 private:
-    // Allpass-interpolator memory of one read point (straight and diffused
-    // copy are read separately during a crossfade).
-    struct Tap
-    {
-        float straight = 0.0f;
-        float diffused = 0.0f;
-    };
-
     struct Loop
     {
         std::vector<float> buffer;   // repeats as written
@@ -100,14 +93,12 @@ private:
         Biquad highpass;
         Biquad lowpass;
         std::array<AllpassFilter, 4> diffuser;
-        Tap tap; // the loop's own read
     };
 
-    float readDelay(const std::vector<float>& buffer, int writePos, float delaySamples,
-                    float& state) const;
+    float readDelay(const std::vector<float>& buffer, int writePos, float delaySamples) const;
     void updateFeedbackFilters();
     float color(Loop& loop, float wet);
-    float loopRead(const Loop& loop, float delay, Tap& tap) const;
+    float loopRead(const Loop& loop, float delay) const;
     bool diffuserActive() const;
     void clearLoop(Loop& loop);
     void applyDiffuseG();
@@ -121,7 +112,6 @@ private:
     Loop b_; // ping-pong right loop
     Biquad offsetHighpass_;
     Biquad offsetLowpass_;
-    Tap offsetTap_;
     int bufferSize_ = 0;
     int bufferMask_ = 0;
     float maxDelaySamples_ = 0.0f;
@@ -144,13 +134,21 @@ private:
     float feedback_ = 0.0f;
     float mix_ = 1.0f;
 
+    // LFO as a unit phasor: re = cos, im = sin of the phase.
+    struct Phasor
+    {
+        float re = 1.0f;
+        float im = 0.0f;
+    };
+    static void rotate(Phasor& p, const Phasor& step);
+
     float wowDepthSamples_ = 0.0f;
-    float wowPhase_ = 0.0f;
-    float wowInc_ = 0.0f;
+    Phasor wow_;
+    Phasor wowStep_;
 
     float flutterDepthSamples_ = 0.0f;
-    float flutterPhase_ = 0.0f;
-    float flutterInc_ = 0.0f;
+    Phasor flutter_;
+    Phasor flutterStep_;
 
     float lowpassHz_ = 8000.0f;
     float highpassHz_ = 40.0f;
