@@ -1,215 +1,79 @@
+#include <ideath/HallReverb.h>
 #include <ideath/ShimmerReverb.h>
 #include <algorithm>
 #include <cmath>
 
 namespace ideath {
 
-static constexpr float kTwoPi = 6.283185307f;
 static constexpr float kPi = 3.141592654f;
+
+// Grain period 100 ms: long enough that the grain rate (10 Hz, 40 Hz with
+// four overlapping grains) sits below the roughness band; the old 43 ms
+// two-grain shifter put its window rate at 47 Hz, heard as a buzz.
+static constexpr float kGrainSec = 0.1f;
+// Splice search: a new grain may start anywhere in a 12 ms span (one
+// period down to 83 Hz) and takes the start that best matches the grain
+// at its window peak, over a 5 ms correlation window.  Grains then add
+// in phase and the voice is a clean tone at exactly f·r.  (Random grain
+// starts would put each grain at a random phase and smear the voice over
+// the window's main lobe, ±20 Hz — ±75 cents at 220 Hz.)
+static constexpr float kSearchSec = 0.012f;
+static constexpr float kCorrSec = 0.005f;
+static constexpr int kCoarseStep = 4;
+// Four Hann grains at 75 % overlap: Σw = 2 and Σw² = 1.5 at every instant.
+// The grains read the source at power P_in ≈ Σw²x² / Σw² (x = each grain's
+// raw read); their sum has power (Σw·x)², which is 4·P_in when they are in phase (a tone) and
+// 1.5·P_in when they are decorrelated (diffuse material).  Both quantities
+// come from the same grain reads at the same instant, so their smoothed
+// ratio gives the gain that makes the voice unity-power for any material,
+// short notes included.  (A running ratio of output power to *input*
+// power cannot: the output lags the input by up to the run-up, 300 ms at
+// +24, and a 50 ms note came out between −6 and +5 dB.)  The gain is
+// clamped to its physical range [1/2, 1/√1.5] so grains that happen to
+// cancel are never lifted.  Smoothed over 50 ms — steady at the 40 Hz
+// grain rate.
+static constexpr float kGrainPowerSum = 1.5f; // Σw²
+static constexpr float kMinGrainGain = 0.5f;          // in phase: 1 / Σw
+static constexpr float kMaxGrainGain = 0.81649658f;   // decorrelated: 1 / √Σw²
+static constexpr float kGrainPowerTauSec = 0.05f;
 static constexpr float kAntiDenormal = 1e-25f;
+// High-pass on the voices' source.  Pitch shifting maps DC to DC, and the
+// FDN's DC response is 1/(1 − g) (all lines in phase) — ≈ 27× at size 0.5
+// — so without it the Feedback loop runs away at DC.  20 Hz removes that
+// fixed point and stays below the audio band (a 60 Hz corner would take
+// 2.3 dB of shifted energy from a pink-noise tail).
+static constexpr float kSourceHpHz = 20.0f;
 
-// --- ModAllpass ---
-
-void ShimmerReverb::ModAllpass::prepare(int size, float fb, float lfoRate,
-                                         float phase, float sampleRate)
+// Upper bound of the detune ratio 2^(kMaxDetuneCents/1200): a voice whose
+// nominal ratio times this exceeds 1 can run its read head faster than the
+// write head at some point of a grain, so it needs a run-up.
+static float detuneCeiling()
 {
-    modDepth = kModDepthAt44k * sampleRate / 44100.0f;
-    headroom = static_cast<int>(std::ceil(modDepth * kMaxModScale)) + 2;
-    bufSize = size + headroom;
-    buffer.resize(bufSize, 0.0f);
-    writeIndex = 0;
-    feedback = fb;
-    initialPhase = phase;
-    lfoPhase = phase;
-    lfoInc = lfoRate / sampleRate;
+    return std::exp2(ShimmerReverb::kMaxDetuneCents / 1200.0f);
 }
 
-void ShimmerReverb::ModAllpass::clear()
-{
-    std::fill(buffer.begin(), buffer.end(), 0.0f);
-    writeIndex = 0;
-    lfoPhase = initialPhase;
-}
+// Energy ratio per generation at amount 1.  Feedback 0.5: each climb is
+// 3 dB below the one before (a long but converging cascade).  Input 1.0:
+// the shifted copy enters as loud as the dry input.
+static constexpr float kRhoMaxFeedback = 0.5f;
+static constexpr float kRhoMaxInput = 1.0f;
 
-float ShimmerReverb::ModAllpass::process(float input, float modScale)
-{
-    float lfo = std::sin(kTwoPi * lfoPhase) * modDepth * modScale;
-    lfoPhase += lfoInc;
-    if (lfoPhase >= 1.0f) lfoPhase -= 1.0f;
-
-    int baseDelay = bufSize - headroom;
-    float readPos = static_cast<float>(writeIndex) - static_cast<float>(baseDelay) + lfo;
-    while (readPos < 0.0f) readPos += static_cast<float>(bufSize);
-
-    // Linear interpolation
-    int idx0 = static_cast<int>(readPos) % bufSize;
-    float frac = readPos - std::floor(readPos);
-    int idx1 = (idx0 + 1) % bufSize;
-
-    float bufOut = buffer[idx0] * (1.0f - frac) + buffer[idx1] * frac;
-
-    // Schroeder allpass: w = x + g·w[n−D], y = w[n−D] − g·w (|H| = 1).
-    // The earlier `y = w[n−D] − g·x` form peaks at (1−g+g²)/(1−g) ≈ 1.19
-    // per stage for g = 0.35; four in the loop could push the unshifted
-    // feedback path's loop gain above 1.
-    float w = input + bufOut * feedback + kAntiDenormal;
-    float output = bufOut - w * feedback;
-    buffer[writeIndex] = w;
-
-    if (++writeIndex >= bufSize)
-        writeIndex = 0;
-
-    return output;
-}
-
-// --- FixedDelay ---
-
-void ShimmerReverb::FixedDelay::prepare(int size)
-{
-    bufSize = size;
-    buffer.resize(size, 0.0f);
-    index = 0;
-}
-
-void ShimmerReverb::FixedDelay::clear()
-{
-    std::fill(buffer.begin(), buffer.end(), 0.0f);
-    index = 0;
-}
-
-float ShimmerReverb::FixedDelay::process(float input)
-{
-    float output = buffer[index];
-    buffer[index] = input;
-    if (++index >= bufSize)
-        index = 0;
-    return output;
-}
-
-// --- PitchShifter ---
-
-void ShimmerReverb::PitchShifter::prepare(int size)
-{
-    bufSize = size;
-    buffer.resize(size, 0.0f);
-    writeIndex = 0;
-    phase1 = 0.0f;
-    phase2 = 0.5f;
-}
-
-void ShimmerReverb::PitchShifter::clear()
-{
-    std::fill(buffer.begin(), buffer.end(), 0.0f);
-    writeIndex = 0;
-    phase1 = 0.0f;
-    phase2 = 0.5f;
-}
-
-float ShimmerReverb::PitchShifter::process(float input)
-{
-    buffer[writeIndex] = input;
-
-    // +12 semitones = 2× speed → read pointer advances 2× as fast as the
-    // write pointer.  Equivalently the delay (write − read) must *decrease*
-    // by one sample per sample.  We parameterise that by sweeping `delay`
-    // from kWindowSize down to 0 over kWindowSize samples, then wrapping
-    // back to kWindowSize, with a second tap 50% out of phase + Hann
-    // crossfade to hide the wrap discontinuity.
-    //
-    // Earlier this code computed `delay = phase * kWindowSize` (delay
-    // *increasing*), which made readPos = writeIndex − delay stay
-    // stationary — the tap read the same buffer cell for an entire window
-    // cycle (~46 ms).  No actual pitch shift was happening; the shimmer
-    // path was just a 46 ms sample-and-hold of the input through the
-    // Hann envelopes, which is why the shimmer never sounded like shimmer.
-    float phaseInc = 1.0f / static_cast<float>(kWindowSize);
-
-    // Tap 1 — delay decreases linearly from kWindowSize to 0
-    float delay1 = (1.0f - phase1) * static_cast<float>(kWindowSize);
-    float readPos1 = static_cast<float>(writeIndex) - delay1;
-    while (readPos1 < 0.0f) readPos1 += static_cast<float>(bufSize);
-    int ri1 = static_cast<int>(readPos1) % bufSize;
-    float frac1 = readPos1 - std::floor(readPos1);
-    int ri1b = (ri1 + 1) % bufSize;
-    float s1 = buffer[ri1] * (1.0f - frac1) + buffer[ri1b] * frac1;
-    float env1 = 0.5f - 0.5f * std::cos(kTwoPi * phase1); // Hann window
-
-    // Tap 2 (50% offset)
-    float delay2 = (1.0f - phase2) * static_cast<float>(kWindowSize);
-    float readPos2 = static_cast<float>(writeIndex) - delay2;
-    while (readPos2 < 0.0f) readPos2 += static_cast<float>(bufSize);
-    int ri2 = static_cast<int>(readPos2) % bufSize;
-    float frac2 = readPos2 - std::floor(readPos2);
-    int ri2b = (ri2 + 1) % bufSize;
-    float s2 = buffer[ri2] * (1.0f - frac2) + buffer[ri2b] * frac2;
-    float env2 = 0.5f - 0.5f * std::cos(kTwoPi * phase2);
-
-    // Advance phases
-    phase1 += phaseInc;
-    if (phase1 >= 1.0f) phase1 -= 1.0f;
-    phase2 += phaseInc;
-    if (phase2 >= 1.0f) phase2 -= 1.0f;
-
-    if (++writeIndex >= bufSize)
-        writeIndex = 0;
-
-    return s1 * env1 + s2 * env2;
-}
-
-// --- DcBlocker ---
-
-void ShimmerReverb::DcBlocker::prepare(float sampleRate)
-{
-    // HPF at 80 Hz: coeff = exp(-2π × 80 / sr)
-    coeff = std::exp(-kTwoPi * 80.0f / sampleRate);
-    prevIn = 0.0f;
-    prevOut = 0.0f;
-}
-
-void ShimmerReverb::DcBlocker::clear()
-{
-    prevIn = 0.0f;
-    prevOut = 0.0f;
-}
-
-float ShimmerReverb::DcBlocker::process(float input)
-{
-    float output = input - prevIn + coeff * prevOut;
-    prevIn = input;
-    prevOut = output + kAntiDenormal;
-    return output;
-}
-
-// --- ShimmerReverb ---
-
-// Allpass delay tunings (Faust shimmer.dsp)
-// Forward AP
-static constexpr int kFwdApL[] = { 601, 613 };
-static constexpr int kFwdApR[] = { 2043, 2087 };
-// Feedback AP (independent L / R loops)
-static constexpr int kFbApL[] = { 2337, 2377 };
-static constexpr int kFbApR[] = { 1087, 1113 };
-// Forward AP feedback coefficients (scaled by diffusion=0.5)
-static constexpr float kFwdApFb[] = { 0.35f, 0.375f }; // 0.7×0.5, 0.75×0.5
-// Feedback AP feedback coefficients (asymmetric)
-static constexpr float kFbApFbL[] = { 0.35f, 0.20f }; // 0.7×0.5, 0.4×0.5
-static constexpr float kFbApFbR[] = { 0.35f, 0.20f };
-// Fixed delay lengths in feedback paths
-static constexpr int kFbDelayPreL = 4325;
-static constexpr int kFbDelayPostL = 2969;
-static constexpr int kFbDelayPreR = 4763;
-static constexpr int kFbDelayPostR = 3111;
-// LFO rates per allpass stage
-static constexpr float kLfoRates[] = { 1.0f, 1.5f, 0.7f, 1.3f };
-static constexpr float kLfoPhases[] = { 0.0f, 0.25f, 0.5f, 0.75f };
-
-static int scaleDelay(int base, float sampleRate)
-{
-    return std::max(1, static_cast<int>(base * sampleRate / 44100.0f));
-}
+// Anti-alias low-pass for upward voices: 4th-order Butterworth at
+// 0.35·sr / ratio (0.7 × the shifted Nyquist).  Content at the shifted
+// Nyquist is ≥ 12 dB down and what folds furthest is down far more.
+static constexpr float kAaFraction = 0.35f;
+static constexpr float kButterQ1 = 0.5411961f;
+static constexpr float kButterQ2 = 1.3065630f;
+// Low cut after downward voices: keeps an octave-down copy of the tail
+// from muddying the low end.
+static constexpr float kLowCutHz = 120.0f;
 
 ShimmerReverb::ShimmerReverb()
 {
+    voices_[0].semitones = 12.0f;
+    voices_[0].level = 1.0f;
+    voices_[1].semitones = 19.0f;
+    voices_[1].level = 0.0f;
     prepare(44100.0f);
 }
 
@@ -217,116 +81,104 @@ void ShimmerReverb::prepare(float sampleRate)
 {
     sampleRate_ = sampleRate;
 
-    // Forward allpass — L
-    for (int i = 0; i < 2; ++i)
-        fwdApL_[i].prepare(scaleDelay(kFwdApL[i], sampleRate), kFwdApFb[i],
-                           kLfoRates[i], kLfoPhases[i], sampleRate);
-    // Forward allpass — R
-    for (int i = 0; i < 2; ++i)
-        fwdApR_[i].prepare(scaleDelay(kFwdApR[i], sampleRate), kFwdApFb[i],
-                           kLfoRates[i + 2], kLfoPhases[i + 2], sampleRate);
+    int size = 1;
+    while (size < static_cast<int>(std::ceil(kMaxPreDelay * sampleRate)) + 1)
+        size <<= 1;
+    preDelay_.assign(static_cast<size_t>(size), 0.0f);
+    preDelayMask_ = size - 1;
 
-    // Feedback allpass — L
-    for (int i = 0; i < 2; ++i)
-        fbApL_[i].prepare(scaleDelay(kFbApL[i], sampleRate), kFbApFbL[i],
-                          kLfoRates[i], kLfoPhases[i] + 0.1f, sampleRate);
-    // Feedback allpass — R
-    for (int i = 0; i < 2; ++i)
-        fbApR_[i].prepare(scaleDelay(kFbApR[i], sampleRate), kFbApFbR[i],
-                          kLfoRates[i + 2], kLfoPhases[i + 2] + 0.1f, sampleRate);
+    grainSamples_ = kGrainSec * sampleRate;
+    searchSamples_ = static_cast<int>(kSearchSec * sampleRate);
+    corrSamples_ = std::max(16, static_cast<int>(kCorrSec * sampleRate));
+    grainPowerCoeff_ = std::exp(-1.0f / (kGrainPowerTauSec * sampleRate));
+    sourceHp_.prepare(kSourceHpHz, sampleRate);
 
-    // HF damping
-    dampL_.clear();
-    dampR_.clear();
+    // Largest read delay: an upward grain starts up to (r·c − 1)·P plus the
+    // search span behind the write head (r = 4 at +24, c = detune ceiling),
+    // and the correlation window looks corrSamples_ further back.
+    const float maxRatio = 4.0f * std::pow(2.0f, kMaxDetuneCents / 1200.0f);
+    const int maxDelay = static_cast<int>(std::ceil((maxRatio - 1.0f) * grainSamples_))
+                       + searchSamples_ + corrSamples_ + 8;
+    int vsize = 1;
+    while (vsize < maxDelay)
+        vsize <<= 1;
+    for (Voice& v : voices_)
+    {
+        v.buffer.assign(static_cast<size_t>(vsize), 0.0f);
+        v.reference.assign(static_cast<size_t>(corrSamples_), 0.0f);
+        v.mask = vsize - 1;
+        setVoiceRatio(v, v.semitones);
+    }
 
-    // DC blockers
-    dcL_.prepare(sampleRate);
-    dcR_.prepare(sampleRate);
+    window_.resize(kWindowSize + 1);
+    for (int i = 0; i <= kWindowSize; ++i)
+        window_[static_cast<size_t>(i)] =
+            0.5f - 0.5f * std::cos(2.0f * kPi * static_cast<float>(i) / kWindowSize);
 
-    // Fixed delays
-    fbDelayPreL_.prepare(scaleDelay(kFbDelayPreL, sampleRate));
-    fbDelayPostL_.prepare(scaleDelay(kFbDelayPostL, sampleRate));
-    fbDelayPreR_.prepare(scaleDelay(kFbDelayPreR, sampleRate));
-    fbDelayPostR_.prepare(scaleDelay(kFbDelayPostR, sampleRate));
-
-    // Pitch shifters (buffer = 2 × window for safety)
-    pitchL_.prepare(PitchShifter::kWindowSize * 2);
-    pitchR_.prepare(PitchShifter::kWindowSize * 2);
-
-    // Anti-alias lowpass ahead of the octave-up shifter.  Content above
-    // sr/4 lands above Nyquist when doubled and folds back; at sr/3 it folds
-    // onto itself (sr − 2f = f) and adds coherently to the unshifted path,
-    // so the loop gain there is fb·(cos θ + h·sin θ) ≤ fb·√(1 + h²) with
-    // h = |H(sr/4…)|.  Staying below 1 at fb = 0.93 needs h ≤ 0.39; a
-    // Butterworth LP at sr/8 gives h ≤ 1/√(1 + 2⁴) ≈ 0.24 at sr/4.
-    pitchAaL_.setLowpass(sampleRate * 0.125f, 0.7071f, sampleRate);
-    pitchAaR_.setLowpass(sampleRate * 0.125f, 0.7071f, sampleRate);
-
-    // Direct (unshifted) loop period: forward APs → pre delay → feedback
-    // APs → post delay.  Mean of L and R; drives the size → feedback map.
-    const int loopL = kFwdApL[0] + kFwdApL[1] + kFbDelayPreL + kFbApL[0]
-                    + kFbApL[1] + kFbDelayPostL;
-    const int loopR = kFwdApR[0] + kFwdApR[1] + kFbDelayPreR + kFbApR[0]
-                    + kFbApR[1] + kFbDelayPostR;
-    loopSeconds_ = 0.5f * static_cast<float>(loopL + loopR) / 44100.0f;
-
-    fbL_ = 0.0f;
-    fbR_ = 0.0f;
-
-    // Freeze reverb (Freeverb fallback)
-    freezeReverb_.prepare(sampleRate);
-    freezeXfade_ = 0.0f;
-    freezeXfadeInc_ = 1.0f / (0.2f * sampleRate); // 200ms crossfade
-
-    updateParams();
+    preDelaySamples_ = static_cast<int>(preDelaySec_ * sampleRate);
+    tank_.prepare(sampleRate);
+    tank_.setDecay(HallReverb::sizeToT60(size_));
     reset();
+    updateShimmer();
 }
 
 void ShimmerReverb::reset()
 {
-    for (auto& ap : fwdApL_) ap.clear();
-    for (auto& ap : fwdApR_) ap.clear();
-    for (auto& ap : fbApL_) ap.clear();
-    for (auto& ap : fbApR_) ap.clear();
-
-    dampL_.clear();
-    dampR_.clear();
-    dcL_.clear();
-    dcR_.clear();
-
-    fbDelayPreL_.clear();
-    fbDelayPostL_.clear();
-    fbDelayPreR_.clear();
-    fbDelayPostR_.clear();
-
-    pitchL_.clear();
-    pitchR_.clear();
-    pitchAaL_.reset();
-    pitchAaR_.reset();
-
-    fbL_ = 0.0f;
-    fbR_ = 0.0f;
-
-    freezeReverb_.reset();
-    freezeXfade_ = 0.0f;
+    std::fill(preDelay_.begin(), preDelay_.end(), 0.0f);
+    preDelayWrite_ = 0;
+    sourceHp_.reset();
+    for (Voice& v : voices_)
+    {
+        std::fill(v.buffer.begin(), v.buffer.end(), 0.0f);
+        v.write = 0;
+        for (int k = 0; k < Voice::kGrains; ++k)
+        {
+            // Grains start staggered by a quarter period, each at the
+            // delay it would have reached at that phase.
+            v.phase[static_cast<size_t>(k)] = static_cast<float>(k) / Voice::kGrains;
+            const float rc = v.ratio * detuneCeiling();
+            const float start = rc > 1.0f ? 2.0f + (rc - 1.0f) * grainSamples_ : 2.0f;
+            v.delay[static_cast<size_t>(k)] =
+                start + (1.0f - v.ratio) * v.phase[static_cast<size_t>(k)] * grainSamples_;
+        }
+        v.aa1.reset();
+        v.aa2.reset();
+        v.hp.reset();
+        v.sumPower = 0.0f;
+        v.readPower = 0.0f;
+    }
+    tank_.reset();
 }
 
 void ShimmerReverb::setSize(float size)
 {
-    size_ = std::clamp(size, 0.0f, 1.0f);
-    updateParams();
+    const float s = std::clamp(size, 0.0f, 1.0f);
+    if (s == size_)
+        return;
+    size_ = s;
+    tank_.setDecay(HallReverb::sizeToT60(size_));
+    updateShimmer();
 }
 
 void ShimmerReverb::setDamp(float damp)
 {
-    damp_ = std::clamp(damp, 0.0f, 1.0f);
-    updateParams();
+    // Hosts call setters every sample; only a real change reaches the
+    // tank's coefficient update and the level normalisation.
+    const float d = std::clamp(damp, 0.0f, 1.0f);
+    if (d == damp_)
+        return;
+    damp_ = d;
+    tank_.setDamp(d);
+    updateShimmer();
 }
 
 void ShimmerReverb::setShimmer(float amount)
 {
-    shimmer_ = std::clamp(amount, 0.0f, 1.0f);
-    updateParams();
+    const float a = std::clamp(amount, 0.0f, 1.0f);
+    if (a == shimmer_)
+        return;
+    shimmer_ = a;
+    updateShimmer();
 }
 
 void ShimmerReverb::setMix(float mix)
@@ -336,165 +188,328 @@ void ShimmerReverb::setMix(float mix)
 
 void ShimmerReverb::setFreeze(bool freeze)
 {
-    if (freeze && !prevFreeze_)
-    {
-        // Entering freeze: configure Freeverb to hold the tail
-        freezeReverb_.setSize(size_);
-        freezeReverb_.setDamp(0.0f);
-        freezeReverb_.setFreeze(true);
-        freezeReverb_.setMix(1.0f);
-    }
-    else if (!freeze && prevFreeze_)
-    {
-        // Leaving freeze: unfreeze Freeverb
-        freezeReverb_.setFreeze(false);
-    }
-    prevFreeze_ = freeze;
+    if (freeze == freeze_)
+        return;
     freeze_ = freeze;
-    updateParams();
+    tank_.setFreeze(freeze);
+    updateShimmer();
 }
 
-void ShimmerReverb::updateParams()
+void ShimmerReverb::setPreDelay(float seconds)
 {
-    if (freeze_)
+    const float s = std::clamp(seconds, 0.0f, kMaxPreDelay);
+    // Seconds are kept so prepare() at another rate keeps the time.
+    preDelaySec_ = s;
+    preDelaySamples_ = static_cast<int>(s * sampleRate_);
+}
+
+void ShimmerReverb::setModDepth(float depth)
+{
+    tank_.setModDepth(depth);
+}
+
+void ShimmerReverb::setModRate(float rateHz)
+{
+    tank_.setModRate(rateHz);
+}
+
+void ShimmerReverb::setVoicePitch(int voice, float semitones)
+{
+    if (voice < 0 || voice >= kNumVoices)
+        return;
+    const float s = std::clamp(semitones, -kMaxSemitones, kMaxSemitones);
+    Voice& v = voices_[static_cast<size_t>(voice)];
+    if (s == v.semitones)
+        return;
+    setVoiceRatio(v, s);
+    updateShimmer();
+}
+
+void ShimmerReverb::setVoiceLevel(int voice, float level)
+{
+    if (voice < 0 || voice >= kNumVoices)
+        return;
+    const float l = std::clamp(level, 0.0f, 1.0f);
+    Voice& v = voices_[static_cast<size_t>(voice)];
+    if (l == v.level)
+        return;
+    v.level = l;
+    updateShimmer();
+}
+
+void ShimmerReverb::setMode(Mode mode)
+{
+    if (mode == mode_)
+        return;
+    mode_ = mode;
+    updateShimmer();
+}
+
+void ShimmerReverb::setVoiceRatio(Voice& v, float semitones)
+{
+    // Changing direction brings in a filter that sat idle: clear it.
+    const bool wasUp = v.ratio > 1.0f, wasDown = v.ratio < 1.0f;
+    v.semitones = semitones;
+    v.ratio = std::pow(2.0f, semitones / 12.0f);
+    if ((v.ratio > 1.0f) != wasUp || (v.ratio < 1.0f) != wasDown)
     {
-        // Freeze: keep shimmer path alive during crossfade to Freeverb
-        feedback_ = kMaxFeedback;
-        dampCoeff_ = 0.0f;
+        v.aa1.reset();
+        v.aa2.reset();
+        v.hp.reset();
+    }
+    if (v.ratio > 1.0f)
+    {
+        const float fc = std::min(kAaFraction * sampleRate_ / v.ratio, 0.45f * sampleRate_);
+        v.aa1.setLowpass(fc, kButterQ1, sampleRate_);
+        v.aa2.setLowpass(fc, kButterQ2, sampleRate_);
+    }
+    if (v.ratio < 1.0f)
+        v.hp.setHighpass(kLowCutHz, 0.7071f, sampleRate_);
+    v.pinkGain = voicePinkGain(v.ratio);
+}
+
+// Second-order RBJ magnitudes (bilinear, analog prototype at the warped
+// frequency): low-pass 1 / ((1 − Ω²)² + (Ω/Q)²), high-pass Ω⁴ / (…).
+static float rbjMag2(float hz, float fc, float q, bool highpass, float sampleRate)
+{
+    const float o = std::tan(kPi * hz / sampleRate) / std::tan(kPi * fc / sampleRate);
+    const float den = (1.0f - o * o) * (1.0f - o * o) + (o / q) * (o / q);
+    return (highpass ? o * o * o * o : 1.0f) / den;
+}
+
+float ShimmerReverb::voicePinkGain(float ratio) const
+{
+    // Share of a pink source's energy the voice's filters keep: source
+    // 20 Hz blocker, anti-alias (upward) or 120 Hz low-cut after the shift
+    // (downward).  Pink = equal energy per octave → mean over a
+    // third-octave grid of source frequencies; anything shifted past
+    // Nyquist counts as lost.
+    const float aaHz = std::min(kAaFraction * sampleRate_ / ratio, 0.45f * sampleRate_);
+    float sum = 0.0f;
+    int count = 0;
+    for (float hz = 25.0f; hz <= std::min(16000.0f, 0.45f * sampleRate_); hz *= 1.2599210f)
+    {
+        const float o = hz / kSourceHpHz;
+        float g = o * o / (1.0f + o * o);
+        if (ratio > 1.0f)
+            g *= rbjMag2(hz, aaHz, kButterQ1, false, sampleRate_)
+               * rbjMag2(hz, aaHz, kButterQ2, false, sampleRate_);
+        const float shifted = hz * ratio;
+        if (shifted >= 0.5f * sampleRate_)
+            g = 0.0f;
+        else if (ratio < 1.0f)
+            g *= rbjMag2(shifted, kLowCutHz, 0.7071f, true, sampleRate_);
+        sum += g;
+        ++count;
+    }
+    return count > 0 ? sum / static_cast<float>(count) : 1.0f;
+}
+
+void ShimmerReverb::updateShimmer()
+{
+    float power = 0.0f;
+    for (const Voice& v : voices_)
+        power += v.level * v.level;
+    voiceNorm_ = power > 1.0f ? 1.0f / std::sqrt(power) : 1.0f;
+    const float pv = std::min(1.0f, power);
+
+    const float rhoMax = mode_ == Mode::Feedback ? kRhoMaxFeedback : kRhoMaxInput;
+    rho_ = shimmer_ * shimmer_ * rhoMax * pv;
+    // κ: the share of a pink generation's energy the voices' filters pass
+    // (level-weighted).  It only lowers the energy that comes back, so it
+    // enters the level normalisation, never γ.
+    float kappa = 1.0f;
+    if (power > 0.0f)
+    {
+        kappa = 0.0f;
+        for (const Voice& v : voices_)
+            kappa += v.level * v.level * v.pinkGain;
+        kappa /= power;
+    }
+
+    if (mode_ == Mode::Feedback)
+    {
+        // The voices read a tank tap whose energy is G = tank power gain
+        // times the energy that went in.  Injecting γ·shift(tap) adds
+        // γ²·G·P_v of the source generation's energy; set that to ρ:
+        //   γ = amount · √(ρ_max / G).
+        // Frozen: G = ∞ → γ = 0, nothing new is shifted into the tank.
+        const float g = tank_.powerGain();
+        inputShiftGain_ = std::isfinite(g) ? shimmer_ * std::sqrt(rhoMax / g) : 0.0f;
+        // Generations carry 1, ρκλ, (ρκλ)², … of the energy → Σ = 1/(1 − ρκλ).
+        // λ = G_pink / G: γ is set from the low-frequency gain G, but a
+        // generation's energy comes back through the gain its spectrum
+        // sees, which damping lowers.  Pink weighting matches the level
+        // spec; γ itself is left alone so darker material can only fall
+        // short of ρ, never exceed it.
+        // Frozen (G = ∞): keep the last λ so engaging freeze does not step
+        // the level.
+        if (std::isfinite(g))
+            lambda_ = std::clamp(tank_.pinkPowerGain() / g, 0.0f, 1.0f);
+        outNorm_ = std::sqrt(1.0f - rho_ * kappa * lambda_);
     }
     else
     {
-        // Size → decay time.  A loop of period T with gain g reaches −60 dB
-        // after T60 = 3·T / −log10(g) seconds.  T60 runs exponentially (even
-        // steps per unit of size) from kMinT60 to the T60 of the
-        // kMaxFeedback ceiling, then g = 10^(−3·T / T60).  The octave-up
-        // share of the feedback climbs out of band and decays faster, so the
-        // measured T60 is below nominal when shimmer > 0.
-        const float maxT60 = 3.0f * loopSeconds_ / -std::log10(kMaxFeedback);
-        const float t60 = kMinT60 * std::pow(maxT60 / kMinT60, size_);
-        feedback_ = std::min(kMaxFeedback,
-                             std::pow(10.0f, -3.0f * loopSeconds_ / t60));
-
-        // Damp → one-pole coefficient c whose gain at kDampRefHz is
-        // G = 10^(−kMaxDampDb·damp/20), linear in dB so each step of damp
-        // darkens the tail equally.  From |(1−c)/(1−c·e^−jω)|² = G²:
-        //   k·c² − 2m·c + k = 0,  k = 1 − G²,  m = 1 − G²·cos ω
-        // and the root inside the unit circle is c = (m − √(m² − k²)) / k,
-        // evaluated as k / (m + √(m² − k²)) to avoid cancellation at small k.
-        const float refHz = std::min(kDampRefHz, 0.45f * sampleRate_);
-        const float cosW = std::cos(kTwoPi * refHz / sampleRate_);
-        const float g = std::pow(10.0f, -kMaxDampDb * damp_ / 20.0f);
-        const float k = 1.0f - g * g;
-        const float m = 1.0f - g * g * cosW;
-        dampCoeff_ = k / (m + std::sqrt(m * m - k * k));
+        // One shifted copy at ρκ of the input energy.
+        inputShiftGain_ = shimmer_ * std::sqrt(rhoMax);
+        outNorm_ = 1.0f / std::sqrt(1.0f + rho_ * kappa);
     }
+}
 
-    // Equal-power blend: the octave-up signal is decorrelated from the
-    // unshifted one, so cos²+sin² = 1 keeps the fed-back power constant
-    // across the shimmer range.
-    directGain_ = std::cos(0.5f * kPi * shimmer_);
-    shiftedGain_ = std::sin(0.5f * kPi * shimmer_);
-
-    // Scale allpass feedback coefficients with size for longer diffusion tail
-    float sizeScale = 0.5f + size_ * 0.5f; // 0.5–1.0
-    for (int i = 0; i < 2; ++i)
+int ShimmerReverb::bestSplice(Voice& v, int grain, int lo, int hi) const
+{
+    // Start delay in [lo, hi] whose recent past best matches what the other
+    // three grains are playing now, weighted by their windows.  Matching
+    // only one of them (the one at its window peak) leaves the quarter-
+    // period neighbours unconstrained: two families of grains can settle in
+    // antiphase, and a sustained tone came out 24 dB down.  Coarse pass
+    // every kCoarseStep samples, then a fine pass around the winner.
+    float* ref = v.reference.data();
+    for (int j = 0; j < corrSamples_; ++j)
+        ref[j] = 0.0f;
+    for (int m = 0; m < Voice::kGrains; ++m)
     {
-        fwdApL_[i].feedback = kFwdApFb[i] * sizeScale;
-        fwdApR_[i].feedback = kFwdApFb[i] * sizeScale;
-        fbApL_[i].feedback = kFbApFbL[i] * sizeScale;
-        fbApR_[i].feedback = kFbApFbR[i] * sizeScale;
+        if (m == grain)
+            continue;
+        const float w = window_[static_cast<size_t>(v.phase[static_cast<size_t>(m)] * kWindowSize)];
+        const int dm = static_cast<int>(v.delay[static_cast<size_t>(m)]);
+        for (int j = 0; j < corrSamples_; ++j)
+            ref[j] += w * v.buffer[static_cast<size_t>((v.write - dm - j) & v.mask)];
     }
 
-    if (freeze_)
+    auto score = [&](int d) {
+        float dot = 0.0f, energy = 1e-12f;
+        for (int j = 0; j < corrSamples_; ++j)
+        {
+            const float b = v.buffer[static_cast<size_t>((v.write - d - j) & v.mask)];
+            dot += ref[j] * b;
+            energy += b * b;
+        }
+        return dot / std::sqrt(energy);
+    };
+    int best = lo;
+    float bestScore = -INFINITY;
+    for (int d = lo; d <= hi; d += kCoarseStep)
     {
-        // Push allpass feedback higher for infinite sustain
-        for (auto& ap : fwdApL_) ap.feedback = std::min(ap.feedback * 2.0f, 0.7f);
-        for (auto& ap : fwdApR_) ap.feedback = std::min(ap.feedback * 2.0f, 0.7f);
-        for (auto& ap : fbApL_) ap.feedback = std::min(ap.feedback * 2.0f, 0.5f);
-        for (auto& ap : fbApR_) ap.feedback = std::min(ap.feedback * 2.0f, 0.5f);
+        const float sc = score(d);
+        if (sc > bestScore) { bestScore = sc; best = d; }
     }
+    const int from = std::max(lo, best - kCoarseStep + 1);
+    const int to = std::min(hi, best + kCoarseStep - 1);
+    for (int d = from; d <= to; ++d)
+    {
+        const float sc = score(d);
+        if (sc > bestScore) { bestScore = sc; best = d; }
+    }
+    return best;
+}
+
+float ShimmerReverb::processVoice(Voice& v, float input, float detuneCents)
+{
+    float x = input;
+    if (v.ratio > 1.0f)
+        x = v.aa2.process(v.aa1.process(x));
+    v.buffer[static_cast<size_t>(v.write)] = x;
+
+    // Detune by the tank LFO: the read head runs at r·2^(c/1200).  |c| ≤ 8
+    // cents, so 2^(c/1200) = e^y with |y| ≤ 0.0046; the second-order series
+    // 1 + y + y²/2 is off by y³/6 ≤ 2·10⁻⁸ (far below a cent) and saves an
+    // exp2 per voice per sample.
+    const float y = detuneCents * (0.69314718f / 1200.0f);
+    const float r = v.ratio * (1.0f + y + 0.5f * y * y);
+    const float step = 1.0f / grainSamples_;
+    const float maxDelay = static_cast<float>(v.mask) - 2.0f;
+
+    // A silent voice (level 0) keeps its history and grain clock running —
+    // so raising its level later is seamless — but skips the reads and
+    // the splice search.
+    const bool silent = v.level == 0.0f;
+
+    float out = 0.0f;
+    float readPower = 0.0f; // Σ (w·x)², x = each grain's raw read
+    for (int k = 0; k < Voice::kGrains; ++k)
+    {
+        float& d = v.delay[static_cast<size_t>(k)];
+        float& ph = v.phase[static_cast<size_t>(k)];
+
+        if (!silent)
+        {
+            // Linear read `d` samples behind the write head.
+            const int di = static_cast<int>(d);
+            const float f = d - static_cast<float>(di);
+            const float a = v.buffer[static_cast<size_t>((v.write - di) & v.mask)];
+            const float b = v.buffer[static_cast<size_t>((v.write - di - 1) & v.mask)];
+            const float pos = ph * kWindowSize;
+            const int wi = static_cast<int>(pos);
+            const float wf = pos - static_cast<float>(wi);
+            const float w = window_[static_cast<size_t>(wi)]
+                          + wf * (window_[static_cast<size_t>(wi + 1)] - window_[static_cast<size_t>(wi)]);
+            const float wx = w * (a + f * (b - a));
+            out += wx;
+            readPower += wx * wx;
+        }
+
+        // Read head moves r samples per sample → the delay changes by 1 − r.
+        d = std::clamp(d + 1.0f - r, 2.0f, maxDelay);
+        ph += step;
+        if (ph >= 1.0f)
+        {
+            ph -= std::floor(ph);
+            // New grain (window at zero, so the jump is silent).  An upward
+            // grain needs a run-up of (r·c − 1)·P to stay behind the write
+            // head for a whole period; within the search span after that,
+            // start where it best matches the grains already playing, so
+            // all four add in phase.
+            const float rc = v.ratio * detuneCeiling();
+            const int runUp = rc > 1.0f
+                ? static_cast<int>(std::ceil((rc - 1.0f) * grainSamples_))
+                : 0;
+            const int lo = 2 + runUp;
+            const int hi = std::min(lo + searchSamples_,
+                                    static_cast<int>(maxDelay) - corrSamples_);
+            d = silent ? static_cast<float>(lo)
+                       : static_cast<float>(bestSplice(v, k, lo, std::max(lo, hi)));
+        }
+    }
+    v.write = (v.write + 1) & v.mask;
+    if (silent)
+        return 0.0f;
+
+    v.sumPower = out * out + (v.sumPower - out * out) * grainPowerCoeff_ + kAntiDenormal;
+    const float pIn = readPower / kGrainPowerSum;
+    v.readPower = pIn + (v.readPower - pIn) * grainPowerCoeff_ + kAntiDenormal;
+    out *= std::clamp(std::sqrt(v.readPower / v.sumPower), kMinGrainGain, kMaxGrainGain);
+    if (v.ratio < 1.0f)
+        out = v.hp.process(out);
+    return out;
 }
 
 std::pair<float, float> ShimmerReverb::process(float input)
 {
-    // --- Shimmer path (always runs to keep state alive) ---
-    float modScale = 0.5f + size_ * 2.5f;
+    preDelay_[static_cast<size_t>(preDelayWrite_)] = input;
+    const float delayed =
+        preDelay_[static_cast<size_t>((preDelayWrite_ - preDelaySamples_) & preDelayMask_)];
+    preDelayWrite_ = (preDelayWrite_ + 1) & preDelayMask_;
 
-    float fwdL = input + fbL_;
-    for (auto& ap : fwdApL_)
-        fwdL = ap.process(fwdL, modScale);
+    // Frozen: the tank is lossless, so no input and no freshly shifted
+    // sound is fed (fresh shifting is what would make the held pitch climb
+    // forever in Feedback mode).  Only the input diffuser's last ≈ 30 ms
+    // drains in after the switch.
+    const float x = freeze_ ? 0.0f : delayed;
 
-    float fwdR = input + fbR_;
-    for (auto& ap : fwdApR_)
-        fwdR = ap.process(fwdR, modScale);
+    const float source = sourceHp_.process(mode_ == Mode::Feedback ? tank_.monoTap() : x);
+    const float detune = tank_.lfo() * tank_.modDepth() * kMaxDetuneCents;
+    float shifted = 0.0f;
+    shifted += voices_[0].level * processVoice(voices_[0], source, detune);
+    shifted += voices_[1].level * processVoice(voices_[1], source, -detune);
+    shifted *= voiceNorm_;
 
-    fwdL = dampL_.process(fwdL, dampCoeff_);
-    fwdR = dampR_.process(fwdR, dampCoeff_);
+    const float inject = freeze_ ? 0.0f : x + inputShiftGain_ * shifted;
+    auto [l, r] = tank_.process(inject);
 
-    float dcFreeL = dcL_.process(fwdL);
-    float dcFreeR = dcR_.process(fwdR);
-
-    float fbPathL = fbDelayPreL_.process(dcFreeL);
-    for (auto& ap : fbApL_)
-        fbPathL = ap.process(fbPathL, modScale);
-    fbPathL = fbDelayPostL_.process(fbPathL);
-    fbPathL = directGain_ * fbPathL
-            + shiftedGain_ * pitchL_.process(pitchAaL_.process(fbPathL));
-
-    float fbPathR = fbDelayPreR_.process(dcFreeR);
-    for (auto& ap : fbApR_)
-        fbPathR = ap.process(fbPathR, modScale);
-    fbPathR = fbDelayPostR_.process(fbPathR);
-    fbPathR = directGain_ * fbPathR
-            + shiftedGain_ * pitchR_.process(pitchAaR_.process(fbPathR));
-
-    fbL_ = fbPathL * feedback_;
-    fbR_ = fbPathR * feedback_;
-
-    float shimL = fwdL;
-    float shimR = fwdR;
-
-    // --- Freeze crossfade ---
-    // Before freeze: feed shimmer output into Freverb so its comb state
-    // is warm and ready to hold the tail.  After freeze engages its
-    // combs run at fb = 1.0 (indefinite sustain) — any further input
-    // would be added permanently and the amplitude would grow linearly,
-    // turning "freeze" into "accumulate until clipping".  So once freeze
-    // is active we feed silence; the combs then recirculate the tail
-    // captured at the moment of engagement.
-    const float freezeInput = freeze_ ? 0.0f : (shimL + shimR) * 0.5f;
-    auto [frzL, frzR] = freezeReverb_.process(freezeInput);
-
-    // Advance crossfade
-    if (freeze_)
-    {
-        freezeXfade_ += freezeXfadeInc_;
-        if (freezeXfade_ > 1.0f) freezeXfade_ = 1.0f;
-    }
-    else
-    {
-        freezeXfade_ -= freezeXfadeInc_;
-        if (freezeXfade_ < 0.0f) freezeXfade_ = 0.0f;
-    }
-
-    // Equal-power crossfade: a² + b² = 1 keeps the summed RMS roughly
-    // constant for decorrelated signals, avoiding the ~3 dB midpoint dip
-    // that a linear (a·S + (1−a)·F) blend produces when shimmer and
-    // Freeverb outputs are not phase-aligned.
-    const float shimGain = std::cos(0.5f * kPi * freezeXfade_);
-    const float frzGain  = std::sin(0.5f * kPi * freezeXfade_);
-    float outL = shimL * shimGain + frzL * frzGain;
-    float outR = shimR * shimGain + frzR * frzGain;
-
-    // Dry/wet mix
-    float dry = 1.0f - mix_;
-    static constexpr float kWetScale = 3.0f;
-    float wet = mix_ * kWetScale;
-
-    float left  = input * dry + outL * wet;
-    float right = input * dry + outR * wet;
-
-    return { left, right };
+    const float dry = input * (1.0f - mix_);
+    const float wet = mix_ * outNorm_;
+    return { dry + l * wet, dry + r * wet };
 }
 
 } // namespace ideath

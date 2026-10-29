@@ -27,6 +27,7 @@ add_library(ideath STATIC
     src/FMSynth.cpp
     src/Reverb.cpp
     src/HallReverb.cpp
+    src/ReverbTank.cpp
     src/ShimmerReverb.cpp
     src/PeakLimiter.cpp
     src/Compressor.cpp
@@ -135,6 +136,7 @@ if(TN_DSP_BUILD_TESTS)
         tests/test_FMSynth.cpp
         tests/test_Reverb.cpp
         tests/test_HallReverb.cpp
+        tests/test_ReverbTank.cpp
         tests/test_ShimmerReverb.cpp
         tests/test_PeakLimiter.cpp
         tests/test_Compressor.cpp

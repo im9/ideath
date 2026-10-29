@@ -1,4 +1,5 @@
 #include "TrackManager.h"
+#include <algorithm>
 
 namespace ideath { namespace repl {
 
@@ -7,10 +8,13 @@ void TrackManager::prepare(float sampleRate)
     for (auto& e : engines_)
         e.prepare(sampleRate);
 
-    limiter_.prepare(sampleRate);
-    limiter_.setThreshold(0.0f);   // 0 dB brickwall
-    limiter_.setLookahead(0.005f); // 5ms lookahead
-    limiter_.setRelease(0.05f);    // 50ms release
+    for (PeakLimiter* l : { &limiter_, &limiterR_ })
+    {
+        l->prepare(sampleRate);
+        l->setThreshold(0.0f);   // 0 dB brickwall
+        l->setLookahead(0.005f); // 5ms lookahead
+        l->setRelease(0.05f);    // 50ms release
+    }
 }
 
 void TrackManager::applyPendingState()
@@ -19,7 +23,7 @@ void TrackManager::applyPendingState()
         engines_[i].applyPendingState(shared_[i]);
 }
 
-float TrackManager::process()
+std::pair<float, float> TrackManager::process()
 {
     // Check if any track has solo
     bool anySolo = false;
@@ -32,7 +36,7 @@ float TrackManager::process()
         }
     }
 
-    float sum = 0.0f;
+    float sumL = 0.0f, sumR = 0.0f;
     for (int i = 0; i < kMaxTracks; ++i)
     {
         if (mix_[i].muted.load(std::memory_order_relaxed))
@@ -40,24 +44,29 @@ float TrackManager::process()
         if (anySolo && !mix_[i].solo.load(std::memory_order_relaxed))
             continue;
 
-        float s = engines_[i].process();
-        s *= mix_[i].volume.load(std::memory_order_relaxed);
-        sum += s;
+        auto [l, r] = engines_[i].process();
+        const float vol = mix_[i].volume.load(std::memory_order_relaxed);
+        sumL += l * vol;
+        sumR += r * vol;
     }
 
-    float out;
+    float outL, outR;
     if (limiterEnabled.load(std::memory_order_relaxed))
-        out = limiter_.process(sum);
+    {
+        // One limiter per channel (PeakLimiter is mono).  Identical inputs
+        // give identical gain, so a mono patch stays centred.
+        outL = limiter_.process(sumL);
+        outR = limiterR_.process(sumR);
+    }
     else
     {
         // Fallback hard clamp when limiter is off
-        if (sum > 1.0f) sum = 1.0f;
-        else if (sum < -1.0f) sum = -1.0f;
-        out = sum;
+        outL = std::clamp(sumL, -1.0f, 1.0f);
+        outR = std::clamp(sumR, -1.0f, 1.0f);
     }
 
-    scope_.push(out);
-    return out;
+    scope_.push(0.5f * (outL + outR));
+    return { outL, outR };
 }
 
 }} // namespace ideath::repl

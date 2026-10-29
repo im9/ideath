@@ -136,9 +136,10 @@ static void audioCallback(ma_device* /*device*/, void* output, const void* /*inp
     auto* out = static_cast<float*>(output);
     for (ma_uint32 i = 0; i < frameCount; ++i)
     {
-        float s = g_tracks.process();
-        out[i] = s;
-        g_wsServer.pushSample(s);
+        auto [l, r] = g_tracks.process();
+        out[2 * i] = l;
+        out[2 * i + 1] = r;
+        g_wsServer.pushSample(0.5f * (l + r));
     }
 }
 
@@ -277,7 +278,7 @@ static bool handleLimiterCommand(const std::string& line)
     {
         // Treat as threshold in dB
         float dB = parseFloat(arg, 0.0f);
-        g_tracks.getLimiter().setThreshold(dB);
+        g_tracks.setLimiterThreshold(dB);
         g_tracks.limiterEnabled.store(true, std::memory_order_relaxed);
         std::cout << "Limiter threshold: " << dB << " dB" << std::endl;
     }
@@ -404,7 +405,7 @@ int main()
     // --- miniaudio setup ---
     ma_device_config config = ma_device_config_init(ma_device_type_playback);
     config.playback.format   = ma_format_f32;
-    config.playback.channels = 1;
+    config.playback.channels = 2;
     config.sampleRate        = static_cast<ma_uint32>(kSampleRate);
     config.periodSizeInFrames = 1024;
     config.dataCallback      = audioCallback;

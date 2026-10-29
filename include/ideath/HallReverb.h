@@ -1,119 +1,83 @@
 #pragma once
 
-#include <array>
+#include "ReverbTank.h"
 #include <utility>
 #include <vector>
 
 namespace ideath {
 
-/// Hall-style stereo reverb with pre-delay and LFO-modulated comb filters.
-/// Produces a lush, evolving tail suited for large spaces.
+/// Hall reverb: pre-delay → ReverbTank (8-line Householder FDN with input
+/// diffusion, modulated lines, Jot absorption).  Shares the tank with
+/// ShimmerReverb, so switching between the two keeps the tail's texture.
+///
 /// Mono in, stereo out.
-/// Output can reach ±1.5 for ±1.0 input (same Freeverb gain structure).
-/// Place a PeakLimiter downstream in the signal chain.
+///
+/// Output level: steady-state broadband RMS gain √(T60 / 3.87 s) — 0 dB at
+/// size 0.5, +8.9 dB at size 1, −8.9 dB at size 0.
+/// Output ceiling for ±1 input: ±kMaxOutput (35).  Derivation: a steady
+/// sine parked on a tank mode gains (peak / mean modal power) =
+/// 2 / (ΣL·δ) = 2·T60 / (6.908 · ΣL_sec) = 16.9 at T60 = 30 s
+/// (ΣL_sec = 0.514 s), times the broadband power gain 30 / 3.87 = 7.75,
+/// → amplitude √131 = 11.4.  Modal amplitudes are Rayleigh-distributed, so
+/// the strongest of the ≈ 10⁴ modes below 20 kHz carries ln(10⁴) ≈ 9.2×
+/// the mean power (×3.03 amplitude) → 34.6.  Modulation (default depth
+/// 0.5) smears modes and keeps program material far below this.
+/// Place a PeakLimiter downstream.
 class HallReverb
 {
 public:
+    static constexpr float kMaxOutput = 35.0f;
+    static constexpr float kMaxPreDelay = 0.12f; // seconds
+
     HallReverb();
 
     void prepare(float sampleRate);
     void reset();
 
-    /// Room size (0.0–1.0). Controls comb filter feedback (0.50–0.99).
+    /// Room size (0.0–1.0).  Low-frequency T60 = 0.5 s · 60^size
+    /// (0.5 s → 30 s, even ratio per step of size).
     void setSize(float size);
 
-    /// Damping (0.0–1.0). Low values = bright, open character.
+    /// Damping (0.0–1.0).  High-frequency absorption: extra decay at 4 kHz
+    /// rises linearly from 0 to 60 dB/s.  Low values = bright, open.
     void setDamp(float damp);
 
-    /// Pre-delay time in seconds (0.0–0.1).
+    /// Pre-delay time in seconds (0.0–0.12).
     void setPreDelay(float seconds);
 
-    /// LFO modulation depth (0.0–1.0). Controls chorus-like movement.
+    /// Line modulation depth (0.0–1.0 → 0–1 ms excursion).  Chorus-like
+    /// movement that smears the tank's modes.
     void setModDepth(float depth);
+
+    /// Line modulation rate in Hz (0.05–5).
+    void setModRate(float rateHz);
 
     /// Dry/wet mix (0.0 = fully dry, 1.0 = fully wet).
     void setMix(float mix);
 
-    /// Freeze mode. Infinite sustain when true.
+    /// Freeze mode.  The tank becomes lossless and input is muted, so the
+    /// tail is held indefinitely.
     void setFreeze(bool freeze);
 
-    /// Process one mono input sample. Returns {left, right}.
+    /// Process one mono input sample.  Returns {left, right}.
     std::pair<float, float> process(float input);
 
-private:
-    static constexpr int kNumCombs = 8;
-    static constexpr int kNumAllpasses = 4;
-    static constexpr float kInputGain = 0.015f;   // canonical Freeverb fixedgain
-    static constexpr float kWetScale  = 3.0f;     // canonical Freeverb scalewet
-    static constexpr float kDampScale = 0.4f;     // canonical Freeverb scaledamp
-    static constexpr int kStereoSpread = 23;
-    static constexpr float kMaxPreDelay = 0.1f; // 100ms max
+    /// T60 (seconds) that setSize(size) asks of the tank.
+    static float sizeToT60(float size);
 
+private:
     float sampleRate_ = 44100.0f;
     float size_ = 0.7f;
-    float damp_ = 0.1f;
-    float modDepth_ = 0.5f;
     float mix_ = 0.5f;
     bool freeze_ = false;
 
-    float feedback_ = 0.0f;
-    float damp1_ = 0.0f;
-    float damp2_ = 0.0f;
+    std::vector<float> preDelay_;
+    int preDelayMask_ = 0;
+    int preDelayWrite_ = 0;
+    int preDelaySamples_ = 0;
+    float preDelaySec_ = 0.0f;
 
-    void updateParams();
-
-    // --- Pre-delay ---
-    struct PreDelay
-    {
-        std::vector<float> buffer;
-        int bufSize = 0;
-        int writeIndex = 0;
-        int delaySamples = 0;
-
-        void prepare(int maxSamples);
-        void clear();
-        void setDelay(int samples);
-        float process(float input);
-    };
-
-    // --- Modulated comb filter ---
-    struct ModCombFilter
-    {
-        std::vector<float> buffer;
-        int bufSize = 0;
-        int writeIndex = 0;
-        float filterStore = 0.0f;
-
-        // Per-comb LFO state
-        float lfoPhase = 0.0f;
-        float lfoRate = 1.0f;   // Hz
-        float lfoInc = 0.0f;    // phase increment per sample
-
-        void setSize(int size);
-        void clear();
-        void setLfoRate(float rate, float sampleRate);
-        float process(float input, float feedback, float damp1, float damp2,
-                      float modDepth);
-    };
-
-    // --- Allpass filter ---
-    struct AllpassFilter
-    {
-        std::vector<float> buffer;
-        int bufSize = 0;
-        int index = 0;
-        static constexpr float kFeedback = 0.5f;
-
-        void setSize(int size);
-        void clear();
-        float process(float input);
-    };
-
-    PreDelay preDelay_;
-    std::array<ModCombFilter, kNumCombs> combL_;
-    std::array<ModCombFilter, kNumCombs> combR_;
-    std::array<AllpassFilter, kNumAllpasses> allpassL_;
-    std::array<AllpassFilter, kNumAllpasses> allpassR_;
+    ReverbTank tank_;
 };
 
 } // namespace ideath

@@ -22,7 +22,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **MultiShapeWavetable** | General-purpose multi-shape band-limited wavetable engine (inboil-style). 10 shapes × 9 mipmap levels × 2048-sample tables, continuous morph between shapes, alias-free from ~10 Hz to Nyquist |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
 | **DelayLine** | Circular buffer delay with linear interpolation, feedback, dry/wet mix |
-| **TapeDelay** | Tape-style delay with wow/flutter modulation, feedback tone shaping, saturation |
+| **TapeDelay** | Tape-style delay with wow/flutter, feedback tone shaping, saturation or clean repeats, in-loop diffusion, stereo (offset / ping-pong) |
 | **LFO** | Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot, Shape/Curve/Quantize morph) |
 | **Portamento** | Exponential pitch/value glide |
 | **Voice** | Single synth voice (source + ADSR + filter + LFO + effects chain) |
@@ -30,8 +30,9 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FMSynth** | Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 / Sega Mega Drive spec) |
 | **DXFMSynth** | DX7-style 6-operator FM synth (32 algorithms from dexed/msfa table, per-op ratio/detune/level/ADSR/feedback/velocity/LFO sensitivities, global LFO with PMS/AMS routing). Not DX7-patch-compatible — uses ADSR envelopes and continuous-ratio parameters instead of DX7's quantized/rate-scaled originals |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
-| **HallReverb** | Hall reverb with pre-delay and LFO-modulated combs (lush, evolving tail) |
-| **ShimmerReverb** | Shimmer reverb with octave pitch-shifted feedback (ethereal, metallic) |
+| **ReverbTank** | Shared reverb core: 8-line Householder FDN, exact T60, modulated lines, decorrelated stereo out |
+| **HallReverb** | Hall reverb: pre-delay + ReverbTank (smooth, dense, modulated tail) |
+| **ShimmerReverb** | Shimmer reverb: ReverbTank + two pitch-shift voices (−24…+24 st), feedback or input mode |
 | **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead) |
 | **Compressor** | Peak envelope compressor (threshold/ratio/attack/release/makeup/knee) |
 | **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping |

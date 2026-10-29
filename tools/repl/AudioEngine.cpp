@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <algorithm>
 #include <cmath>
 
 namespace ideath { namespace repl {
@@ -391,7 +392,7 @@ void AudioEngine::advanceSequencer()
     }
 }
 
-float AudioEngine::process()
+std::pair<float, float> AudioEngine::process()
 {
     advanceSequencer();
 
@@ -412,7 +413,7 @@ float AudioEngine::process()
         phaser_.reset();
         delayCleared_ = true;
         }
-        return 0.0f;
+        return { 0.0f, 0.0f };
     }
     delayCleared_ = false;
 
@@ -666,6 +667,12 @@ float AudioEngine::process()
         sample = delay_.process(sample);
     }
 
+    // Stereo is carried as mid (`sample`, which every mono effect keeps
+    // processing) plus `side`, created by a stereo TapeDelay and passed
+    // through to the stereo reverb / output.  With the delay in mono the
+    // side stays 0 and L = R = the former mono output.
+    float side = 0.0f;
+
     // --- TapeDelay ---
     if (params_.tapeDelayEnabled)
     {
@@ -679,7 +686,22 @@ float AudioEngine::process()
         tapeDelay_.setLowpass(params_.tapeDelayLowpass);
         tapeDelay_.setHighpass(params_.tapeDelayHighpass);
         tapeDelay_.setDrive(params_.tapeDelayDrive);
-        sample = tapeDelay_.process(sample);
+        tapeDelay_.setSaturation(params_.tapeDelaySaturation);
+        tapeDelay_.setDiffusion(params_.tapeDelayDiffusion);
+        tapeDelay_.setStereoOffset(params_.tapeDelayOffset);
+        if (params_.tapeDelayStereo == TapeStereo::Mono)
+        {
+            sample = tapeDelay_.process(sample);
+        }
+        else
+        {
+            tapeDelay_.setStereoMode(params_.tapeDelayStereo == TapeStereo::PingPong
+                                         ? TapeDelay::StereoMode::PingPong
+                                         : TapeDelay::StereoMode::Offset);
+            auto [l, r] = tapeDelay_.processStereo(sample);
+            sample = 0.5f * (l + r);
+            side = 0.5f * (l - r);
+        }
     }
 
     // --- CombFilter ---
@@ -690,6 +712,10 @@ float AudioEngine::process()
         comb_.setDamp(params_.combDamp);
         comb_.setMix(params_.combMix);
         sample = comb_.process(sample);
+        // Mono effects after the stereo delay process the mid only; the
+        // side follows each one's dry gain so a fully wet effect does not
+        // leave raw echoes on the sides.
+        side *= 1.0f - std::clamp(params_.combMix, 0.0f, 1.0f);
     }
 
     // --- AllpassFilter (Schroeder diffusor) ---
@@ -705,6 +731,9 @@ float AudioEngine::process()
         looper_.setFeedback(params_.loopFeedback);
         looper_.setMix(params_.loopMix);
         sample = looper_.process(sample);
+        const auto mode = looper_.getMode();
+        if (mode == FeedbackBuffer::Mode::Playing || mode == FeedbackBuffer::Mode::Overdub)
+            side *= 1.0f - std::clamp(params_.loopMix, 0.0f, 1.0f);
     }
 
     // --- Granular (ring-buffer grain cloud) ---
@@ -719,11 +748,15 @@ float AudioEngine::process()
         granular_.writeSample(sample);
         const float wet = granular_.process();
         sample = sample * (1.0f - params_.granularMix) + wet * params_.granularMix;
+        side *= 1.0f - params_.granularMix;
     }
 
-    // --- Reverb (mono sum of stereo output) ---
+    // --- Reverb (stereo out; the dry side passes at the dry gain) ---
+    float left = sample + side;
+    float right = sample - side;
     if (params_.reverbType != ReverbType::Off)
     {
+        std::pair<float, float> out{ sample, sample };
         switch (params_.reverbType)
         {
             case ReverbType::Room:
@@ -732,8 +765,7 @@ float AudioEngine::process()
                 reverb_.setDamp(params_.reverbDamp);
                 reverb_.setMix(params_.reverbMix);
                 reverb_.setFreeze(params_.reverbFreeze);
-                auto [l, r] = reverb_.process(sample);
-                sample = (l + r) * 0.5f;
+                out = reverb_.process(sample);
                 break;
             }
             case ReverbType::Hall:
@@ -742,10 +774,10 @@ float AudioEngine::process()
                 hallReverb_.setDamp(params_.reverbDamp);
                 hallReverb_.setPreDelay(params_.reverbPreDelay);
                 hallReverb_.setModDepth(params_.reverbModDepth);
+                hallReverb_.setModRate(params_.reverbModRate);
                 hallReverb_.setMix(params_.reverbMix);
                 hallReverb_.setFreeze(params_.reverbFreeze);
-                auto [l, r] = hallReverb_.process(sample);
-                sample = (l + r) * 0.5f;
+                out = hallReverb_.process(sample);
                 break;
             }
             case ReverbType::Shimmer:
@@ -753,32 +785,46 @@ float AudioEngine::process()
                 shimmerReverb_.setSize(params_.reverbSize);
                 shimmerReverb_.setDamp(params_.reverbDamp);
                 shimmerReverb_.setShimmer(params_.reverbShimmer);
+                shimmerReverb_.setPreDelay(params_.reverbPreDelay);
+                shimmerReverb_.setModDepth(params_.reverbModDepth);
+                shimmerReverb_.setModRate(params_.reverbModRate);
+                shimmerReverb_.setMode(params_.reverbShimmerMode == ShimmerMode::Input
+                                           ? ShimmerReverb::Mode::Input
+                                           : ShimmerReverb::Mode::Feedback);
+                for (int v = 0; v < 2; ++v)
+                {
+                    shimmerReverb_.setVoicePitch(v, params_.reverbVoicePitch[v]);
+                    shimmerReverb_.setVoiceLevel(v, params_.reverbVoiceLevel[v]);
+                }
                 shimmerReverb_.setMix(params_.reverbMix);
                 shimmerReverb_.setFreeze(params_.reverbFreeze);
-                auto [l, r] = shimmerReverb_.process(sample);
-                sample = (l + r) * 0.5f;
+                out = shimmerReverb_.process(sample);
                 break;
             }
             default: break;
         }
+        // The reverbs clamp their mix; the dry side must use the same value.
+        const float drySide = side * (1.0f - std::clamp(params_.reverbMix, 0.0f, 1.0f));
+        left = out.first + drySide;
+        right = out.second - drySide;
     }
 
     // --- LFO → Volume ---
+    float level = 1.0f;
     if (params_.lfoTarget == LfoTarget::Volume)
-        sample *= 1.0f + lfoVal * params_.lfoDepth * 0.01f;
+        level *= 1.0f + lfoVal * params_.lfoDepth * 0.01f;
 
     // --- Function generator → Volume ---
     if (params_.fgTarget == FgTarget::Volume)
-        sample *= 1.0f + fgVal * params_.fgDepth * 0.01f;
+        level *= 1.0f + fgVal * params_.fgDepth * 0.01f;
 
     // --- Master volume with gain smoothing ---
-    sample *= params_.volume * gain;
+    level *= params_.volume * gain;
 
     // --- Soft clip: avoid hard discontinuity from resonant filter peaks ---
     // PeakLimiter on master handles final brickwall.
-    sample = Saturation::tanhDrive(sample, 1.0f);
-
-    return sample;
+    return { Saturation::tanhDrive(left * level, 1.0f),
+             Saturation::tanhDrive(right * level, 1.0f) };
 }
 
 }} // namespace ideath::repl

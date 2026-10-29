@@ -49,10 +49,15 @@ Source (osc | wt | noise | fm | unison | pluck | modal | harmonic | bowed | ping
   → AllpassFilter
   → Looper (FeedbackBuffer)
   → GranularProcessor
-  → Reverb
+  → Reverb (stereo)
   → master volume
-  → output
+  → output (stereo)
 ```
+
+Output is stereo. The chain is mono up to the TapeDelay; a stereo TapeDelay
+(`tape stereo offset|pingpong`) adds a side signal that rides alongside the
+mono effects after it (scaled by their dry gain) into the stereo reverb.
+With the delay in mono and no reverb, left and right are identical.
 
 Each stage can be independently enabled/disabled. LFO and Portamento act as modulators.
 8 independent tracks, each with its own signal chain and sequencer.
@@ -92,6 +97,9 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `fold <drive> [mix]` | Wavefolder (sine-based, `fold off` to disable) |
 | `delay <time_sec> <feedback>` | Delay line |
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
+| `tape stereo <mono\|offset\|pingpong> [offset_sec]` | Stereo repeats. `offset`: right side read later (0–0.05 s, default 0.012). `pingpong`: echoes alternate L, R, L. Wow/flutter run in quadrature on the right |
+| `tape diffusion <0-1>` | Smear each repeat (four in-loop allpasses); echo time unchanged |
+| `tape sat <on\|off>` | `off` = clean digital repeats (transparent below 0.8, soft ceiling at 1). For a DIGITAL-style delay: `tape 0.3 0.5 0 0.3 0 4 20000 20 1` then `tape sat off` |
 | `comb <time_sec> <feedback> [damp] [mix]` | Comb filter / resonator |
 | `allpass <time_sec> <g>` | Schroeder allpass diffusor (flat magnitude). `g` clamped to ±0.99. Typical diffusion coefficient 0.5–0.7. `allpass off` to disable. |
 | `chorus <rate_hz> <depth_ms> [voices] [spread] [feedback] [mix]` | Multi-voice bucket-brigade chorus. `voices` 1–8 (default 3), `spread` 0–1 (voice-to-voice LFO phase offset, drives stereo decorrelation), `feedback` ±0.9 (negative = flanger flavour with short depth), `mix` 0–1. Base delay fixed at ~12 ms (ambient chorus territory). `chorus off` to disable. |
@@ -104,8 +112,12 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `comp <thresh_dB> <ratio> [attack] [release] [makeup_dB]` | Compressor |
 | `comp off` | Disable compressor |
 | `reverb <room\|hall\|shimmer> [size] [damp] [mix]` | Reverb effect |
-| `reverb hall <size> <damp> <mix> <predelay> <moddepth>` | Hall with extra params |
-| `reverb shimmer <size> <damp> <mix> <shimmer_amount>` | Shimmer with extra params |
+| `reverb hall <size> <damp> <mix> <predelay> <moddepth> [modrate]` | Hall with extra params. Size → T60 = 0.5 s · 60^size |
+| `reverb shimmer <size> <damp> <mix> <shimmer_amount>` | Shimmer with extra params (same size → T60 map as hall) |
+| `reverb predelay <sec>` | Hall / shimmer pre-delay (0–0.12 s) |
+| `reverb mod <depth> [rate]` | Hall / shimmer tank modulation: depth 0–1 (0–1 ms), rate 0.05–5 Hz. Depth also detunes the shimmer voices (up to ±8 cents) |
+| `reverb voice <1\|2> <semitones> [level]` | Shimmer voice interval (−24…+24, fractional OK) and level (0–1). Defaults: voice 1 = +12 @ 1, voice 2 = +19 @ 0 |
+| `reverb mode <feedback\|input>` | Shimmer: `feedback` shifts inside the tank (climbs each pass); `input` shifts once before the tank (no stacking) |
 | `reverb freeze` | Toggle reverb freeze |
 | `reverb off` | Disable reverb |
 
@@ -139,7 +151,18 @@ Essential for kick drums (e.g., `penv 36 0.04` = 3 octaves, 40ms decay).
 | `preset <name>` | Load voice preset |
 | `preset list` | Show available presets |
 
-Available presets: `acid`, `chiptune`, `pad`, `kick`, `perc`, `bass`, `lead`, `hihat`, `ambient`, `lofi`.
+Available presets: `acid`, `chiptune`, `pad`, `kick`, `perc`, `bass`, `lead`, `hihat`, `ambient`, `lofi`,
+`shimmer-octave`, `shimmer-fifth`, `shimmer-span`.
+
+Shimmer audition presets (slow triangle pad into the shimmer reverb, size 0.75):
+
+| Preset | Voices | Mode | Amount |
+|--------|--------|------|--------|
+| `shimmer-octave` | +12 | feedback | 0.7 |
+| `shimmer-fifth` | +12 and +19 (level 0.7) | feedback | 0.6 |
+| `shimmer-span` | +12 and −12 (level 0.8) — three octaves | input | 0.8 |
+
+e.g. `preset shimmer-fifth` then `note C3`, `release`; `reverb freeze` to hold.
 
 `kick` uses pitch envelope (sine + 3-octave sweep + saturation).
 

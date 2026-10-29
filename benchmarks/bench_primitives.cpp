@@ -355,6 +355,33 @@ TEST_CASE("Bench: TapeDelay", "[bench]")
     };
 }
 
+TEST_CASE("Bench: TapeDelay stereo", "[bench]")
+{
+    // Heaviest stereo path: two cross-fed loops, both diffusers engaged.
+    ideath::TapeDelay delay;
+    delay.prepare(kSR, 2.0f);
+    delay.setDelay(0.3f);
+    delay.setFeedback(0.7f);
+    delay.setMix(0.5f);
+    delay.setWowDepth(0.003f);
+    delay.setFlutterDepth(0.0008f);
+    delay.setLowpass(6000.0f);
+    delay.setHighpass(80.0f);
+    delay.setDiffusion(0.6f);
+    delay.setStereoMode(ideath::TapeDelay::StereoMode::PingPong);
+
+    BENCHMARK("TapeDelay::processStereo (ping-pong, diffusion)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            auto [l, r] = delay.processStereo(sineAt(i));
+            acc += l + r;
+        }
+        return acc;
+    };
+}
+
 TEST_CASE("Bench: Portamento", "[bench]")
 {
     ideath::Portamento porta;
@@ -477,6 +504,33 @@ TEST_CASE("Bench: ShimmerReverb", "[bench]")
     reverb.setMix(0.5f);
 
     BENCHMARK("ShimmerReverb::process")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            auto [l, r] = reverb.process(sineAt(i));
+            acc += l + r;
+        }
+        return acc;
+    };
+}
+
+TEST_CASE("Bench: ShimmerReverb two voices", "[bench]")
+{
+    // Both voices active (+24 / −24: the largest buffer reads).  Splice
+    // cost does not depend on the interval — every grain restarts once per
+    // 100 ms period and searches a fixed span.
+    ideath::ShimmerReverb reverb;
+    reverb.prepare(kSR);
+    reverb.setSize(0.8f);
+    reverb.setDamp(0.3f);
+    reverb.setShimmer(0.8f);
+    reverb.setVoicePitch(0, 24.0f);
+    reverb.setVoicePitch(1, -24.0f);
+    reverb.setVoiceLevel(1, 1.0f);
+    reverb.setMix(0.5f);
+
+    BENCHMARK("ShimmerReverb::process (two voices)")
     {
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)

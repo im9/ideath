@@ -1,878 +1,709 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <ideath/HallReverb.h>
 #include <ideath/ShimmerReverb.h>
-#include <ideath/Biquad.h>
-#include <algorithm>
+#include "ReverbTestUtils.h"
 #include <cmath>
 #include <vector>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+using namespace reverbtest;
+using Mode = ideath::ShimmerReverb::Mode;
 
-using Catch::Matchers::WithinAbs;
+static constexpr float kSR = 48000.0f;
 
-static constexpr float kSampleRate = 44100.0f;
+// Shared tolerances (derivations)
+// -------------------------------
+// kPitchTolCents = 10: pitch discrimination for sustained tones is
+//   5–10 cents; a voice landing within 10 cents of the interval is in tune.
+// kT60Tol = 10 %: twice the ≈ 5 % reverberation-time JND.
+// kLevelTolDb = 1 dB: broadband level JND; a larger HALL ↔ SHIMMER step
+//   is heard as a jump when a host crossfades between the two types.
+static constexpr double kPitchTolCents = 10.0;
+static constexpr double kT60Tol = 0.10;
+static constexpr double kLevelTolDb = 1.0;
 
-// Goertzel single-bin power: returns |X(f)|² for `targetHz` over the
-// supplied buffer.  Used to verify the shimmer feedback is actually
-// pitch-shifting input energy up by an octave (vs. just smearing it).
-static double goertzelPower(const float* x, int n, float targetHz, float sr)
+static float sine(double hz, size_t i, float amp = 0.5f)
 {
-    const double w = 2.0 * M_PI * static_cast<double>(targetHz) / static_cast<double>(sr);
-    const double cw = std::cos(w);
-    const double coeff = 2.0 * cw;
-    double s0 = 0.0, s1 = 0.0, s2 = 0.0;
-    for (int i = 0; i < n; ++i)
-    {
-        s0 = static_cast<double>(x[i]) + coeff * s1 - s2;
-        s2 = s1;
-        s1 = s0;
-    }
-    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    return amp * static_cast<float>(std::sin(2.0 * kPi * hz * static_cast<double>(i) / kSR));
 }
 
-// Sum of Goertzel bins (bin spacing sr / n) across [loHz, hiHz].  The
-// LFO-modulated allpasses Doppler-spread every partial: at size 0.7 the
-// read offset swings ±110 samples at 0.7–1.5 Hz → ±1.1–2.4 % per stage,
-// ≈ ±10 % after the four stages of one loop pass.  A ±10 % band therefore
-// captures a partial's energy where a single bin would miss most of it.
-static double bandPower(const float* x, int n, float loHz, float hiHz, float sr)
+// Single-voice shimmer: voice 0 at `semis`, voice 1 off, modulation off so
+// the analysed spectrum is the shifter's alone.
+static void oneVoice(ideath::ShimmerReverb& rev, float semis, Mode mode, float amount)
 {
-    double e = 0.0;
-    const float step = sr / static_cast<float>(n);
-    for (float f = loHz; f <= hiHz; f += step)
-        e += goertzelPower(x, n, f, sr);
-    return e;
-}
-
-TEST_CASE("ShimmerReverb: feedback path produces octave-up content", "[shimmer]")
-{
-    // Feed a pure 220 Hz sine into the reverb.  A working shimmer should
-    // build measurable energy at 440 Hz (octave up) in the wet output as
-    // the pitch-shifted feedback path accumulates.  A broken pitch shifter
-    // (no shifting at all) leaves wet energy concentrated at the input
-    // frequency and any nearby smearing — never at the octave.
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setDamp(0.0f);
-    rev.setShimmer(1.0f);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
+    rev.setSize(0.3f);
+    rev.setDamp(0.0f);
+    rev.setModDepth(0.0f);
+    rev.setMode(mode);
+    rev.setShimmer(amount);
+    rev.setVoicePitch(0, semis);
+    rev.setVoiceLevel(0, 1.0f);
+    rev.setVoiceLevel(1, 0.0f);
+}
 
-    constexpr int kSettle = 8192;
-    constexpr int kAnalyse = 16384;
-
-    const float fIn = 220.0f;
-    const float wIn = 2.0f * static_cast<float>(M_PI) * fIn / kSampleRate;
-
-    // Settle
-    for (int i = 0; i < kSettle; ++i)
-        rev.process(0.5f * std::sin(wIn * static_cast<float>(i)));
-
-    // Capture wet output
-    std::vector<float> outL(kAnalyse);
-    for (int i = 0; i < kAnalyse; ++i)
+// Mono wet output for a steady sine of `seconds`.
+static std::vector<float> renderSine(ideath::ShimmerReverb& rev, double hz, float seconds)
+{
+    std::vector<float> y(static_cast<size_t>(seconds * kSR));
+    for (size_t i = 0; i < y.size(); ++i)
     {
-        auto [l, r] = rev.process(0.5f * std::sin(wIn * static_cast<float>(kSettle + i)));
-        outL[i] = l;
+        auto [l, r] = rev.process(sine(hz, i));
+        y[i] = 0.5f * (l + r);
     }
+    return y;
+}
 
-    const double powIn = bandPower(outL.data(), kAnalyse, 200.0f, 240.0f, kSampleRate);
-    const double powOct = bandPower(outL.data(), kAnalyse, 400.0f, 480.0f, kSampleRate);
+// Noise band around `hz`: white noise through the 2/3-octave band filter
+// twice (8th order).  Content an octave below sits ≥ 40 dB down, so a +12
+// voice cannot carry energy up into the measured band.  A noise burst
+// rather than a sine: a sine burst excites only one or two modes, which
+// beat under line modulation and scatter the T30 by tens of percent (see
+// test_ReverbTank).
+static std::vector<float> noiseBand(float hz, size_t n, uint32_t seed = 0x12345678u,
+                                    float q = 2.0f)
+{
+    std::vector<float> x(n);
+    White w;
+    w.s = seed;
+    for (auto& s : x)
+        s = w.next();
+    x = bandFilter(bandFilter(x, hz, kSR, q), hz, kSR, q);
+    return x;
+}
 
-    INFO("input bin = " << powIn << "  octave bin = " << powOct);
-    // Expected ratio: size 0.7 → nominal T60 = 0.5·(29.6/0.5)^0.7 ≈ 8.7 s
-    // → loop gain g = 10^(−3·0.311/8.7) ≈ 0.78.  At shimmer 1 every pass is
-    // shifted; the two Hann taps carry ≈ 0.75 of the power, so the octave
-    // returns at amplitude ≈ 0.78·√0.75 ≈ 0.68 of the forward-path tone.
-    // It first arrives after one loop + mean shifter delay ≈ 0.311 + 0.023
-    // = 0.334 s, i.e. for (0.557 − 0.334) / 0.371 ≈ 60 % of the analysis
-    // window (0.186–0.557 s) → power ratio ≈ 0.68² · 0.6 ≈ 0.28.  A loop
-    // that does not shift pitch yields ≈ 0 (only modulation sidebands).
-    // 0.02 sits > 10 dB below the 0.28 estimate (allowing for Doppler
-    // spread beyond the ±10 % bands) and far above the non-shifting floor.
-    REQUIRE(powOct > 0.0);
-    REQUIRE(powOct > powIn * 0.02);
+// ---------------------------------------------------------------------------
+// Pitch
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ShimmerReverb: each voice interval lands within 10 cents", "[shimmer]")
+{
+    // Input mode: one shift, no regeneration.  The strongest component
+    // within ±100 cents of f·2^(n/12) must sit within kPitchTolCents.  The
+    // last 2 s of a 3 s render are analysed (1 s for the tank to fill;
+    // 2 s window → 0.5 Hz bins, < 2 cents at 440 Hz).
+    const double f = 440.0;
+    for (float semis : { 12.0f, 19.0f, 7.0f, 24.0f, -12.0f, -24.0f, 5.5f })
+    {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, semis, Mode::Input, 1.0f);
+        auto y = renderSine(rev, f, 3.0f);
+        const double expect = f * std::pow(2.0, semis / 12.0);
+        const double c = peakCents(y, static_cast<size_t>(kSR), y.size(), expect, 100.0, kSR);
+        INFO("voice " << semis << " st: peak at " << c << " cents from " << expect << " Hz");
+        REQUIRE(std::fabs(c) <= kPitchTolCents);
+    }
+}
+
+TEST_CASE("ShimmerReverb: voice 1 shifts by its own interval", "[shimmer]")
+{
+    ideath::ShimmerReverb rev;
+    oneVoice(rev, 12.0f, Mode::Input, 1.0f);
+    rev.setVoiceLevel(0, 0.0f);
+    rev.setVoicePitch(1, 19.0f);
+    rev.setVoiceLevel(1, 1.0f);
+    auto y = renderSine(rev, 220.0, 3.0f);
+    const double expect = 220.0 * std::pow(2.0, 19.0 / 12.0);
+    const double c = peakCents(y, static_cast<size_t>(kSR), y.size(), expect, 100.0, kSR);
+    INFO("voice 1 peak " << c << " cents from " << expect << " Hz");
+    REQUIRE(std::fabs(c) <= kPitchTolCents);
+}
+
+TEST_CASE("ShimmerReverb: shimmer 0 puts no energy in the shifted band", "[shimmer]")
+{
+    // With amount 0 the voices contribute nothing and the tank is linear,
+    // so the octave of a 220 Hz sine can only hold float rounding and
+    // Hermite interpolation error (O(ω⁴) ≈ 10⁻⁷ at 220 Hz / 48 kHz,
+    // −140 dB).  −80 dB is far above that floor and far below audibility.
+    for (Mode mode : { Mode::Feedback, Mode::Input })
+    {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, 12.0f, mode, 0.0f);
+        rev.setModDepth(0.5f);
+        auto y = renderSine(rev, 220.0, 3.0f);
+        const size_t from = static_cast<size_t>(kSR);
+        const double base = bandPower(y, from, y.size(), 220.0, 50.0, kSR);
+        const double oct = bandPower(y, from, y.size(), 440.0, 50.0, kSR);
+        INFO("octave band " << 10.0 * std::log10(oct / base) << " dB re fundamental");
+        REQUIRE(oct <= base * 1e-8);
+    }
+}
+
+TEST_CASE("ShimmerReverb: Input mode never stacks a second shift", "[shimmer]")
+{
+    // Input mode shifts once before the tank: a 220 Hz band → 440 Hz,
+    // never 880 Hz.  Feedback mode at amount 1 puts the second generation
+    // at ρ_max = −3 dB re the first.  A 30 dB gap is required in Input
+    // mode: a partial 30 dB below an octave-adjacent partial lies under its
+    // upward masking spread (≈ −25 dB at one octave for mid-level tones).
+    // Stimulus: 220 Hz band noise (8th-order band-pass; its own content one
+    // octave up is ≥ 40 dB down).  A single sine would land each
+    // generation on one tank frequency, whose response swings ±10 dB from
+    // mode peak to trough; a band averages over ~60 modes.
+    auto ratio = [](Mode mode) {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, 12.0f, mode, 1.0f);
+        rev.setModDepth(0.5f);
+        const auto x = noiseBand(220.0f, static_cast<size_t>(4.0f * kSR));
+        std::vector<float> y(x.size());
+        for (size_t i = 0; i < y.size(); ++i)
+        {
+            auto [l, r] = rev.process(2.0f * x[i]);
+            y[i] = 0.5f * (l + r);
+        }
+        const size_t from = static_cast<size_t>(2.0f * kSR);
+        const double first = bandPower(y, from, y.size(), 440.0, 300.0, kSR);
+        const double second = bandPower(y, from, y.size(), 880.0, 300.0, kSR);
+        return 10.0 * std::log10(second / first);
+    };
+    const double input = ratio(Mode::Input);
+    const double feedback = ratio(Mode::Feedback);
+    INFO("880/440 Hz bands: Input " << input << " dB, Feedback " << feedback << " dB");
+    REQUIRE(input <= -30.0);
+    // The same measurement sees the second generation in Feedback mode:
+    // nominal −3 dB; −10 dB leaves 7 dB for the anti-alias filter, the
+    // voice's 200 ms power normaliser settling and the band edges.
+    REQUIRE(feedback >= -10.0);
+}
+
+// ---------------------------------------------------------------------------
+// Decay independence
+// ---------------------------------------------------------------------------
+
+static double unshiftedT60(Mode mode, float amount)
+{
+    // 0.5 s band-noise burst at 220 Hz; T60 of the 220 Hz band, averaged
+    // over seeds.  A +12 voice moves energy up only, so nothing re-enters
+    // the 220 Hz band.
+    return seedAverage([&](uint32_t seed) {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, 12.0f, mode, amount);
+        rev.setSize(0.5f);
+        rev.setModDepth(0.5f);
+        const size_t burst = static_cast<size_t>(0.5f * kSR);
+        const auto x = noiseBand(220.0f, burst, seed);
+        const double t60 = ideath::HallReverb::sizeToT60(0.5f);
+        std::vector<float> y(burst + tailSamples(t60, kSR));
+        for (size_t i = 0; i < y.size(); ++i)
+        {
+            auto [l, r] = rev.process(i < burst ? 2.0f * x[i] : 0.0f);
+            y[i] = 0.5f * (l + r);
+        }
+        return t30(bandFilter(y, 220.0f, kSR), burst, kSR);
+    });
+}
+
+TEST_CASE("ShimmerReverb: shimmer amount leaves the unshifted T60 unchanged", "[shimmer]")
+{
+    for (Mode mode : { Mode::Feedback, Mode::Input })
+    {
+        const double ref = unshiftedT60(mode, 0.0f);
+        REQUIRE(ref > 0.0);
+        for (float amount : { 0.5f, 1.0f })
+        {
+            const double t = unshiftedT60(mode, amount);
+            INFO("mode " << (mode == Mode::Feedback ? "Feedback" : "Input")
+                 << " amount " << amount << ": " << t << " s vs " << ref << " s");
+            REQUIRE(std::fabs(t / ref - 1.0) <= kT60Tol);
+        }
+    }
+}
+
+TEST_CASE("ShimmerReverb: size sets the same low-frequency T60 as HallReverb", "[shimmer]")
+{
+    // Both types read setSize through HallReverb::sizeToT60 = 0.5·60^size.
+    // Shimmer 0 here: the independence from the amount is its own test.
+    for (float size : { 0.0f, 0.5f, 1.0f })
+    {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, 12.0f, Mode::Feedback, 0.0f);
+        rev.setSize(size);
+        rev.setModDepth(0.5f);
+        const double t60 = ideath::HallReverb::sizeToT60(size);
+        const double m = seedAverage([&](uint32_t seed) {
+            rev.reset();
+            const size_t burst = static_cast<size_t>(0.5f * kSR);
+            std::vector<float> y(burst + tailSamples(t60, kSR));
+            White w;
+            w.s = seed;
+            for (size_t i = 0; i < y.size(); ++i)
+            {
+                auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
+                y[i] = 0.5f * (l + r);
+            }
+            return t30(bandFilter(y, 250.0f, kSR), burst, kSR);
+        });
+        INFO("size " << size << ": " << m << " s, nominal " << t60 << " s");
+        REQUIRE(std::fabs(m / t60 - 1.0) <= kT60Tol);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Freeze
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ShimmerReverb: freeze holds for 10 s without growth", "[shimmer]")
+{
+    // Feedback mode, both voices, full amount — the case that regenerates
+    // hardest.  1 dB growth bound = level JND; 3 dB fall = half power.
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    rev.setSize(0.6f);
+    rev.setShimmer(1.0f);
+    rev.setVoiceLevel(1, 1.0f);
+    Pink p;
+    for (int i = 0; i < static_cast<int>(2.0f * kSR); ++i)
+        rev.process(0.5f * p.next());
+    rev.setFreeze(true);
+    double first = 0.0;
+    for (int b = 0; b < 10; ++b)
+    {
+        double e = 0.0;
+        for (int i = 0; i < static_cast<int>(kSR); ++i)
+        {
+            // Input keeps arriving during freeze; it must not enter.
+            auto [l, r] = rev.process(0.5f * p.next());
+            REQUIRE(std::isfinite(l));
+            e += static_cast<double>(l) * l + static_cast<double>(r) * r;
+        }
+        const double level = std::sqrt(e / kSR);
+        if (b == 0)
+            first = level;
+        INFO("block " << b << ": " << db(level / first) << " dB");
+        REQUIRE(db(level / first) <= 1.0);
+        REQUIRE(db(level / first) >= -3.0);
+    }
+}
+
+TEST_CASE("ShimmerReverb: engaging freeze does not step the level", "[shimmer]")
+{
+    // Feedback mode, full shimmer, heavy damping (where the level
+    // normalisation depends on damping).  The wet RMS over the 0.2 s before
+    // and after setFreeze(true) must agree within the 1 dB level JND.
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    rev.setSize(0.6f);
+    rev.setDamp(1.0f);
+    rev.setShimmer(1.0f);
+    Pink p;
+    for (int i = 0; i < static_cast<int>(3.0f * kSR); ++i)
+        rev.process(0.5f * p.next());
+    const int win = static_cast<int>(0.2f * kSR);
+    double before = 0.0, after = 0.0;
+    for (int i = 0; i < win; ++i)
+    {
+        auto [l, r] = rev.process(0.0f); // tail only, same input either side
+        before += static_cast<double>(l) * l + static_cast<double>(r) * r;
+    }
+    rev.setFreeze(true);
+    for (int i = 0; i < win; ++i)
+    {
+        auto [l, r] = rev.process(0.0f);
+        after += static_cast<double>(l) * l + static_cast<double>(r) * r;
+    }
+    const double stepDb = 10.0 * std::log10(after / before);
+    INFO("level step at freeze: " << stepDb << " dB");
+    // A free tail at size 0.6 (T60 5.8 s) falls 60·0.2/5.8 = 2.1 dB per
+    // 0.2 s window.  The "before" window's mean sits half of that above
+    // the level at the freeze instant, which the frozen tank then holds:
+    // a step-free freeze reads −1.05 dB.  Allowed: ±1 dB (level JND)
+    // around it.  (Forcing λ = 1 while frozen measured −2.36 dB.)
+    REQUIRE(stepDb >= -2.05);
+    REQUIRE(stepDb <= -0.05);
+}
+
+TEST_CASE("ShimmerReverb: frozen tail never climbs in pitch", "[shimmer]")
+{
+    // Before freeze a 220 Hz band regenerates 440, 880, 1760, 3520 Hz in
+    // Feedback mode.  While frozen no new shifted sound enters, so the
+    // energy in each generation band — and above the highest one — must
+    // not grow between the first and the tenth frozen second (1 dB JND).
+    // Band-noise stimulus (a single sine puts one or two modes in a band,
+    // whose beating swung it ±5 dB).  Even with band noise a single burst's
+    // band moves both ways with σ ≈ 0.8 dB (measured, 6 seeds: −3.2 …
+    // +1.3 dB, no trend), so the change is the mean of 6 seeds
+    // (σ/√6 ≈ 0.33 dB).
+    for (double hz : { 440.0, 880.0, 1760.0, 3520.0, 7040.0 })
+    {
+        const double change = seedAverage([&](uint32_t seed) {
+            ideath::ShimmerReverb rev;
+            oneVoice(rev, 12.0f, Mode::Feedback, 1.0f);
+            rev.setSize(0.7f);
+            rev.setModDepth(0.5f);
+            const auto x = noiseBand(220.0f, static_cast<size_t>(1.5f * kSR), seed);
+            for (size_t i = 0; i < x.size(); ++i)
+                rev.process(2.0f * x[i]);
+            rev.setFreeze(true);
+            std::vector<float> y(static_cast<size_t>(10.0f * kSR));
+            for (size_t i = 0; i < y.size(); ++i)
+            {
+                auto [l, r] = rev.process(0.0f);
+                y[i] = 0.5f * (l + r);
+            }
+            const size_t sec = static_cast<size_t>(kSR);
+            return 10.0 * std::log10(bandPower(y, y.size() - sec, y.size(), hz, 300.0, kSR)
+                                     / bandPower(y, 0, sec, hz, 300.0, kSR));
+        }, 6);
+        INFO(hz << " Hz band: " << change << " dB over 9 s (mean of 6 seeds)");
+        REQUIRE(change <= 1.0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Level match with HallReverb
+// ---------------------------------------------------------------------------
+
+template <typename Process>
+static double wetRms(Process&& process, float seconds, float from)
+{
+    Pink p;
+    double e = 0.0;
+    size_t n = 0;
+    for (size_t i = 0; i < static_cast<size_t>(seconds * kSR); ++i)
+    {
+        auto [l, r] = process(0.5f * p.next());
+        if (i >= static_cast<size_t>(from * kSR))
+        {
+            e += static_cast<double>(l) * l + static_cast<double>(r) * r;
+            ++n;
+        }
+    }
+    return std::sqrt(e / static_cast<double>(n));
+}
+
+TEST_CASE("ShimmerReverb: wet level matches HallReverb within 1 dB on pink noise",
+          "[shimmer]")
+{
+    // Sizes 0.3 / 0.8 × damp 0 / 0.3 / 1: damping changes how much energy
+    // each shifted generation brings back, so it is part of the matrix.
+    for (float size : { 0.3f, 0.8f })
+    for (float damp : { 0.0f, 0.3f, 1.0f })
+    {
+        const float t60 = ideath::HallReverb::sizeToT60(size);
+        // Steady state after 0.6·T60 (energy residual 10^(−3.6)); then
+        // 4 s of measurement.
+        const float from = 0.6f * t60 + 0.5f;
+        const float seconds = from + 4.0f;
+
+        ideath::HallReverb hall;
+        hall.prepare(kSR);
+        hall.setMix(1.0f);
+        hall.setSize(size);
+        hall.setDamp(damp);
+        const double hallRms = wetRms([&](float x) { return hall.process(x); }, seconds, from);
+
+        for (Mode mode : { Mode::Feedback, Mode::Input })
+            for (float amount : { 0.0f, 0.5f, 1.0f })
+                for (float level1 : { 0.0f, 1.0f })
+                {
+                    ideath::ShimmerReverb shim;
+                    shim.prepare(kSR);
+                    shim.setMix(1.0f);
+                    shim.setSize(size);
+                    shim.setDamp(damp);
+                    shim.setMode(mode);
+                    shim.setShimmer(amount);
+                    shim.setVoiceLevel(1, level1);
+                    const double s = wetRms([&](float x) { return shim.process(x); }, seconds, from);
+                    INFO("size " << size << " damp " << damp << " mode " << (mode == Mode::Feedback ? "Feedback" : "Input")
+                         << " amount " << amount << " voice1 " << level1 << ": "
+                         << db(s / hallRms) << " dB re Hall");
+                    REQUIRE(std::fabs(db(s / hallRms)) <= kLevelTolDb);
+                }
+    }
+}
+
+TEST_CASE("ShimmerReverb: Input-mode shift level does not depend on note length",
+          "[shimmer]")
+{
+    // Input mode, amount 1: the shifted copy carries the input's energy
+    // (ρ_max = 1) for any note length.  Band-noise bursts of 50 ms … 3 s
+    // at +12, +24 (220 Hz source) and −12, −24 (1760 Hz source, so the
+    // shifted band, centred at 880 / 440 Hz, sits above the 120 Hz low cut).
+    //
+    // The shifted copy then rings through the tank in a different band from
+    // the source, and the tank's band-to-band energy gain is not flat at
+    // this size (measured, 50 ms bursts: −5.7 dB at 220 Hz vs −3.9 dB at
+    // 880 Hz — modal colouration, fixed per band, not seed noise).  So each
+    // case is compared with a control: the same tank, shimmer 0, fed the
+    // same-length burst directly in the shifted band.  Grain shifting keeps
+    // durations, so the shifted copy should match the control:
+    //   (shifted / source)_shimmer − (shifted band / source band)_control = 0 dB.
+    // A short note's copies are weighted by the grain windows at the
+    // moments the grains cross it, so 12 seeds start at onsets spread over
+    // one grain period after a 1 s warm-up, and energies are summed.
+    // Tolerance ±1.5 dB: the 1 dB level JND plus 0.5 dB for the downward
+    // voices' 120 Hz low cut (the lower edge of the −24 band, 220 Hz, is
+    // −0.36 dB down on the 2nd-order Butterworth, rounded up).
+    const int seeds = 12;
+    // Two-octave bands (Q 0.7): a 2/3-octave band holds few enough tank
+    // modes that a short burst's level depends on how its fine spectrum
+    // lines up with them (±2 dB between two bursts of the same band
+    // energy); a two-octave band averages over ≈ 3× as many.
+    const float kWideQ = 0.7f;
+    // Wet-output energy in band `measureHz` per unit of input energy, for a
+    // `bandHz` noise burst.
+    auto render = [&](float semis, float amount, float bandHz, float burstSec, int k,
+                      float measureHz) {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, semis, Mode::Input, amount);
+        rev.setModDepth(0.5f);
+        const size_t onset = static_cast<size_t>(kSR)
+                           + static_cast<size_t>(k) * static_cast<size_t>(0.1f * kSR) / seeds;
+        const size_t n = static_cast<size_t>(burstSec * kSR);
+        const auto x = noiseBand(bandHz, n, 0x9E3779B9u * static_cast<uint32_t>(k + 1), kWideQ);
+        std::vector<float> y(onset + n + static_cast<size_t>(4.0f * kSR));
+        double eIn = 0.0;
+        for (size_t i = 0; i < y.size(); ++i)
+        {
+            const float in = (i >= onset && i < onset + n) ? 2.0f * x[i - onset] : 0.0f;
+            eIn += static_cast<double>(in) * in;
+            auto [l, r] = rev.process(in);
+            y[i] = 0.5f * (l + r);
+        }
+        const auto band = bandFilter(bandFilter(y, measureHz, kSR, kWideQ), measureHz, kSR, kWideQ);
+        double e = 0.0;
+        for (float v : band)
+            e += static_cast<double>(v) * v;
+        return e / eIn;
+    };
+    for (float semis : { 12.0f, 24.0f, -12.0f, -24.0f })
+        for (float burstSec : { 0.05f, 0.15f, 0.4f, 3.0f })
+        {
+            const float sourceHz = semis > 0.0f ? 220.0f : 1760.0f;
+            const float shiftedHz = sourceHz * std::pow(2.0f, semis / 12.0f);
+            double shimSrc = 0.0, shimShift = 0.0, ctlSrc = 0.0, ctlShift = 0.0;
+            for (int k = 0; k < seeds; ++k)
+            {
+                shimSrc += render(semis, 1.0f, sourceHz, burstSec, k, sourceHz);
+                shimShift += render(semis, 1.0f, sourceHz, burstSec, k, shiftedHz);
+                ctlSrc += render(semis, 0.0f, sourceHz, burstSec, k, sourceHz);
+                ctlShift += render(semis, 0.0f, shiftedHz, burstSec, k, shiftedHz);
+            }
+            const double shim = 10.0 * std::log10(shimShift / shimSrc);
+            const double ctl = 10.0 * std::log10(ctlShift / ctlSrc);
+            INFO(semis << " st, " << burstSec << " s burst: shifted/source " << shim
+                 << " dB, tank control " << ctl << " dB, difference " << shim - ctl << " dB");
+            REQUIRE(std::fabs(shim - ctl) <= 1.5);
+        }
+}
+
+// ---------------------------------------------------------------------------
+// Bounds, state, safety
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ShimmerReverb: extreme settings stay within kMaxOutput", "[shimmer][stability]")
+{
+    // Size 1, damp 0, modulation 0 (sharpest modes), full shimmer, both
+    // voices, both modes; 10 s each of full-scale white noise and of a
+    // full-scale sine at a few frequencies.  Output must stay finite and
+    // within the header ceiling.
+    for (Mode mode : { Mode::Feedback, Mode::Input })
+        for (int stim = 0; stim < 4; ++stim)
+        {
+            ideath::ShimmerReverb rev;
+            rev.prepare(kSR);
+            rev.setMix(1.0f);
+            rev.setSize(1.0f);
+            rev.setDamp(0.0f);
+            rev.setModDepth(0.0f);
+            rev.setShimmer(1.0f);
+            rev.setMode(mode);
+            rev.setVoicePitch(0, 12.0f);
+            rev.setVoicePitch(1, -12.0f);
+            rev.setVoiceLevel(1, 1.0f);
+            White w;
+            const double hz[] = { 0.0, 110.0, 523.25, 2000.0 };
+            float peak = 0.0f;
+            for (size_t i = 0; i < static_cast<size_t>(10.0f * kSR); ++i)
+            {
+                const float x = stim == 0 ? w.next() : sine(hz[stim], i, 1.0f);
+                auto [l, r] = rev.process(x);
+                REQUIRE(std::isfinite(l));
+                REQUIRE(std::isfinite(r));
+                peak = std::max(peak, std::max(std::fabs(l), std::fabs(r)));
+            }
+            INFO("mode " << static_cast<int>(mode) << " stimulus " << stim << " peak " << peak);
+            REQUIRE(peak <= ideath::ShimmerReverb::kMaxOutput);
+        }
 }
 
 TEST_CASE("ShimmerReverb: silence in produces silence out", "[shimmer]")
 {
+    // Anti-denormal offsets (1e-25) are the only possible residue.
     ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
-
-    // Zero input, zeroed state.  Each ModAllpass write adds
-    // kAntiDenormal (1e−25) on every sample; steady-state buffer DC
-    // ≈ 1e−25 / (1 − kFeedback=0.5) = 2e−25.  The allpass network
-    // and pitch-shifter feedback path amplify by at most kWetScale(3)
-    // and a few multiplicative factors, so output stays in the
-    // 1e−24..1e−23 range — 14+ orders below the 1e−9 bound.
-    for (int i = 0; i < 4410; ++i)
+    for (int i = 0; i < 48000; ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::fabs(l) < 1e-9f);
-        REQUIRE(std::fabs(r) < 1e-9f);
+        REQUIRE(std::fabs(l) < 1e-20f);
+        REQUIRE(std::fabs(r) < 1e-20f);
     }
 }
 
-TEST_CASE("ShimmerReverb: impulse produces stereo tail", "[shimmer]")
+TEST_CASE("ShimmerReverb: reset matches a freshly prepared instance", "[shimmer]")
+{
+    auto configure = [](ideath::ShimmerReverb& r) {
+        r.prepare(kSR);
+        r.setMix(1.0f);
+        r.setShimmer(0.8f);
+        r.setVoiceLevel(1, 0.7f);
+        r.setPreDelay(0.03f);
+    };
+    ideath::ShimmerReverb a, b;
+    configure(a);
+    configure(b);
+    White w;
+    for (int i = 0; i < 30000; ++i)
+        a.process(w.next());
+    a.reset();
+    for (int i = 0; i < 30000; ++i)
+    {
+        const float x = i < 100 ? 0.5f : 0.0f;
+        auto [al, ar] = a.process(x);
+        auto [bl, br] = b.process(x);
+        REQUIRE(al == bl);
+        REQUIRE(ar == br);
+    }
+}
+
+TEST_CASE("ShimmerReverb: reset returns to silence", "[shimmer]")
 {
     ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.5f);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
+    White w;
+    for (int i = 0; i < 30000; ++i)
+        rev.process(w.next());
+    rev.reset();
+    for (int i = 0; i < 4800; ++i)
+    {
+        auto [l, r] = rev.process(0.0f);
+        REQUIRE(std::fabs(l) < 1e-20f);
+        REQUIRE(std::fabs(r) < 1e-20f);
+    }
+}
 
+TEST_CASE("ShimmerReverb: silent tail never produces subnormals", "[shimmer]")
+{
+    ideath::ShimmerReverb rev;
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    rev.setSize(0.0f);
+    rev.setDamp(1.0f);
+    rev.setVoicePitch(1, -12.0f);
+    rev.setVoiceLevel(1, 1.0f);
     rev.process(1.0f);
-
-    float maxL = 0.0f, maxR = 0.0f;
-    for (int i = 0; i < 22050; ++i)
+    for (int i = 0; i < static_cast<int>(10.0f * kSR); ++i)
     {
         auto [l, r] = rev.process(0.0f);
-        if (std::fabs(l) > maxL) maxL = std::fabs(l);
-        if (std::fabs(r) > maxR) maxR = std::fabs(r);
+        REQUIRE(std::fpclassify(l) != FP_SUBNORMAL);
+        REQUIRE(std::fpclassify(r) != FP_SUBNORMAL);
     }
-
-    // Lower bound on the first delayed arrival: at size 0.7 the forward
-    // allpass gains are g1 = 0.35·0.85 ≈ 0.30 and g2 = 0.375·0.85 ≈ 0.32.
-    // When the first allpass's delayed tap returns (n ≈ 601) its output is
-    // 1 − g1² ≈ 0.91, and the second stage passes −g2·0.91 ≈ −0.29 straight
-    // through.  Linear interpolation can split it over two samples (≥ ½ on
-    // one), the default damp 0.3 one-pole passes (1 − c) ≈ 0.39 of it on that
-    // sample, and the wet bus scales by 3 → peak ≥ 0.29·0.5·0.39·3 ≈ 0.17.
-    // 0.01 is > 10× below that bound; a dead network gives 0.
-    REQUIRE(maxL > 0.01f);
-    REQUIRE(maxR > 0.01f);
 }
 
-TEST_CASE("ShimmerReverb: stereo output differs L/R", "[shimmer]")
+TEST_CASE("ShimmerReverb: pre-delay holds the tail back", "[shimmer]")
 {
+    // Nothing may come out before the pre-delay (impulse at 0, 100 ms
+    // pre-delay); the tail must start within the first 50 ms after it
+    // (the input diffuser's span is ≈ 30 ms at 48 kHz).
     ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.5f);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
-
-    rev.process(1.0f);
-
-    bool differ = false;
-    for (int i = 0; i < 22050; ++i)
+    rev.setPreDelay(0.1f);
+    const int pre = static_cast<int>(0.1f * kSR);
+    double after = 0.0;
+    for (int i = 0; i < pre + static_cast<int>(0.05f * kSR); ++i)
     {
-        auto [l, r] = rev.process(0.0f);
-        // L and R run independent loops with different allpass and delay
-        // lengths (e.g. forward APs 601/613 vs 2043/2087), so their first
-        // arrivals land on different samples.  0.001 is > 100× below the
-        // ≥ 0.17 first-arrival peak bound in "impulse produces stereo tail".
-        if (std::fabs(l - r) > 0.001f)
+        auto [l, r] = rev.process(i == 0 ? 1.0f : 0.0f);
+        if (i < pre)
         {
-            differ = true;
-            break;
+            REQUIRE(std::fabs(l) < 1e-20f);
+            REQUIRE(std::fabs(r) < 1e-20f);
         }
+        else
+            after += std::fabs(l) + std::fabs(r);
     }
-    REQUIRE(differ);
+    REQUIRE(after > 0.0);
 }
 
-TEST_CASE("ShimmerReverb: shimmer amount moves the tail to the octave", "[shimmer]")
-{
-    // Shimmer is the octave-up share of the feedback signal.  At 0 nothing
-    // in the loop shifts pitch, so a 220 Hz input leaves the 440 Hz band
-    // nearly empty (only modulation sidebands leak there); at 1 every pass
-    // is shifted up.
-    auto octaveRatio = [](float shimmerAmt) {
-        ideath::ShimmerReverb rev;
-        rev.prepare(kSampleRate);
-        rev.setSize(0.7f);
-        rev.setDamp(0.0f);
-        rev.setShimmer(shimmerAmt);
-        rev.setMix(1.0f);
-
-        constexpr int kSettle = 8192;
-        constexpr int kAnalyse = 16384;
-        const float wIn = 2.0f * static_cast<float>(M_PI) * 220.0f / kSampleRate;
-        for (int i = 0; i < kSettle; ++i)
-            rev.process(0.5f * std::sin(wIn * static_cast<float>(i)));
-        std::vector<float> out(kAnalyse);
-        for (int i = 0; i < kAnalyse; ++i)
-            out[i] = rev.process(0.5f * std::sin(wIn * static_cast<float>(kSettle + i))).first;
-
-        return bandPower(out.data(), kAnalyse, 400.0f, 480.0f, kSampleRate)
-             / bandPower(out.data(), kAnalyse, 200.0f, 240.0f, kSampleRate);
-    };
-
-    const double none = octaveRatio(0.0f);
-    const double full = octaveRatio(1.0f);
-    INFO("octave/input band ratio: shimmer 0 = " << none << ", 1 = " << full);
-    // 10× (10 dB) separates "an octave path exists" from sideband leakage.
-    REQUIRE(full > 10.0 * none);
-}
-
-TEST_CASE("ShimmerReverb: size affects decay", "[shimmer]")
-{
-    auto measureDecay = [](float size) {
-        ideath::ShimmerReverb rev;
-        rev.prepare(kSampleRate);
-        rev.setSize(size);
-        rev.setShimmer(0.3f);
-        rev.setMix(1.0f);
-
-        rev.process(1.0f);
-
-        float energy = 0.0f;
-        for (int i = 0; i < 44100; ++i)
-        {
-            auto [l, r] = rev.process(0.0f);
-            energy += l * l + r * r;
-        }
-        return energy;
-    };
-
-    float energySmall = measureDecay(0.2f);
-    float energyLarge = measureDecay(0.9f);
-
-    REQUIRE(energyLarge > energySmall);
-}
-
-TEST_CASE("ShimmerReverb: freeze holds tail", "[shimmer]")
+TEST_CASE("ShimmerReverb: dry/wet mix 0 passes the input bit-exact", "[shimmer]")
 {
     ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.3f);
-    rev.setMix(1.0f);
-
-    // Build up reverb tail
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.5f);
-
-    rev.setFreeze(true);
-
-    // Wait for 200ms crossfade to complete (shimmer → Freeverb)
-    for (int i = 0; i < 8820; ++i)
-        rev.process(0.0f);
-
-    // Now measure two consecutive blocks — Freeverb freeze should sustain
-    // 1 s blocks: see the threshold derivation below.
-    float energy1 = 0.0f;
-    for (int i = 0; i < 44100; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        energy1 += l * l + r * r;
-    }
-
-    float energy2 = 0.0f;
-    for (int i = 0; i < 44100; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        energy2 += l * l + r * r;
-    }
-
-    // After the 200 ms crossfade only the frozen Freeverb is heard: combs at
-    // fb = 1 with damp 0 and muted input are lossless, so each comb's output
-    // is periodic with its own length L ≤ 1617 + 23 = 1640 samples, and the
-    // Freeverb allpasses after them are LTI.  A block's energy can then fall
-    // short of the previous block's only by the partial period at its edge:
-    // ≤ L / N = 1640 / 44100 ≈ 3.7 % for 1 s blocks.  0.95 = 1 − 3.7 %
-    // rounded down by ~1 % for float recirculation over 2 s.
-    REQUIRE(energy1 > 0.0f);
-    REQUIRE(energy2 > energy1 * 0.95f);
-}
-
-TEST_CASE("ShimmerReverb: freeze crossfade preserves RMS (no midpoint dip)", "[shimmer]")
-{
-    // The freeze transition crossfades between two decorrelated signals:
-    // the shimmer path and the Freeverb freeze path (fed from shimmer).
-    // A linear blend `a·S + (1−a)·F` with a going 0→1 drops ~3 dB at the
-    // midpoint for decorrelated S,F of equal amplitude:
-    //   RMS_mid = √(½·S² + ½·F²) = S·√½ ≈ 0.707·S  when S=F, uncorrelated.
-    // Equal-power (sin/cos) crossfade satisfies a² + b² = 1 so RMS stays
-    // ~constant. We probe the midpoint of the 200 ms crossfade under a
-    // steady broadband stimulus and require the midpoint RMS to stay within
-    // 15 % of the minimum endpoint RMS — clearly separating 0.707 (linear,
-    // fails) from ≈1.0 (equal-power, passes). The 15 % margin covers
-    // partial correlation between S and F (both share input history).
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.5f);
-    rev.setDamp(0.3f);
-    rev.setMix(1.0f);
-
-    // Broadband stimulus: three incommensurate high-frequency sines so a
-    // 10 ms RMS window still spans ≥10 periods of each component (997 Hz
-    // → 1 ms period). Avoids the window-integration error that a 220 Hz
-    // component would cause over a narrow window.
-    auto stim = [](int i) {
-        float t = static_cast<float>(i) / kSampleRate;
-        return (std::sin(2.0f * static_cast<float>(M_PI) * 997.0f  * t)
-              + std::sin(2.0f * static_cast<float>(M_PI) * 1447.0f * t)
-              + std::sin(2.0f * static_cast<float>(M_PI) * 2011.0f * t))
-             * (0.3f / 3.0f);
-    };
-
-    // Drive for 1 s to reach shimmer steady state. feedback_ ≈ 0.60 at
-    // the chosen settings; 1 s is multiple RT60 settling constants for
-    // the tuned delay network, so rmsPre is a stable estimate of |S|.
-    int tSample = 0;
-    for (int i = 0; i < 44100; ++i)
-        rev.process(stim(tSample++));
-
-    // Engage freeze. Keep stimulus running so |S| (shimmer RMS) stays at
-    // its steady-state value during the measurement; silencing the input
-    // would conflate the blend's tonal shift with natural amplitude decay.
-    rev.setFreeze(true);
-
-    // Measurement windows: 10 ms = 441 samples. At 997 Hz that is ~10
-    // full cycles, sufficient for a stable RMS estimate while keeping the
-    // window narrow enough that xfade varies by only ±0.025 across it —
-    // endpoint samples (xfade ≈ 0 and ≈ 1) and midpoint samples
-    // (xfade ≈ 0.5) are each read at the value they are supposed to probe.
-    constexpr int kWin = 441; // 10 ms
-    constexpr int kXfadeLen = 8820; // 200 ms at 44.1 kHz, matches impl
-    constexpr int kMid = kXfadeLen / 2; // 4410
-
-    auto rmsWindow = [&]() {
-        float sum = 0.0f;
-        for (int i = 0; i < kWin; ++i)
-        {
-            auto [l, r] = rev.process(stim(tSample++));
-            sum += l * l + r * r;
-        }
-        return std::sqrt(sum / (2.0f * kWin));
-    };
-
-    // Pre window: samples 0..kWin-1 after setFreeze, xfade ∈ [0, 0.05).
-    // Output ≈ shim·cos(small) ≈ shim — gives |S|.
-    const float rmsPre = rmsWindow();
-
-    // Advance to mid window centred on xfade = 0.5.
-    for (int i = 0; i < (kMid - kWin / 2) - kWin; ++i)
-        rev.process(stim(tSample++));
-    const float rmsMid = rmsWindow();
-
-    // Advance so the final window ends exactly at xfade = 1 (kXfadeLen
-    // samples from setFreeze). Measures Freeverb at the same moment the
-    // crossfade completes — before any further freeze-with-input
-    // accumulation changes |F|.
-    const int samplesConsumed = 2 * kWin + (kMid - kWin / 2) - kWin;
-    for (int i = 0; i < kXfadeLen - samplesConsumed - kWin; ++i)
-        rev.process(stim(tSample++));
-    const float rmsPost = rmsWindow();
-
-    INFO("rmsPre=" << rmsPre << " rmsMid=" << rmsMid << " rmsPost=" << rmsPost);
-
-    // Equal-power crossfade of decorrelated S,F gives
-    //   RMS_mid = √(sin²(π/4)·S² + cos²(π/4)·F²) = √((S² + F²)/2)
-    // i.e. the quadratic mean of the endpoints.
-    // Linear crossfade gives ½·√(S² + F²) = 0.707× the quadratic mean.
-    // The ratio equal-power / linear at midpoint is √2, independent of
-    // |S| and |F|. Threshold 0.85 cleanly separates the two regimes; the
-    // 15 % margin absorbs partial correlation between S and F (both share
-    // input history through the shimmer → Freeverb feed).
-    const float refQMean = std::sqrt((rmsPre * rmsPre + rmsPost * rmsPost) * 0.5f);
-    REQUIRE(rmsMid > refQMean * 0.85f);
-}
-
-TEST_CASE("ShimmerReverb: freeze + continuous input does not accumulate", "[shimmer]")
-{
-    // When freeze is engaged, the internal Freverb's comb feedback is
-    // raised to 1.0 to hold the captured tail. If that Freverb continues
-    // to receive fresh input after freeze, each sample is added to a
-    // buffer that now never decays — amplitude grows linearly, and
-    // "freeze" becomes "accumulate until clipping". The correct
-    // behaviour is to capture the tail at the moment of freeze and hold
-    // it, irrespective of whether the host keeps driving the reverb.
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.5f);
-    rev.setDamp(0.3f);
-    rev.setMix(1.0f);
-
-    auto stim = [](int i) {
-        float t = static_cast<float>(i) / kSampleRate;
-        return (std::sin(2.0f * static_cast<float>(M_PI) * 997.0f  * t)
-              + std::sin(2.0f * static_cast<float>(M_PI) * 1447.0f * t)
-              + std::sin(2.0f * static_cast<float>(M_PI) * 2011.0f * t))
-             * (0.3f / 3.0f);
-    };
-
-    // Build shimmer steady state (1 s ≫ RT60 of the tuned delay network).
-    int t = 0;
-    for (int i = 0; i < 44100; ++i)
-        rev.process(stim(t++));
-
-    rev.setFreeze(true);
-
-    // Advance past the 200 ms crossfade plus 50 ms settle so we measure
-    // purely the frozen-Freverb output path (xfade saturated at 1.0 →
-    // shimGain = cos(π/2) = 0, so only Freverb contributes to output).
-    for (int i = 0; i < 8820 + 2205; ++i)
-        rev.process(stim(t++));
-
-    auto measureRms = [&](int n) {
-        float s = 0.0f;
-        for (int k = 0; k < n; ++k)
-        {
-            auto [l, r] = rev.process(stim(t++));
-            s += l * l + r * r;
-        }
-        return std::sqrt(s / (2.0f * n));
-    };
-
-    constexpr int kWin = 4410; // 100 ms
-    const float rmsEarly = measureRms(kWin);
-
-    // Continue feeding stimulus for ~5 s. Under the accumulation bug,
-    // Freverb comb output grows linearly with elapsed samples at a rate
-    // of ~(N / commbDelay) × input_mean — for the shortest comb
-    // (~1557 samples at 44.1 kHz) this reaches ≈140× after 5 s. With
-    // the tail correctly held (no new input into the frozen reverb),
-    // RMS stays within a small window of its post-crossfade value.
-    for (int i = 0; i < 44100 * 5 - kWin; ++i)
-        rev.process(stim(t++));
-
-    const float rmsLate = measureRms(kWin);
-
-    INFO("rmsEarly=" << rmsEarly << " rmsLate=" << rmsLate
-         << " ratio=" << rmsLate / rmsEarly);
-
-    // Ceiling 2.0 safely separates a bounded hold (ratio ≈ 1, with slight
-    // drift from damp2 rounding under fb=1.0) from linear accumulation
-    // (ratio ≫ 5 even accounting for comb averaging).
-    REQUIRE(rmsLate < rmsEarly * 2.0f);
-}
-
-TEST_CASE("ShimmerReverb: dry/wet mix", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
+    rev.prepare(kSR);
     rev.setMix(0.0f);
-
-    // mix=0: dry = 1.0, wet = 0.  Output = input · 1.0 bit-for-bit
-    // (multiply by 1.0 is exact, wet branch masked by 0 multiply).
-    auto [l, r] = rev.process(0.8f);
-    REQUIRE_THAT(l, WithinAbs(0.8f, 1e-9f));
-    REQUIRE_THAT(r, WithinAbs(0.8f, 1e-9f));
+    White w;
+    for (int i = 0; i < 10000; ++i)
+    {
+        const float x = w.next();
+        auto [l, r] = rev.process(x);
+        REQUIRE(l == x);
+        REQUIRE(r == x);
+    }
 }
 
-TEST_CASE("ShimmerReverb: output stays bounded", "[shimmer]")
+TEST_CASE("ShimmerReverb: modulation depth moves the shifted voices", "[shimmer]")
+{
+    // MOD detunes the voices by up to ±kMaxDetuneCents.  With the tank
+    // modulation at its deepest the shifted partial's peak must wander
+    // off the exact interval at some point of a 4 s render, while at
+    // depth 0 it never does.  Peak tracked over 0.5 s windows (2 Hz bins
+    // = 4 cents at 880 Hz, finer than the 8-cent swing).
+    auto maxDrift = [](float depth) {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, 12.0f, Mode::Input, 1.0f);
+        rev.setModDepth(depth);
+        rev.setModRate(0.5f);
+        rev.setSize(0.0f);
+        auto y = renderSine(rev, 440.0, 5.0f);
+        double drift = 0.0;
+        const size_t win = static_cast<size_t>(0.5f * kSR);
+        for (size_t from = static_cast<size_t>(kSR); from + win <= y.size(); from += win)
+            drift = std::max(drift, std::fabs(peakCents(y, from, from + win, 880.0, 30.0, kSR)));
+        return drift;
+    };
+    const double still = maxDrift(0.0f);
+    const double moving = maxDrift(1.0f);
+    INFO("max drift: depth 0 " << still << " cents, depth 1 " << moving << " cents");
+    // Half the 8-cent swing is the smallest drift the 4-cent bins resolve.
+    REQUIRE(moving >= 4.0);
+    REQUIRE(moving > still);
+}
+
+TEST_CASE("ShimmerReverb: parameter clamping", "[shimmer]")
 {
     ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.9f);
-    rev.setShimmer(1.0f);
-    rev.setMix(1.0f);
-
-    for (int i = 0; i < 88200; ++i) // 2 seconds
+    rev.prepare(kSR);
+    rev.setSize(5.0f);
+    rev.setDamp(-1.0f);
+    rev.setShimmer(3.0f);
+    rev.setMix(2.0f);
+    rev.setPreDelay(5.0f);
+    rev.setModDepth(9.0f);
+    rev.setModRate(1000.0f);
+    rev.setVoicePitch(0, 99.0f);
+    rev.setVoicePitch(1, -99.0f);
+    rev.setVoiceLevel(0, 7.0f);
+    rev.setVoiceLevel(1, -7.0f);
+    rev.setVoicePitch(5, 3.0f); // out-of-range voice index is ignored
+    rev.setVoiceLevel(-1, 3.0f);
+    White w;
+    for (int i = 0; i < 48000; ++i)
     {
-        float input = (i < 441) ? 1.0f : 0.0f;
-        auto [l, r] = rev.process(input);
+        auto [l, r] = rev.process(w.next());
         REQUIRE(std::isfinite(l));
         REQUIRE(std::isfinite(r));
-        // Allpass network + pitch-shifted feedback can build
-        // higher internal levels than vanilla Freeverb. kWetScale=3 amplifies.
-        // With shimmer=1.0, regenerated octave energy accumulates across
-        // multiple feedback passes. ±6.0 = 2× the kWetScale × peak allpass
-        // output, accounting for pitch-shift energy regeneration.
-        REQUIRE(l >= -6.0f);
-        REQUIRE(l <= 6.0f);
-        REQUIRE(r >= -6.0f);
-        REQUIRE(r <= 6.0f);
-    }
-}
-
-TEST_CASE("ShimmerReverb: reset clears all state", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.8f);
-    rev.setShimmer(0.5f);
-    rev.setMix(1.0f);
-
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.7f);
-
-    rev.reset();
-
-    // After reset, all allpass/delay/pitch-shifter buffers zeroed.
-    // Same kAntiDenormal analysis as silence-in: reads return 0, the
-    // 1e−25 per-sample injection is 16+ orders below the 1e−9 bound.
-    for (int i = 0; i < 100; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        REQUIRE_THAT(l, WithinAbs(0.0f, 1e-9f));
-        REQUIRE_THAT(r, WithinAbs(0.0f, 1e-9f));
+        REQUIRE(std::fabs(l) <= ideath::ShimmerReverb::kMaxOutput);
     }
 }
 
 TEST_CASE("ShimmerReverb: default-constructible", "[shimmer]")
 {
     ideath::ShimmerReverb rev;
-    auto [l, r] = rev.process(0.5f);
+    auto [l, r] = rev.process(1.0f);
     REQUIRE(std::isfinite(l));
     REQUIRE(std::isfinite(r));
-}
-
-TEST_CASE("ShimmerReverb: full shimmer produces sustained ethereal tail", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(1.0f);
-    rev.setShimmer(1.0f);
-    rev.setMix(1.0f);
-
-    // Feed a short burst (10ms)
-    for (int i = 0; i < 441; ++i)
-        rev.process(0.5f);
-
-    // Skip 1 second to let the tail develop
-    for (int i = 0; i < 44100; ++i)
-        rev.process(0.0f);
-
-    // Measure energy in the next second — should still be significant
-    float energy = 0.0f;
-    for (int i = 0; i < 44100; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        energy += l * l + r * r;
-    }
-
-    // The burst injects ≈ 441 · (0.5 · 3)² ≈ 1e3 of wet energy per channel
-    // on its first pass.  By 1–2 s (passes 3–6 of the 0.31 s loop) a loop
-    // at g = 0.93 with the shifter's 0.75 power gain keeps ≥ (0.93²·0.75)^6
-    // ≈ 0.07 of it per channel before DC-blocker and anti-alias losses, i.e.
-    // order 10².  0.01 is four orders below that and is failed only by a
-    // loop that does not recirculate (the ~50 ms forward diffusion alone
-    // leaves nothing after 1 s).
-    REQUIRE(energy > 0.01f);
-}
-
-TEST_CASE("ShimmerReverb: parameter clamping", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-
-    rev.setSize(-1.0f);
-    rev.setDamp(5.0f);
-    rev.setShimmer(-1.0f);
-    rev.setMix(100.0f);
-
-    for (int i = 0; i < 1000; ++i)
-    {
-        auto [l, r] = rev.process(0.5f);
-        REQUIRE(std::isfinite(l));
-        REQUIRE(std::isfinite(r));
-    }
-}
-
-TEST_CASE("ShimmerReverb: no DC offset in output", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setShimmer(0.5f);
-    rev.setMix(1.0f);
-
-    // Feed a burst
-    for (int i = 0; i < 441; ++i)
-        rev.process(0.5f);
-
-    // Measure average (DC offset) over tail
-    float sum = 0.0f;
-    int count = 44100;
-    for (int i = 0; i < count; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        sum += l + r;
-    }
-    float avg = sum / static_cast<float>(count * 2);
-
-    // DC blocker in the allpass network keeps average near zero.
-    // Tolerance 0.05 accounts for kWetScale=3 amplifying any residual DC
-    // from the pitch shifter's window function.
-    REQUIRE(std::fabs(avg) < 0.05f);
-}
-
-// --- Long-run stability ---
-
-TEST_CASE("ShimmerReverb: long-run stability (10 seconds)", "[shimmer]")
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.8f);
-    rev.setShimmer(0.7f);
-    rev.setDamp(0.3f);
-    rev.setMix(1.0f);
-
-    // 0.1s signal then 10s silence. Tests the allpass network,
-    // pitch shifter window, and anti-denormal over 441k samples.
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.5f);
-
-    constexpr int N = 441000;
-    for (int i = 0; i < N; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::isfinite(l));
-        REQUIRE(std::isfinite(r));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Size → decay length, stability, and damp evenness
-// ---------------------------------------------------------------------------
-
-static constexpr float kNoteSec = 0.26f;
-
-// 220 Hz naive saw at 0.5 amplitude for kNoteSec, then silence.  The saw's
-// harmonics cover the whole band, so both the decay and the damping
-// measurements see broadband material.
-static float shimmerStim(int i)
-{
-    if (i >= static_cast<int>(kNoteSec * kSampleRate))
-        return 0.0f;
-    const float ph = std::fmod(220.0f * static_cast<float>(i) / kSampleRate, 1.0f);
-    return 0.5f * (2.0f * ph - 1.0f);
-}
-
-// Renders `out.size()` samples of mono-summed wet output for the stimulus.
-static void renderShimmer(std::vector<float>& out, float size, float damp,
-                          float shimmer)
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(size);
-    rev.setDamp(damp);
-    rev.setShimmer(shimmer);
-    rev.setMix(1.0f);
-    for (int i = 0; i < static_cast<int>(out.size()); ++i)
-    {
-        auto [l, r] = rev.process(shimmerStim(i));
-        out[i] = 0.5f * (l + r);
-    }
-}
-
-// T60 from the Schroeder energy-decay curve of the tail after release:
-// least-squares line through the −5 … −35 dB span (T30), extrapolated to
-// −60 dB.  This is the ISO 3382 T30 method.
-static double shimmerT60(const std::vector<float>& y, std::vector<double>& edc)
-{
-    const int rel = static_cast<int>(kNoteSec * kSampleRate);
-    const int n = static_cast<int>(y.size()) - rel;
-    double acc = 0.0;
-    for (int i = n - 1; i >= 0; --i)
-    {
-        acc += static_cast<double>(y[rel + i]) * y[rel + i];
-        edc[i] = acc;
-    }
-    double sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
-    int count = 0;
-    for (int i = 0; i < n; i += 64)
-    {
-        const double db = 10.0 * std::log10(edc[i] / edc[0] + 1e-30);
-        if (db <= -5.0 && db >= -35.0)
-        {
-            const double t = i / static_cast<double>(kSampleRate);
-            sx += t; sy += db; sxx += t * t; sxy += t * db; ++count;
-        }
-    }
-    if (count < 2)
-        return 0.0;
-    const double slope = (count * sxy - sx * sy) / (count * sxx - sx * sx);
-    return -60.0 / slope;
-}
-
-TEST_CASE("ShimmerReverb: size scales decay time monotonically", "[shimmer]")
-{
-    // Default damp / shimmer (0.3 / 0.5) — the operating point a host that
-    // only drives size and damp sees.  30 s render: long enough for the EDC
-    // to cross −35 dB at the largest size.
-    std::vector<float> y(static_cast<int>(30.0f * kSampleRate));
-    std::vector<double> edc(y.size());
-
-    const float sizes[] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
-    double t60[5];
-    for (int k = 0; k < 5; ++k)
-    {
-        renderShimmer(y, sizes[k], 0.3f, 0.5f);
-        t60[k] = shimmerT60(y, edc);
-        INFO("size " << sizes[k] << " T60 " << t60[k]);
-        CHECK(t60[k] > 0.0);
-    }
-
-    for (int k = 1; k < 5; ++k)
-    {
-        INFO("size " << sizes[k - 1] << " → " << sizes[k] << ": "
-             << t60[k - 1] << " s → " << t60[k] << " s");
-        REQUIRE(t60[k] > t60[k - 1]);
-    }
-    // 5× = the ratio at which a short room and a long wash are clearly
-    // distinct spaces (e.g. ~0.5 s small room vs ≥2.5 s hall).
-    INFO("T60 ratio size 1 / size 0 = " << t60[4] / t60[0]);
-    REQUIRE(t60[4] >= 5.0 * t60[0]);
-}
-
-TEST_CASE("ShimmerReverb: max size does not self-oscillate", "[shimmer]")
-{
-    // Tail energy must fall, never grow, at the 0.93 loop-gain ceiling with
-    // no damping, for pure-direct, blended, and pure-octave feedback.
-    // Floor for the fall between the 1–2 s and 19–20 s windows: the loop
-    // loses at least −20·log10(0.93) = 0.63 dB per pass; the longer loop
-    // (R, ≈ 0.32 s) completes 18 / 0.32 ≈ 56 passes → ≥ 35 dB.  The 30 dB
-    // requirement leaves 5 dB for window-to-window energy fluctuation from
-    // the LFO-modulated allpasses.
-    std::vector<float> y(static_cast<int>(21.0f * kSampleRate));
-    const int rel = static_cast<int>(kNoteSec * kSampleRate);
-    const auto windowDb = [&](float from, float to) {
-        const int a = rel + static_cast<int>(from * kSampleRate);
-        const int b = rel + static_cast<int>(to * kSampleRate);
-        double e = 0.0;
-        for (int i = a; i < b; ++i)
-            e += static_cast<double>(y[i]) * y[i];
-        return 10.0 * std::log10(e / (b - a) + 1e-30);
-    };
-
-    for (float shimmer : { 0.0f, 0.5f, 1.0f })
-    {
-        renderShimmer(y, 1.0f, 0.0f, shimmer);
-        float peak = 0.0f;
-        for (float v : y)
-            peak = std::max(peak, std::fabs(v));
-        const double early = windowDb(1.0f, 2.0f);
-        const double late = windowDb(19.0f, 20.0f);
-        INFO("shimmer " << shimmer << " early " << early << " dB, late "
-             << late << " dB, peak " << peak);
-        // ±6.0 = documented ShimmerReverb output ceiling (CLAUDE.md).
-        REQUIRE(peak <= 6.0f);
-        REQUIRE(late <= early - 30.0);
-    }
-}
-
-TEST_CASE("ShimmerReverb: damp darkens evenly across its range", "[shimmer]")
-{
-    // HF (> 4 kHz, 4th-order HP) tail energy 0.3–1.3 s after release at
-    // damp = 0, 0.1, …, 1.  Every 0.1 step must darken the tail, and no
-    // step may darken it by more than twice the mean step — "even" means
-    // the response never doubles its rate partway through the knob (the
-    // former linear-coefficient mapping dropped ~20× the mean in its final
-    // step).
-    std::vector<float> y(static_cast<int>((kNoteSec + 1.3f) * kSampleRate));
-    const int rel = static_cast<int>(kNoteSec * kSampleRate);
-    const int a = rel + static_cast<int>(0.3f * kSampleRate);
-    const int b = static_cast<int>(y.size());
-
-    double hf[11];
-    for (int k = 0; k <= 10; ++k)
-    {
-        renderShimmer(y, 0.7f, k / 10.0f, 0.5f);
-        ideath::Biquad hp1, hp2;
-        hp1.setHighpass(4000.0f, 0.7071f, kSampleRate);
-        hp2.setHighpass(4000.0f, 0.7071f, kSampleRate);
-        double e = 0.0;
-        for (int i = 0; i < b; ++i)
-        {
-            const float v = hp2.process(hp1.process(y[i]));
-            if (i >= a)
-                e += static_cast<double>(v) * v;
-        }
-        hf[k] = 10.0 * std::log10(e / (b - a) + 1e-30);
-    }
-
-    const double meanStep = (hf[10] - hf[0]) / 10.0;
-    INFO("HF dB damp 0 = " << hf[0] << ", damp 1 = " << hf[10]
-         << ", mean step " << meanStep);
-    REQUIRE(meanStep < 0.0);
-    for (int k = 1; k <= 10; ++k)
-    {
-        const double step = hf[k] - hf[k - 1];
-        INFO("damp " << (k - 1) / 10.0 << " → " << k / 10.0 << " step " << step);
-        REQUIRE(step < 0.0);
-        REQUIRE(step >= 2.0 * meanStep);
-    }
-}
-
-TEST_CASE("ShimmerReverb: reset matches a freshly prepared instance", "[shimmer]")
-{
-    // reset() must return every piece of state — buffers, filter memories
-    // and the allpass LFO phases — to what prepare() leaves, so the same
-    // input gives a bit-identical output afterwards.
-    ideath::ShimmerReverb fresh;
-    ideath::ShimmerReverb used;
-    fresh.prepare(kSampleRate);
-    used.prepare(kSampleRate);
-
-    for (int i = 0; i < 10000; ++i)
-        used.process(i < 100 ? 0.5f : 0.0f);
-    used.reset();
-
-    int mismatches = 0;
-    for (int i = 0; i < 44100; ++i)
-    {
-        const float x = (i == 0) ? 1.0f : 0.0f;
-        auto [fl, fr] = fresh.process(x);
-        auto [ul, ur] = used.process(x);
-        if (fl != ul || fr != ur)
-            ++mismatches;
-    }
-    INFO("samples differing after reset: " << mismatches);
-    REQUIRE(mismatches == 0);
-}
-
-// Fraction of the wet output's energy outside the carrier bin for a steady
-// 100 Hz tone at size 0 (loop gain ≈ 10^(−3·0.31/0.5) ≈ 0.014, so the
-// output is effectively one pass through the modulated allpasses).  The
-// tone sits exactly on a bin of the 4 s window (0.25 Hz spacing), so the
-// carrier itself does not leak; everything else is phase-modulation
-// sideband energy at multiples of the 0.7–1.5 Hz LFO rates.
-static double shimmerSidebandFraction(float sampleRate)
-{
-    ideath::ShimmerReverb rev;
-    rev.prepare(sampleRate);
-    rev.setSize(0.0f);
-    rev.setShimmer(0.0f);
-    rev.setDamp(0.0f);
-    rev.setMix(1.0f);
-
-    const float w = 2.0f * static_cast<float>(M_PI) * 100.0f / sampleRate;
-    const int settle = static_cast<int>(1.0f * sampleRate);
-    const int n = static_cast<int>(4.0f * sampleRate);
-    for (int i = 0; i < settle; ++i)
-        rev.process(0.3f * std::sin(w * static_cast<float>(i)));
-
-    std::vector<float> y(n);
-    double total = 0.0;
-    for (int i = 0; i < n; ++i)
-    {
-        y[i] = rev.process(0.3f * std::sin(w * static_cast<float>(settle + i))).first;
-        total += static_cast<double>(y[i]) * y[i];
-    }
-    // An on-bin tone of amplitude A has Goertzel power (n·A/2)² and signal
-    // energy n·A²/2, so carrier fraction = power / (n/2 · Σx²).
-    const double carrier = goertzelPower(y.data(), n, 100.0f, sampleRate);
-    return 1.0 - carrier / (0.5 * n * total);
-}
-
-TEST_CASE("ShimmerReverb: modulation depth scales with sample rate", "[shimmer]")
-{
-    // Delay lengths scale with sample rate, so the LFO depth must too.
-    // At 100 Hz the per-stage modulation index is β = 2π·f·D ≈ 0.35 for the
-    // size-0 depth D ≈ 0.56 ms — the small-β regime, where sideband power
-    // ≈ β²/2 ∝ D².  A depth fixed in samples changes D in time by
-    // r = 44.1 kHz / sr, so the sideband fraction moves by r²; a depth fixed
-    // in time leaves it unchanged.  The threshold is the geometric midpoint
-    // √(r²) = r (or 1/r) between the two hypotheses.  Below ~11 kHz a fixed
-    // depth also exceeds the shortest allpass delay and the read pointer
-    // wraps, which spreads far more energy out of the carrier.
-    const double ref = shimmerSidebandFraction(44100.0f);
-    for (float sr : { 8000.0f, 22050.0f, 48000.0f, 96000.0f })
-    {
-        const double frac = shimmerSidebandFraction(sr);
-        const double r = (sr > 44100.0f) ? sr / 44100.0 : 44100.0 / sr;
-        const double ratio = std::max(frac / ref, ref / frac);
-        INFO("sideband fraction at " << sr << " Hz = " << frac
-             << " vs 44.1 kHz = " << ref << " (ratio " << ratio
-             << ", limit " << r << ")");
-        CHECK(ratio < r);
-    }
 }

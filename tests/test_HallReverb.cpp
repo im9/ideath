@@ -1,457 +1,377 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/HallReverb.h>
-#include <ideath/Biquad.h>
+#include <ideath/ShimmerReverb.h>
+#include "ReverbTestUtils.h"
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
-using Catch::Matchers::WithinAbs;
+using namespace reverbtest;
 
-static constexpr float kSampleRate = 44100.0f;
+static constexpr float kSR = 48000.0f;
 
-TEST_CASE("HallReverb: silence in produces silence out", "[hallreverb]")
+// kT60Tol = 10 %: twice the ≈ 5 % reverberation-time JND (ISO 3382-1).
+static constexpr double kT60Tol = 0.10;
+
+// Broadband T30 of the wet mono sum after a 0.5 s pink-noise burst.
+template <typename Reverb>
+static double broadbandT60(Reverb& rev, float nominalT60)
+{
+    const size_t burst = static_cast<size_t>(0.5f * kSR);
+    std::vector<float> y(burst + tailSamples(nominalT60, kSR));
+    Pink p;
+    for (size_t i = 0; i < y.size(); ++i)
+    {
+        auto [l, r] = rev.process(i < burst ? 0.5f * p.next() : 0.0f);
+        y[i] = 0.5f * (l + r);
+    }
+    return t30(y, burst, kSR);
+}
+
+static double hallT60(float size, float damp)
 {
     ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
+    rev.setSize(size);
+    rev.setDamp(damp);
+    return broadbandT60(rev, ideath::HallReverb::sizeToT60(size));
+}
 
-    // Zero input, zeroed buffers.  Same Freeverb structure as Reverb:
-    // each comb's filterStore saturates at O(1e−25), and the 8-comb
-    // sum × kWetScale(3) caps at ~1.5e−23.  Allpass chain is unity-
-    // gain and adds O(kAntiDenormal) per stage.  Final output lives
-    // in the 1e−23..1e−22 range — 14+ orders below the 1e−9 bound.
-    for (int i = 0; i < 4410; ++i)
+TEST_CASE("HallReverb: size map is 0.5 s · 60^size", "[hallreverb]")
+{
+    REQUIRE(std::fabs(ideath::HallReverb::sizeToT60(0.0f) - 0.5f) < 1e-5f);
+    REQUIRE(std::fabs(ideath::HallReverb::sizeToT60(1.0f) - 30.0f) < 1e-3f);
+    REQUIRE(std::fabs(ideath::HallReverb::sizeToT60(0.5f)
+                      - ideath::ReverbTank::kUnityT60) < 1e-4f);
+}
+
+TEST_CASE("HallReverb: T60 grows monotonically with size", "[hallreverb]")
+{
+    // 0.05 steps across the range at the mid damp setting.  Each step must
+    // lengthen the measured broadband T60.
+    double prev = 0.0;
+    for (int k = 0; k <= 20; ++k)
     {
-        auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::fabs(l) < 1e-9f);
-        REQUIRE(std::fabs(r) < 1e-9f);
+        const float size = 0.05f * static_cast<float>(k);
+        const double t = hallT60(size, 0.5f);
+        INFO("size " << size << ": " << t << " s (previous " << prev << " s)");
+        REQUIRE(t > prev);
+        prev = t;
     }
 }
 
-TEST_CASE("HallReverb: impulse produces stereo tail", "[hallreverb]")
+TEST_CASE("HallReverb: low-frequency T60 follows the size map", "[hallreverb]")
 {
-    ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.8f);
-    rev.setDamp(0.1f);
-    rev.setMix(1.0f);
-
-    rev.process(1.0f);
-
-    float maxL = 0.0f, maxR = 0.0f;
-    for (int i = 0; i < 8820; ++i)
+    for (float size : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
     {
-        auto [l, r] = rev.process(0.0f);
-        if (std::fabs(l) > maxL) maxL = std::fabs(l);
-        if (std::fabs(r) > maxR) maxR = std::fabs(r);
+        ideath::HallReverb rev;
+        rev.prepare(kSR);
+        rev.setMix(1.0f);
+        rev.setSize(size);
+        rev.setDamp(0.5f);
+        const double nominal = ideath::HallReverb::sizeToT60(size);
+        // Noise burst: excites every mode in the band (see test_ReverbTank
+        // for why a sine burst is not a usable T60 stimulus); seed-averaged.
+        const double m = seedAverage([&](uint32_t seed) {
+            rev.reset();
+            const size_t burst = static_cast<size_t>(0.5f * kSR);
+            std::vector<float> y(burst + tailSamples(nominal, kSR));
+            White w;
+            w.s = seed;
+            for (size_t i = 0; i < y.size(); ++i)
+            {
+                auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
+                y[i] = 0.5f * (l + r);
+            }
+            return t30(bandFilter(y, 250.0f, kSR), burst, kSR);
+        });
+        INFO("size " << size << ": 250 Hz T60 " << m << " s, nominal " << nominal << " s");
+        REQUIRE(std::fabs(m / nominal - 1.0) <= kT60Tol);
     }
-
-    // Impulse 1.0 × kInputGain = 0.015 into 8 LFO-modulated combs at
-    // fb = 0.7 + 0.8·0.28 = 0.924 (size=0.8).  Same peak derivation as
-    // Reverb: 8 combs × 0.015 × kWetScale(3) ≈ 0.36 at first echo.
-    // LFO modulation of comb delay spreads peaks slightly in time but
-    // does not reduce the peak amplitude.  Threshold 0.05 sits ~7×
-    // below the predicted peak and catches a regression that silences
-    // the comb bank.
-    REQUIRE(maxL > 0.05f);
-    REQUIRE(maxR > 0.05f);
 }
 
-TEST_CASE("HallReverb: stereo output differs L/R", "[hallreverb]")
+TEST_CASE("HallReverb: damp takes the highs first", "[hallreverb]")
 {
-    ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
-    rev.setMix(1.0f);
-
-    rev.process(1.0f);
-
-    bool differ = false;
-    for (int i = 0; i < 4410; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        // kStereoSpread=23 + LFO phase offset (0.5 between L/R) → differ.
-        if (std::fabs(l - r) > 0.001f)
-        {
-            differ = true;
-            break;
-        }
-    }
-    REQUIRE(differ);
+    // Raising damp must shorten the decay above 4 kHz before (more than)
+    // the decay below 1 kHz: the 4 kHz-band T60 falls by more than the
+    // 250 Hz-band T60, and the 250 Hz T60 stays within tolerance.
+    auto bandT60 = [](float damp, float hz) {
+        return seedAverage([&](uint32_t seed) {
+            ideath::HallReverb rev;
+            rev.prepare(kSR);
+            rev.setMix(1.0f);
+            rev.setSize(0.5f);
+            rev.setDamp(damp);
+            const size_t burst = static_cast<size_t>(0.5f * kSR);
+            std::vector<float> y(burst + tailSamples(ideath::ReverbTank::kUnityT60, kSR));
+            White w;
+            w.s = seed;
+            for (size_t i = 0; i < y.size(); ++i)
+            {
+                auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
+                y[i] = 0.5f * (l + r);
+            }
+            return t30(bandFilter(y, hz, kSR), burst, kSR);
+        });
+    };
+    const double hf0 = bandT60(0.0f, 6000.0f), hf1 = bandT60(1.0f, 6000.0f);
+    const double lf0 = bandT60(0.0f, 250.0f), lf1 = bandT60(1.0f, 250.0f);
+    INFO("6 kHz: " << hf0 << " → " << hf1 << " s;  250 Hz: " << lf0 << " → " << lf1 << " s");
+    REQUIRE(hf1 / hf0 < lf1 / lf0);
+    REQUIRE(std::fabs(lf1 / lf0 - 1.0) <= kT60Tol);
 }
 
 TEST_CASE("HallReverb: pre-delay offsets the tail", "[hallreverb]")
 {
-    // Feed a burst and measure energy after the comb delay has built up
-    auto measureEarlyEnergy = [](float preDelaySec) {
-        ideath::HallReverb rev;
-        rev.prepare(kSampleRate);
-        rev.setPreDelay(preDelaySec);
-        rev.setSize(0.7f);
-        rev.setDamp(0.1f);
-        rev.setMix(1.0f);
-
-        // Feed 50ms burst
-        for (int i = 0; i < 2205; ++i)
-            rev.process(0.5f);
-
-        // Measure energy in the next 50ms (tail after burst stops)
-        float energy = 0.0f;
-        for (int i = 0; i < 2205; ++i)
-        {
-            auto [l, r] = rev.process(0.0f);
-            energy += l * l + r * r;
-        }
-        return energy;
-    };
-
-    float noDelay = measureEarlyEnergy(0.0f);
-    float withDelay = measureEarlyEnergy(0.08f); // 80ms pre-delay
-
-    // No-delay version has more tail energy (signal enters combs sooner)
-    REQUIRE(noDelay > withDelay);
-}
-
-TEST_CASE("HallReverb: modulation changes the tail vs unmodulated", "[hallreverb]")
-{
-    // The distinguishing feature of HallReverb over Reverb is LFO-
-    // modulated comb delays (setModDepth controls LFO amplitude).  If
-    // modulation is wired incorrectly — LFO never ticks, modDepth
-    // ignored, sin LUT stuck at 0 — the tail becomes indistinguishable
-    // from a plain Freeverb at the same size/damp.  Compare two
-    // instances driven identically except for modDepth and verify the
-    // tails diverge.
-    //
-    // Derivation of the divergence threshold:
-    //   An LFO with modDepth = 1 modulates each comb's read position
-    //   by up to ±1 sample (the library internally scales modDepth to
-    //   a small offset — the exact max depth is an impl detail).  Over
-    //   the tail sustain window the resulting phase-dependent reads
-    //   produce a ~fraction-of-a-sample time-varying smear.  The RMS
-    //   difference between modulated and unmodulated tails is at least
-    //   the per-sample phase jitter × the signal RMS × a loss factor
-    //   from partial cancellation — empirically in the 1e−3..1e−2
-    //   range for this configuration.  Threshold > 1e−4 rejects the
-    //   "modulation wired to a no-op" regression (which gives a
-    //   bit-identical tail, rmsDiff = 0 up to ULP) with 10× margin.
-    auto runTail = [](float modDepth) {
-        ideath::HallReverb rev;
-        rev.prepare(kSampleRate);
-        rev.setSize(0.8f);
-        rev.setDamp(0.1f);
-        rev.setModDepth(modDepth);
-        rev.setMix(1.0f);
-
-        for (int i = 0; i < 4410; ++i)
-            rev.process(0.5f);
-
-        constexpr int N = 4410;
-        std::vector<float> buf(N);
-        for (int i = 0; i < N; ++i)
-        {
-            auto [l, r] = rev.process(0.0f);
-            buf[static_cast<size_t>(i)] = 0.5f * (l + r);
-        }
-        return buf;
-    };
-
-    const auto noMod = runTail(0.0f);
-    const auto withMod = runTail(1.0f);
-
-    double sumSq = 0.0;
-    for (size_t i = 0; i < noMod.size(); ++i)
+    ideath::HallReverb rev;
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    rev.setPreDelay(0.08f);
+    const int pre = static_cast<int>(0.08f * kSR);
+    double after = 0.0;
+    for (int i = 0; i < pre + static_cast<int>(0.05f * kSR); ++i)
     {
-        const double d = static_cast<double>(withMod[i] - noMod[i]);
-        sumSq += d * d;
-    }
-    const double rmsDiff = std::sqrt(sumSq / static_cast<double>(noMod.size()));
-    INFO("mod vs no-mod tail RMS diff: " << rmsDiff);
-    REQUIRE(rmsDiff > 1e-4);
-}
-
-TEST_CASE("HallReverb: size affects decay time", "[hallreverb]")
-{
-    auto measureDecay = [](float size) {
-        ideath::HallReverb rev;
-        rev.prepare(kSampleRate);
-        rev.setSize(size);
-        rev.setDamp(0.1f);
-        rev.setMix(1.0f);
-
-        rev.process(1.0f);
-
-        float energy = 0.0f;
-        for (int i = 0; i < 44100; ++i)
+        auto [l, r] = rev.process(i == 0 ? 1.0f : 0.0f);
+        if (i < pre)
         {
-            auto [l, r] = rev.process(0.0f);
-            energy += l * l + r * r;
+            REQUIRE(std::fabs(l) < 1e-20f);
+            REQUIRE(std::fabs(r) < 1e-20f);
         }
-        return energy;
-    };
-
-    float energySmall = measureDecay(0.2f);
-    float energyLarge = measureDecay(0.9f);
-
-    REQUIRE(energyLarge > energySmall);
+        else
+            after += std::fabs(l) + std::fabs(r);
+    }
+    REQUIRE(after > 0.0);
 }
 
-TEST_CASE("HallReverb: freeze holds tail", "[hallreverb]")
+TEST_CASE("HallReverb: pre-delay keeps its time across prepare() at a new rate",
+          "[hallreverb]")
+{
+    // setPreDelay is in seconds; re-preparing at another sample rate must
+    // keep 80 ms as 80 ms (first output within one sample of it).
+    ideath::HallReverb rev;
+    rev.prepare(96000.0f);
+    rev.setPreDelay(0.08f);
+    rev.setMix(1.0f);
+    rev.prepare(44100.0f);
+    const int expect = static_cast<int>(0.08f * 44100.0f);
+    int first = -1;
+    for (int i = 0; i < 2 * expect && first < 0; ++i)
+    {
+        auto [l, r] = rev.process(i == 0 ? 1.0f : 0.0f);
+        if (std::fabs(l) > 1e-12f || std::fabs(r) > 1e-12f)
+            first = i;
+    }
+    INFO("first output at " << first << ", pre-delay " << expect << " samples");
+    REQUIRE(first >= expect);
+    REQUIRE(first <= expect + static_cast<int>(0.05f * 44100.0f));
+}
+
+TEST_CASE("HallReverb: pre-delay clamps at 120 ms", "[hallreverb]")
 {
     ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.7f);
+    rev.prepare(kSR);
     rev.setMix(1.0f);
-    // No comb modulation: the LFO-swept fractional read uses linear
-    // interpolation, whose |H| < 1 above DC would make the frozen loop
-    // slightly lossy and void the lossless-loop derivation below.
-    rev.setModDepth(0.0f);
+    rev.setPreDelay(1.0f);
+    const int pre = static_cast<int>(ideath::HallReverb::kMaxPreDelay * kSR);
+    double after = 0.0;
+    for (int i = 0; i < pre + static_cast<int>(0.05f * kSR); ++i)
+    {
+        auto [l, r] = rev.process(i == 0 ? 1.0f : 0.0f);
+        if (i < pre)
+            REQUIRE(std::fabs(l) < 1e-20f);
+        else
+            after += std::fabs(l);
+    }
+    REQUIRE(after > 0.0);
+}
 
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.5f);
+TEST_CASE("HallReverb: modulation changes the tail", "[hallreverb]")
+{
+    auto render = [](float depth) {
+        ideath::HallReverb rev;
+        rev.prepare(kSR);
+        rev.setMix(1.0f);
+        rev.setModDepth(depth);
+        std::vector<float> y(48000);
+        for (size_t i = 0; i < y.size(); ++i)
+            y[i] = rev.process(i == 0 ? 1.0f : 0.0f).first;
+        return y;
+    };
+    auto a = render(0.0f);
+    auto b = render(1.0f);
+    double diff = 0.0, energy = 0.0;
+    for (size_t i = 24000; i < a.size(); ++i)
+    {
+        diff += (a[i] - b[i]) * (a[i] - b[i]);
+        energy += a[i] * a[i];
+    }
+    // 1 ms excursion at 0.6 Hz decorrelates the late tail; require the
+    // difference energy to be at least a tenth of the tail energy
+    // (−10 dB: clearly a different waveform, not a rounding difference).
+    REQUIRE(diff > 0.1 * energy);
+}
 
+TEST_CASE("HallReverb: freeze holds tail and ignores input", "[hallreverb]")
+{
+    ideath::HallReverb rev;
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    rev.setSize(0.4f);
+    White w;
+    for (int i = 0; i < 48000; ++i)
+        rev.process(0.5f * w.next());
     rev.setFreeze(true);
-
-    float energy1 = 0.0f;
-    for (int i = 0; i < 44100; ++i)
+    double first = 0.0;
+    for (int b = 0; b < 10; ++b)
     {
-        auto [l, r] = rev.process(0.0f);
-        energy1 += l * l + r * r;
+        double e = 0.0;
+        for (int i = 0; i < 48000; ++i)
+        {
+            auto [l, r] = rev.process(w.next()); // full-scale input, muted
+            e += static_cast<double>(l) * l + static_cast<double>(r) * r;
+        }
+        const double level = std::sqrt(e / 48000.0);
+        if (b == 0)
+            first = level;
+        // 1 dB = level JND (no growth); 3 dB = half power (still holding).
+        REQUIRE(db(level / first) <= 1.0);
+        REQUIRE(db(level / first) >= -3.0);
     }
-
-    float energy2 = 0.0f;
-    for (int i = 0; i < 44100; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        energy2 += l * l + r * r;
-    }
-
-    // Freeze: fb = 1, damp1 = 0 and the comb input muted, so every comb
-    // recirculates its buffer unchanged — each comb output is periodic with
-    // its own length L ≤ 1617 + 23 = 1640 samples (longest tuning + stereo
-    // spread).  The output allpasses (Freeverb's y = w[n−D] − x form, which
-    // is not unity-gain) are LTI and sit outside the loops, so they reshape
-    // but cannot drain the held energy.  A block's energy can fall short of
-    // the previous block's only by the partial period at its edge:
-    // ≤ L / N = 1640 / 44100 ≈ 3.7 % for 1 s blocks.  0.95 = 1 − 3.7 %
-    // rounded down by ~1 % for float recirculation over 2 s.
-    REQUIRE(energy1 > 0.0f);
-    REQUIRE(energy2 > energy1 * 0.95f);
 }
 
-TEST_CASE("HallReverb: dry/wet mix", "[hallreverb]")
+TEST_CASE("HallReverb: input during freeze does not enter the held tail", "[hallreverb]")
+{
+    auto render = [](bool feed) {
+        ideath::HallReverb rev;
+        rev.prepare(kSR);
+        rev.setMix(1.0f);
+        for (int i = 0; i < 4800; ++i)
+            rev.process(i == 0 ? 1.0f : 0.0f);
+        rev.setFreeze(true);
+        std::vector<float> y(20000);
+        White w;
+        for (auto& s : y)
+            s = rev.process(feed ? w.next() : 0.0f).first;
+        return y;
+    };
+    REQUIRE(render(true) == render(false));
+}
+
+TEST_CASE("HallReverb: dry/wet mix 0 passes the input bit-exact", "[hallreverb]")
 {
     ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
+    rev.prepare(kSR);
     rev.setMix(0.0f);
-
-    // mix=0: dry = 1.0, wet = 0.  Output = input · 1.0 bit-for-bit
-    // (multiply by 1.0 is exact, wet branch masked by 0 multiply).
-    auto [l, r] = rev.process(0.8f);
-    REQUIRE_THAT(l, WithinAbs(0.8f, 1e-9f));
-    REQUIRE_THAT(r, WithinAbs(0.8f, 1e-9f));
-}
-
-TEST_CASE("HallReverb: reset clears all state", "[hallreverb]")
-{
-    ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.8f);
-    rev.setMix(1.0f);
-
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.7f);
-
-    rev.reset();
-
-    // After reset, all comb/allpass/pre-delay buffers zeroed.  Same
-    // derivation as Reverb reset: reads return 0, kAntiDenormal only
-    // enters on write so feedback paths stay below ~1e−25 × N iterations
-    // × kWetScale — far below the 1e−9 bound.
-    for (int i = 0; i < 100; ++i)
+    White w;
+    for (int i = 0; i < 10000; ++i)
     {
-        auto [l, r] = rev.process(0.0f);
-        REQUIRE_THAT(l, WithinAbs(0.0f, 1e-9f));
-        REQUIRE_THAT(r, WithinAbs(0.0f, 1e-9f));
+        const float x = w.next();
+        auto [l, r] = rev.process(x);
+        REQUIRE(l == x);
+        REQUIRE(r == x);
     }
 }
 
-TEST_CASE("HallReverb: default-constructible", "[hallreverb]")
+TEST_CASE("HallReverb: silence in, silence out; reset returns to silence", "[hallreverb]")
 {
     ideath::HallReverb rev;
-    auto [l, r] = rev.process(0.5f);
-    REQUIRE(std::isfinite(l));
-    REQUIRE(std::isfinite(r));
+    rev.prepare(kSR);
+    rev.setMix(1.0f);
+    for (int i = 0; i < 4800; ++i)
+        REQUIRE(std::fabs(rev.process(0.0f).first) < 1e-20f);
+    White w;
+    for (int i = 0; i < 30000; ++i)
+        rev.process(w.next());
+    rev.reset();
+    for (int i = 0; i < 4800; ++i)
+    {
+        auto [l, r] = rev.process(0.0f);
+        REQUIRE(std::fabs(l) < 1e-20f);
+        REQUIRE(std::fabs(r) < 1e-20f);
+    }
 }
 
-TEST_CASE("HallReverb: output bounded with signal", "[hallreverb]")
+TEST_CASE("HallReverb: extreme settings stay within kMaxOutput", "[hallreverb][stability]")
 {
-    ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.95f);
-    rev.setModDepth(1.0f);
-    rev.setMix(1.0f);
-
-    for (int i = 0; i < 44100; ++i)
+    // Size 1, damp 0, modulation 0 — the sharpest, longest modes.  10 s of
+    // full-scale white noise and of full-scale sines.
+    const double hz[] = { 0.0, 55.0, 261.63, 1000.0, 3000.0 };
+    for (int stim = 0; stim < 5; ++stim)
     {
-        float input = (i < 441) ? 1.0f : 0.0f;
-        auto [l, r] = rev.process(input);
-        // ±1.5 matches the primitive's documented output ceiling (see
-        // CLAUDE.md "Output levels" table — Reverb/HallReverb share the
-        // same Freeverb structure).  Schroeder tuning spreads comb
-        // echoes in time; LFO modulation at modDepth=1 only shifts
-        // read positions by a fraction of a sample so it does not
-        // increase the peak.  ~20 % headroom over the observed peak.
-        REQUIRE(l >= -1.5f);
-        REQUIRE(l <= 1.5f);
-        REQUIRE(r >= -1.5f);
-        REQUIRE(r <= 1.5f);
+        ideath::HallReverb rev;
+        rev.prepare(kSR);
+        rev.setMix(1.0f);
+        rev.setSize(1.0f);
+        rev.setDamp(0.0f);
+        rev.setModDepth(0.0f);
+        White w;
+        float peak = 0.0f;
+        for (size_t i = 0; i < static_cast<size_t>(10.0f * kSR); ++i)
+        {
+            const float x = stim == 0
+                ? w.next()
+                : static_cast<float>(std::sin(2.0 * kPi * hz[stim] * static_cast<double>(i) / kSR));
+            auto [l, r] = rev.process(x);
+            REQUIRE(std::isfinite(l));
+            peak = std::max(peak, std::max(std::fabs(l), std::fabs(r)));
+        }
+        INFO("stimulus " << stim << " peak " << peak);
+        REQUIRE(peak <= ideath::HallReverb::kMaxOutput);
     }
 }
 
 TEST_CASE("HallReverb: parameter clamping", "[hallreverb]")
 {
     ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-
-    rev.setSize(-1.0f);
-    rev.setDamp(5.0f);
-    rev.setPreDelay(10.0f);
-    rev.setModDepth(-1.0f);
-    rev.setMix(100.0f);
-
-    for (int i = 0; i < 1000; ++i)
+    rev.prepare(kSR);
+    rev.setSize(-3.0f);
+    rev.setDamp(4.0f);
+    rev.setPreDelay(-1.0f);
+    rev.setModDepth(-2.0f);
+    rev.setModRate(0.0f);
+    rev.setMix(9.0f);
+    White w;
+    for (int i = 0; i < 48000; ++i)
     {
-        auto [l, r] = rev.process(0.5f);
+        auto [l, r] = rev.process(w.next());
         REQUIRE(std::isfinite(l));
-        REQUIRE(std::isfinite(r));
+        REQUIRE(std::fabs(l) <= ideath::HallReverb::kMaxOutput);
     }
 }
 
-// --- Long-run stability ---
-
-TEST_CASE("HallReverb: long-run stability (10 seconds)", "[hallreverb]")
+TEST_CASE("HallReverb: default-constructible", "[hallreverb]")
 {
     ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(0.8f);
-    rev.setDamp(0.3f);
-    rev.setModDepth(0.5f);
-    rev.setMix(1.0f);
-
-    // 0.1s signal then 10s silence. Tests 8 LFO-modulated combs + 4 allpasses
-    // with anti-denormal over 441k samples.
-    for (int i = 0; i < 4410; ++i)
-        rev.process(0.5f);
-
-    constexpr int N = 441000;
-    for (int i = 0; i < N; ++i)
-    {
-        auto [l, r] = rev.process(0.0f);
-        REQUIRE(std::isfinite(l));
-        REQUIRE(std::isfinite(r));
-    }
+    auto [l, r] = rev.process(1.0f);
+    REQUIRE(std::isfinite(l));
+    REQUIRE(std::isfinite(r));
 }
 
-// ---------------------------------------------------------------------------
-// Damping audibility
-// ---------------------------------------------------------------------------
-
-// Energy (dB re full scale) above 4 kHz in the 0.3–1.3 s window after a
-// 0.26 s, 220 Hz naive-saw note is released.  The saw supplies harmonics
-// across the whole band, the 4th-order (two cascaded RBJ Q=0.707) highpass
-// isolates the region that damping is meant to darken, and the window skips
-// the early reflections so the measurement reflects the recirculating tail
-// where the in-loop lowpass acts once per comb pass.
-static double hallTailHfDb(float size, float damp)
+// Hidden: prints the size → broadband T60 table for HallReverb and
+// ShimmerReverb (default shimmer settings) at damp 0 / 0.5 / 1.
+// Run with:  ./build/ideath_tests "[.t60table]"
+TEST_CASE("Reverb size → T60 table", "[.t60table]")
 {
-    ideath::HallReverb rev;
-    rev.prepare(kSampleRate);
-    rev.setSize(size);
-    rev.setDamp(damp);
-    rev.setMix(1.0f);
-
-    ideath::Biquad hp1, hp2;
-    hp1.setHighpass(4000.0f, 0.7071f, kSampleRate);
-    hp2.setHighpass(4000.0f, 0.7071f, kSampleRate);
-
-    const int noteLen = static_cast<int>(0.26f * kSampleRate);
-    const int winStart = noteLen + static_cast<int>(0.3f * kSampleRate);
-    const int winEnd = noteLen + static_cast<int>(1.3f * kSampleRate);
-
-    double energy = 0.0;
-    for (int i = 0; i < winEnd; ++i)
+    std::printf("| size | nominal | hall d0 | hall d0.5 | hall d1 | shimmer d0 | shimmer d0.5 | shimmer d1 |\n");
+    std::printf("|---|---|---|---|---|---|---|---|\n");
+    for (int k = 0; k <= 20; ++k)
     {
-        float in = 0.0f;
-        if (i < noteLen)
+        const float size = 0.05f * static_cast<float>(k);
+        const float nominal = ideath::HallReverb::sizeToT60(size);
+        double h[3], s[3];
+        const float damps[3] = { 0.0f, 0.5f, 1.0f };
+        for (int d = 0; d < 3; ++d)
         {
-            const float ph = std::fmod(220.0f * static_cast<float>(i) / kSampleRate, 1.0f);
-            in = 0.5f * (2.0f * ph - 1.0f);
+            h[d] = hallT60(size, damps[d]);
+            ideath::ShimmerReverb shim;
+            shim.prepare(kSR);
+            shim.setMix(1.0f);
+            shim.setSize(size);
+            shim.setDamp(damps[d]);
+            s[d] = broadbandT60(shim, nominal);
         }
-        auto [l, r] = rev.process(in);
-        const float hf = hp2.process(hp1.process(0.5f * (l + r)));
-        if (i >= winStart)
-            energy += static_cast<double>(hf) * hf;
+        std::printf("| %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f |\n",
+                    size, nominal, h[0], h[1], h[2], s[0], s[1], s[2]);
     }
-    return 10.0 * std::log10(energy / (winEnd - winStart) + 1e-30);
-}
-
-TEST_CASE("HallReverb: damp darkens the long tail audibly", "[hallreverb]")
-{
-    const double hf0 = hallTailHfDb(0.9f, 0.0f);
-    const double hf5 = hallTailHfDb(0.9f, 0.5f);
-    const double hf1 = hallTailHfDb(0.9f, 1.0f);
-
-    INFO("HF tail dB: damp 0 = " << hf0 << ", 0.5 = " << hf5 << ", 1 = " << hf1);
-    // 6 dB = half amplitude, the smallest difference the TONE control must
-    // produce across its range to read as a clear change of brightness.
-    REQUIRE(hf1 <= hf0 - 6.0);
-    // Monotone: more damping never brightens the tail.
-    REQUIRE(hf5 < hf0);
-    REQUIRE(hf1 < hf5);
-}
-
-TEST_CASE("HallReverb: input during freeze does not enter the held tail", "[hallreverb]")
-{
-    // Canonical Freeverb mutes the comb input while frozen (gain = 0) —
-    // the combs then run at fb = 1 with nothing added, so the held tail is
-    // exactly what was captured at engagement.  With mix = 1 the dry term
-    // is input × 0 = 0 exactly, so the output of a reverb that keeps
-    // receiving input after freeze must be bit-identical to one fed
-    // silence.  Any difference means input leaks into the lossless loop,
-    // where it accumulates without bound.
-    ideath::HallReverb held;
-    ideath::HallReverb fed;
-    for (auto* rev : { &held, &fed })
-    {
-        rev->prepare(kSampleRate);
-        rev->setSize(0.7f);
-        rev->setMix(1.0f);
-    }
-
-    auto stim = [](int i) {
-        const float t = static_cast<float>(i) / kSampleRate;
-        return 0.1f * (std::sin(2.0f * 3.14159265f * 997.0f * t)
-                     + std::sin(2.0f * 3.14159265f * 1447.0f * t)
-                     + std::sin(2.0f * 3.14159265f * 2011.0f * t));
-    };
-
-    int t = 0;
-    for (; t < 44100; ++t)
-    {
-        held.process(stim(t));
-        fed.process(stim(t));
-    }
-    held.setFreeze(true);
-    fed.setFreeze(true);
-
-    int mismatches = 0;
-    for (int i = 0; i < 44100 * 2; ++i, ++t)
-    {
-        auto [hl, hr] = held.process(0.0f);
-        auto [fl, fr] = fed.process(stim(t));
-        if (hl != fl || hr != fr)
-            ++mismatches;
-    }
-    INFO("samples where fed output differs from held: " << mismatches);
-    REQUIRE(mismatches == 0);
 }
