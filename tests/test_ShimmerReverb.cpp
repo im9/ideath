@@ -60,14 +60,15 @@ static std::vector<float> renderSine(ideath::ShimmerReverb& rev, double hz, floa
 // rather than a sine: a sine burst excites only one or two modes, which
 // beat under line modulation and scatter the T30 by tens of percent (see
 // test_ReverbTank).
-static std::vector<float> noiseBand(float hz, size_t n, uint32_t seed = 0x12345678u)
+static std::vector<float> noiseBand(float hz, size_t n, uint32_t seed = 0x12345678u,
+                                    float q = 2.0f)
 {
     std::vector<float> x(n);
     White w;
     w.s = seed;
     for (auto& s : x)
         s = w.next();
-    x = bandFilter(bandFilter(x, hz, kSR), hz, kSR);
+    x = bandFilter(bandFilter(x, hz, kSR, q), hz, kSR, q);
     return x;
 }
 
@@ -418,48 +419,74 @@ TEST_CASE("ShimmerReverb: Input-mode shift level does not depend on note length"
           "[shimmer]")
 {
     // Input mode, amount 1: the shifted copy carries the input's energy
-    // (ρ_max = 1), so shifted-band / unshifted-band energy is 0 dB however
-    // short the note.  220 Hz band-noise bursts of 50 ms … 3 s at +12 and
-    // +24.  A short note's copies are weighted by the grain windows at the
-    // moments the grains cross it, so a single note's level depends on
-    // where in the 100 ms grain cycle it lands; a real note lands anywhere.
-    // Each of the 12 seeds therefore starts its burst at a different grain
-    // phase (after a 1 s warm-up), spread over one grain period, and the
-    // energies are summed.  Tolerance: the 1 dB level JND plus 1 dB for the
-    // two bands' different tank responses and band-edge leakage — ±2 dB.
+    // (ρ_max = 1) for any note length.  Band-noise bursts of 50 ms … 3 s
+    // at +12, +24 (220 Hz source) and −12, −24 (1760 Hz source, so the
+    // shifted band, centred at 880 / 440 Hz, sits above the 120 Hz low cut).
+    //
+    // The shifted copy then rings through the tank in a different band from
+    // the source, and the tank's band-to-band energy gain is not flat at
+    // this size (measured, 50 ms bursts: −5.7 dB at 220 Hz vs −3.9 dB at
+    // 880 Hz — modal colouration, fixed per band, not seed noise).  So each
+    // case is compared with a control: the same tank, shimmer 0, fed the
+    // same-length burst directly in the shifted band.  Grain shifting keeps
+    // durations, so the shifted copy should match the control:
+    //   (shifted / source)_shimmer − (shifted band / source band)_control = 0 dB.
+    // A short note's copies are weighted by the grain windows at the
+    // moments the grains cross it, so 12 seeds start at onsets spread over
+    // one grain period after a 1 s warm-up, and energies are summed.
+    // Tolerance ±1.5 dB: the 1 dB level JND plus 0.5 dB for the downward
+    // voices' 120 Hz low cut (the lower edge of the −24 band, 220 Hz, is
+    // −0.36 dB down on the 2nd-order Butterworth, rounded up).
     const int seeds = 12;
-    for (float semis : { 12.0f, 24.0f })
+    // Two-octave bands (Q 0.7): a 2/3-octave band holds few enough tank
+    // modes that a short burst's level depends on how its fine spectrum
+    // lines up with them (±2 dB between two bursts of the same band
+    // energy); a two-octave band averages over ≈ 3× as many.
+    const float kWideQ = 0.7f;
+    // Wet-output energy in band `measureHz` per unit of input energy, for a
+    // `bandHz` noise burst.
+    auto render = [&](float semis, float amount, float bandHz, float burstSec, int k,
+                      float measureHz) {
+        ideath::ShimmerReverb rev;
+        oneVoice(rev, semis, Mode::Input, amount);
+        rev.setModDepth(0.5f);
+        const size_t onset = static_cast<size_t>(kSR)
+                           + static_cast<size_t>(k) * static_cast<size_t>(0.1f * kSR) / seeds;
+        const size_t n = static_cast<size_t>(burstSec * kSR);
+        const auto x = noiseBand(bandHz, n, 0x9E3779B9u * static_cast<uint32_t>(k + 1), kWideQ);
+        std::vector<float> y(onset + n + static_cast<size_t>(4.0f * kSR));
+        double eIn = 0.0;
+        for (size_t i = 0; i < y.size(); ++i)
+        {
+            const float in = (i >= onset && i < onset + n) ? 2.0f * x[i - onset] : 0.0f;
+            eIn += static_cast<double>(in) * in;
+            auto [l, r] = rev.process(in);
+            y[i] = 0.5f * (l + r);
+        }
+        const auto band = bandFilter(bandFilter(y, measureHz, kSR, kWideQ), measureHz, kSR, kWideQ);
+        double e = 0.0;
+        for (float v : band)
+            e += static_cast<double>(v) * v;
+        return e / eIn;
+    };
+    for (float semis : { 12.0f, 24.0f, -12.0f, -24.0f })
         for (float burstSec : { 0.05f, 0.15f, 0.4f, 3.0f })
         {
-            const float shiftedHz = 220.0f * std::pow(2.0f, semis / 12.0f);
-            double eu = 0.0, es = 0.0;
+            const float sourceHz = semis > 0.0f ? 220.0f : 1760.0f;
+            const float shiftedHz = sourceHz * std::pow(2.0f, semis / 12.0f);
+            double shimSrc = 0.0, shimShift = 0.0, ctlSrc = 0.0, ctlShift = 0.0;
             for (int k = 0; k < seeds; ++k)
             {
-                ideath::ShimmerReverb rev;
-                oneVoice(rev, semis, Mode::Input, 1.0f);
-                rev.setModDepth(0.5f);
-                const size_t onset = static_cast<size_t>(kSR)
-                                   + static_cast<size_t>(k) * static_cast<size_t>(0.1f * kSR) / seeds;
-                const size_t n = static_cast<size_t>(burstSec * kSR);
-                const auto x = noiseBand(220.0f, n, 0x9E3779B9u * static_cast<uint32_t>(k + 1));
-                std::vector<float> y(onset + n + static_cast<size_t>(4.0f * kSR));
-                for (size_t i = 0; i < y.size(); ++i)
-                {
-                    const float in = (i >= onset && i < onset + n) ? 2.0f * x[i - onset] : 0.0f;
-                    auto [l, rr] = rev.process(in);
-                    y[i] = 0.5f * (l + rr);
-                }
-                const auto bu = bandFilter(bandFilter(y, 220.0f, kSR), 220.0f, kSR);
-                const auto bs = bandFilter(bandFilter(y, shiftedHz, kSR), shiftedHz, kSR);
-                for (size_t i = 0; i < y.size(); ++i)
-                {
-                    eu += static_cast<double>(bu[i]) * bu[i];
-                    es += static_cast<double>(bs[i]) * bs[i];
-                }
+                shimSrc += render(semis, 1.0f, sourceHz, burstSec, k, sourceHz);
+                shimShift += render(semis, 1.0f, sourceHz, burstSec, k, shiftedHz);
+                ctlSrc += render(semis, 0.0f, sourceHz, burstSec, k, sourceHz);
+                ctlShift += render(semis, 0.0f, shiftedHz, burstSec, k, shiftedHz);
             }
-            const double r = 10.0 * std::log10(es / eu);
-            INFO(semis << " st, " << burstSec << " s burst: shifted/unshifted " << r << " dB");
-            REQUIRE(std::fabs(r) <= 2.0);
+            const double shim = 10.0 * std::log10(shimShift / shimSrc);
+            const double ctl = 10.0 * std::log10(ctlShift / ctlSrc);
+            INFO(semis << " st, " << burstSec << " s burst: shifted/source " << shim
+                 << " dB, tank control " << ctl << " dB, difference " << shim - ctl << " dB");
+            REQUIRE(std::fabs(shim - ctl) <= 1.5);
         }
 }
 
