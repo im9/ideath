@@ -52,8 +52,8 @@ than comparing cross-host.
 | Wavefolder::process                |           3.445 µs |        6.73 |
 | BitCrusher::process                |           2.282 µs |        4.46 |
 | DelayLine::process                 |           2.091 µs |        4.08 |
-| TapeDelay::process                 |          18.444 µs |       36.02 |
-| TapeDelay::processStereo (ping-pong, diffusion) | 29.090 µs |  56.82 |
+| TapeDelay::process                 |          13.184 µs |       25.75 |
+| TapeDelay::processStereo (ping-pong, diffusion) | 30.313 µs |  59.20 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
 | KarplusStrong::process             |           2.636 µs |        5.15 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
@@ -164,12 +164,13 @@ than comparing cross-host.
   - `ShimmerReverb` (one active voice, the bench default) 109.9 → 111.5
     ns/sample (+1 %). Two active voices at ±24 st: 142.1 ns/sample. A voice
     at level 0 skips its grain reads and splice search.
-  - `TapeDelay::process` 22.7 → 36.0 ns/sample (+59 %, over the 20 % rule —
-    investigated): ≈ 3 ns is the 4-point Hermite read (clean repeats at
-    fractional delays), ≈ 12 ns the in-loop diffuser chain, which runs even
-    at diffusion 0 so changing diffusion never shifts the echo time
-    (bypassing it at 0 would make the 0 ↔ >0 change a ~10 ms loop jump);
-    each loop also keeps an undiffused copy so the short-delay threshold is
-    crossfaded, not jumped (one extra buffer write, not measurable).
-    Inlining the allpasses did not help (serial dependency chain). One
-    instance per master bus is ≈ 0.2 % of the A15 128-sample budget.
+  - `TapeDelay::process` 22.7 → 25.8 ns/sample (+14 %, within the 20 %
+    rule; `Reverb` 20.7–22.0 in the same run).  A first version ran the
+    four-allpass diffuser on every sample (+59 %); it now runs only while
+    diffusion is above 0, with the read crossfaded in once the diffused
+    copy holds a full delay.  Reads are allpass-interpolated (two taps and
+    one divide — a 4-point Hermite read cost ≈ 3 ns more).  A min-of-30
+    A/B harness with tape settings (wow 3 ms, flutter 0.8 ms, drive 2)
+    reads 22.4 vs 18.2 ns (+23 %); the remaining gap is the read and the
+    stereo-ready loop structure.  Stereo ping-pong with diffusion on:
+    59.2 ns/sample.

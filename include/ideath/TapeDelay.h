@@ -16,8 +16,8 @@ namespace ideath {
 /// `stereoOffset` later; PingPong: two cross-fed loops, echoes alternate
 /// L → R).  Use one or the other on an instance, not both.
 ///
-/// Reads use 4-point cubic Hermite interpolation (repeats stay bright at
-/// fractional delays), so the shortest delay is 2 samples.
+/// Reads use first-order allpass interpolation (unit magnitude: repeats stay
+/// bright at fractional delays); the shortest delay is 2 samples.
 ///
 /// Output ceiling for ±1 input: ±1 (saturation on: tanh; saturation off:
 /// transparent below 0.8, soft ceiling at 1).
@@ -65,7 +65,8 @@ public:
     /// centroid stays at the echo time (the smear spreads around it); at 0
     /// the repeats are exactly as without diffusion.  When the delay minus
     /// the wow/flutter depth is under ≈ 10.5 ms the undiffused repeats are
-    /// read instead (5 ms crossfade, no click).
+    /// read instead (5 ms crossfade, no click).  At 0 the diffuser does not
+    /// run at all; changes glide over ≈ 10 ms.
     void setDiffusion(float amount);
 
     /// Stereo output shape for processStereo().  Default Offset.
@@ -83,6 +84,14 @@ public:
     float getDelaySamples() const { return delaySamples_; }
 
 private:
+    // Allpass-interpolator memory of one read point (straight and diffused
+    // copy are read separately during a crossfade).
+    struct Tap
+    {
+        float straight = 0.0f;
+        float diffused = 0.0f;
+    };
+
     struct Loop
     {
         std::vector<float> buffer;   // repeats as written
@@ -91,14 +100,18 @@ private:
         Biquad highpass;
         Biquad lowpass;
         std::array<AllpassFilter, 4> diffuser;
+        Tap tap; // the loop's own read
     };
 
-    float readDelay(const std::vector<float>& buffer, int writePos, float delaySamples) const;
+    float readDelay(const std::vector<float>& buffer, int writePos, float delaySamples,
+                    float& state) const;
     void updateFeedbackFilters();
     float color(Loop& loop, float wet);
-    float loopRead(const Loop& loop, float delay) const;
+    float loopRead(const Loop& loop, float delay, Tap& tap) const;
     bool diffuserActive() const;
     void clearLoop(Loop& loop);
+    void applyDiffuseG();
+    void startDiffuser();
     std::pair<float, float> run(float input, bool stereo);
     void writeLoop(Loop& loop, float value);
     void advanceLfos(float& wow, float& flutter, float* wowQ, float* flutterQ);
@@ -108,7 +121,9 @@ private:
     Loop b_; // ping-pong right loop
     Biquad offsetHighpass_;
     Biquad offsetLowpass_;
+    Tap offsetTap_;
     int bufferSize_ = 0;
+    int bufferMask_ = 0;
     float maxDelaySamples_ = 0.0f;
 
     bool saturation_ = true;
@@ -118,6 +133,12 @@ private:
     float offsetSamples_ = 0.0f;
     float offsetSec_ = 0.0f;
     float diffuseMix_ = 0.0f; // 0 = straight read, 1 = diffused read
+    bool chainOn_ = false;    // diffuser running, diffused copy written
+    int diffusedFill_ = 0;    // samples written to the diffused copy (capped)
+    int written_ = 0;         // samples written since reset (capped)
+    float gTarget_ = 0.0f;    // allpass g asked for
+    float gNow_ = 0.0f;       // allpass g in use (glides to gTarget_)
+    float diffuseGlide_ = 0.0f;
 
     float delaySamples_ = 1.0f;
     float feedback_ = 0.0f;

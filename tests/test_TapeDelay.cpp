@@ -427,8 +427,9 @@ TEST_CASE("TapeDelay: clean repeats stay bright at a fractional delay", "[tapede
     // Delay of 441.5 samples (worst-case fraction 0.5).  The 8 kHz content
     // of the 4th echo, corrected for fb³, must be within 3 dB (half power)
     // of the 1st echo's.  Linear interpolation loses 1.5 dB per pass at
-    // 8 kHz (|cos(πf/sr)|) → −4.5 dB after three passes; 4-point Hermite
-    // loses 0.32 dB per pass.
+    // 8 kHz (|cos(πf/sr)|) → −4.5 dB after three passes; the allpass
+    // interpolator has unit magnitude (0 dB per pass; only the wide-open
+    // tone filters remain).
     ideath::TapeDelay d;
     cleanDelay(d, 441.5f / kSampleRate, 0.8f);
     const int D = 442;
@@ -576,4 +577,55 @@ TEST_CASE("TapeDelay: sweeping across the diffuser threshold does not click", "[
         INFO("diffusion " << diffusion << ": largest step " << maxStep);
         REQUIRE(maxStep <= 2.0f * 0.0171f);
     }
+}
+
+TEST_CASE("TapeDelay: switching diffusion on and off mid-stream is seamless", "[tapedelay]")
+{
+    // The diffuser only runs while diffusion > 0.  Switching it on or off
+    // with repeats in flight must neither click nor drop out.  Clean 200 Hz
+    // sine (0.3, fb 0.5, delay 100 ms, filters wide open): the wet signal is
+    // bounded by 0.6, so its steepest sample step is 0.0171 (see the
+    // threshold-sweep test) — allow twice that.  A dropout shows as a 10 ms
+    // window far below the steady level; the allpass chain is lossless, so
+    // no window may fall below half the steady RMS (−6 dB, half amplitude).
+    ideath::TapeDelay d;
+    d.prepare(kSampleRate, 1.0f);
+    d.setDelay(0.1f);
+    d.setFeedback(0.5f);
+    d.setMix(1.0f);
+    d.setSaturation(false);
+    d.setLowpass(20000.0f);
+    d.setHighpass(5.0f);
+    const int n = static_cast<int>(4.0f * kSampleRate);
+    const int win = static_cast<int>(0.01f * kSampleRate);
+    std::vector<float> y(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i)
+    {
+        if (i == static_cast<int>(1.0f * kSampleRate))
+            d.setDiffusion(0.7f);
+        if (i == static_cast<int>(2.5f * kSampleRate))
+            d.setDiffusion(0.0f);
+        y[static_cast<size_t>(i)] = d.process(0.3f * std::sin(2.0f * 3.14159265f * 200.0f
+                                                              * static_cast<float>(i) / kSampleRate));
+    }
+    const int from = static_cast<int>(0.8f * kSampleRate); // after the build-up
+    double steady = 0.0;
+    for (int i = from - win * 10; i < from; ++i)
+        steady += static_cast<double>(y[static_cast<size_t>(i)]) * y[static_cast<size_t>(i)];
+    steady = std::sqrt(steady / (win * 10));
+    float maxStep = 0.0f;
+    double minRms = 1e9;
+    for (int i = from; i + win <= n; i += win)
+    {
+        double e = 0.0;
+        for (int j = i; j < i + win; ++j)
+        {
+            e += static_cast<double>(y[static_cast<size_t>(j)]) * y[static_cast<size_t>(j)];
+            maxStep = std::max(maxStep, std::fabs(y[static_cast<size_t>(j)] - y[static_cast<size_t>(j - 1)]));
+        }
+        minRms = std::min(minRms, std::sqrt(e / win));
+    }
+    INFO("largest step " << maxStep << ", lowest 10 ms RMS " << minRms << " vs steady " << steady);
+    REQUIRE(maxStep <= 2.0f * 0.0171f);
+    REQUIRE(minRms >= 0.5 * steady);
 }
