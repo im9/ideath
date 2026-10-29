@@ -85,6 +85,11 @@ ideath REPL commands:
   delay <time> <feedback>       Delay line (or "delay off")
   tape <time> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]
                                 Tape delay (or "tape off")
+  tape stereo <mono|offset|pingpong> [offset_sec]
+                                Stereo repeats: offset = right side later
+                                (0-0.05 s), pingpong = echoes alternate L/R
+  tape diffusion <0-1>          Smear each repeat (in-loop allpasses)
+  tape sat <on|off>             off = clean digital repeats (no tanh)
   comb <time> <feedback> [damp] [mix]
                                 Comb filter / resonator (or "comb off")
   allpass <time> <g>            Schroeder allpass diffusor (or "allpass off")
@@ -105,6 +110,12 @@ ideath REPL commands:
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
+  reverb predelay <sec>         Hall/shimmer pre-delay (0-0.12)
+  reverb mod <depth> [rate]     Hall/shimmer tank modulation (depth 0-1,
+                                rate 0.05-5 Hz); depth also detunes the
+                                shimmer voices
+  reverb voice <1|2> <st> [lvl] Shimmer voice interval (-24..+24) and level
+  reverb mode <feedback|input>  Shimmer: regenerate in the tank, or shift once
   lfo <sine|tri|square|saw|sh> <rate> <pitch|filter|vol> <depth>
                                 LFO modulation (or "lfo off")
   fg <rise> <fall> <curve> <oneshot|cycle> <pitch|filter|vol> <depth>
@@ -363,6 +374,64 @@ bool parseCommand(const std::string& line, SharedState& shared)
             return true;
         }
 
+        // Hall / shimmer tank settings: reverb predelay <sec>,
+        // reverb mod <depth> [rate]
+        if (tokens.size() > 1
+            && (tokens[1] == "predelay" || tokens[1] == "mod" || tokens[1] == "voice" || tokens[1] == "mode"))
+        {
+            const bool ok = (tokens[1] == "voice")
+                ? tokens.size() > 3 && (tokens[2] == "1" || tokens[2] == "2")
+                : tokens.size() > 2;
+            if (!ok)
+            {
+                std::cout << "Usage: reverb predelay <sec> | reverb mod <depth> [rate] | "
+                             "reverb voice <1|2> <semitones> [level] | reverb mode <feedback|input>"
+                          << std::endl;
+                return true;
+            }
+        }
+        if (tokens.size() > 2 && tokens[1] == "predelay")
+        {
+            shared.staging.reverbPreDelay = parseFloat(tokens[2], 0.03f);
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Reverb predelay=" << shared.staging.reverbPreDelay << "s" << std::endl;
+            return true;
+        }
+        if (tokens.size() > 2 && tokens[1] == "mod")
+        {
+            shared.staging.reverbModDepth = parseFloat(tokens[2], 0.5f);
+            if (tokens.size() > 3)
+                shared.staging.reverbModRate = parseFloat(tokens[3], 0.6f);
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Reverb mod depth=" << shared.staging.reverbModDepth
+                      << " rate=" << shared.staging.reverbModRate << "Hz" << std::endl;
+            return true;
+        }
+
+        // Shimmer voices / mode: reverb voice <1|2> <semitones> [level],
+        // reverb mode <feedback|input>
+        if (tokens.size() > 3 && tokens[1] == "voice")
+        {
+            const int v = (tokens[2] == "2") ? 1 : 0;
+            shared.staging.reverbVoicePitch[v] = parseFloat(tokens[3], v == 0 ? 12.0f : 19.0f);
+            if (tokens.size() > 4)
+                shared.staging.reverbVoiceLevel[v] = parseFloat(tokens[4], 1.0f);
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Shimmer voice " << (v + 1) << ": " << shared.staging.reverbVoicePitch[v]
+                      << " st, level " << shared.staging.reverbVoiceLevel[v] << std::endl;
+            return true;
+        }
+        if (tokens.size() > 2 && tokens[1] == "mode")
+        {
+            shared.staging.reverbShimmerMode =
+                tokens[2] == "input" ? ShimmerMode::Input : ShimmerMode::Feedback;
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Shimmer mode: "
+                      << (shared.staging.reverbShimmerMode == ShimmerMode::Input ? "input" : "feedback")
+                      << std::endl;
+            return true;
+        }
+
         if (tokens.size() > 1)
         {
             if (tokens[1] == "room") shared.staging.reverbType = ReverbType::Room;
@@ -378,13 +447,15 @@ bool parseCommand(const std::string& line, SharedState& shared)
         if (tokens.size() > 4)
             shared.staging.reverbMix = parseFloat(tokens[4], 0.3f);
 
-        // Hall-specific: reverb hall <size> <damp> <mix> <predelay> <moddepth>
+        // Hall-specific: reverb hall <size> <damp> <mix> <predelay> <moddepth> [modrate]
         if (shared.staging.reverbType == ReverbType::Hall)
         {
             if (tokens.size() > 5)
                 shared.staging.reverbPreDelay = parseFloat(tokens[5], 0.03f);
             if (tokens.size() > 6)
                 shared.staging.reverbModDepth = parseFloat(tokens[6], 0.5f);
+            if (tokens.size() > 7)
+                shared.staging.reverbModRate = parseFloat(tokens[7], 0.6f);
         }
 
         // Shimmer-specific: reverb shimmer <size> <damp> <mix> <shimmer_amount>
@@ -405,8 +476,13 @@ bool parseCommand(const std::string& line, SharedState& shared)
         }
         std::cout << " size=" << shared.staging.reverbSize
                   << " damp=" << shared.staging.reverbDamp
-                  << " mix=" << shared.staging.reverbMix
-                  << std::endl;
+                  << " mix=" << shared.staging.reverbMix;
+        if (shared.staging.reverbType == ReverbType::Shimmer)
+            std::cout << " amount=" << shared.staging.reverbShimmer
+                      << " mode=" << (shared.staging.reverbShimmerMode == ShimmerMode::Input ? "input" : "feedback")
+                      << " voices=" << shared.staging.reverbVoicePitch[0] << "st@" << shared.staging.reverbVoiceLevel[0]
+                      << "," << shared.staging.reverbVoicePitch[1] << "st@" << shared.staging.reverbVoiceLevel[1];
+        std::cout << std::endl;
         return true;
     }
 
@@ -487,6 +563,44 @@ bool parseCommand(const std::string& line, SharedState& shared)
 
     if (cmd == "tape")
     {
+        if (tokens.size() == 2
+            && (tokens[1] == "stereo" || tokens[1] == "diffusion" || tokens[1] == "sat"))
+        {
+            std::cout << "Usage: tape stereo <mono|offset|pingpong> [offset_sec] | "
+                         "tape diffusion <0-1> | tape sat <on|off>" << std::endl;
+            return true;
+        }
+        // tape stereo <mono|offset|pingpong> [offset_sec]
+        if (tokens.size() > 2 && tokens[1] == "stereo")
+        {
+            if (tokens[2] == "pingpong") shared.staging.tapeDelayStereo = TapeStereo::PingPong;
+            else if (tokens[2] == "offset") shared.staging.tapeDelayStereo = TapeStereo::Offset;
+            else shared.staging.tapeDelayStereo = TapeStereo::Mono;
+            if (tokens.size() > 3)
+                shared.staging.tapeDelayOffset = parseFloat(tokens[3], 0.012f);
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Tape stereo: " << tokens[2] << " offset=" << shared.staging.tapeDelayOffset
+                      << "s" << std::endl;
+            return true;
+        }
+        // tape diffusion <0-1>
+        if (tokens.size() > 2 && tokens[1] == "diffusion")
+        {
+            shared.staging.tapeDelayDiffusion = parseFloat(tokens[2], 0.0f);
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Tape diffusion=" << shared.staging.tapeDelayDiffusion << std::endl;
+            return true;
+        }
+        // tape sat <on|off>
+        if (tokens.size() > 2 && tokens[1] == "sat")
+        {
+            shared.staging.tapeDelaySaturation = tokens[2] != "off";
+            shared.paramsReady.store(true, std::memory_order_release);
+            std::cout << "Tape saturation: " << (shared.staging.tapeDelaySaturation ? "on" : "off (clean)")
+                      << std::endl;
+            return true;
+        }
+
         if (tokens.size() > 1 && tokens[1] == "off")
         {
             shared.staging.tapeDelayEnabled = false;

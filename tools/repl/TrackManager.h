@@ -4,6 +4,7 @@
 #include "ScopeBuffer.h"
 #include "SharedState.h"
 #include <ideath/PeakLimiter.h>
+#include <utility>
 #include <array>
 #include <atomic>
 
@@ -26,11 +27,17 @@ public:
     void applyPendingState();
 
     /// Process one sample: mix all active tracks (audio thread).
-    float process();
+    /// Returns {L, R} after the master limiters.
+    std::pair<float, float> process();
 
     SharedState& getShared(int trackIndex) { return shared_[trackIndex]; }
     TrackMixState& getMix(int trackIndex) { return mix_[trackIndex]; }
     PeakLimiter& getLimiter() { return limiter_; }
+    void setLimiterThreshold(float dB)
+    {
+        limiter_.setThreshold(dB);
+        limiterR_.setThreshold(dB);
+    }
     ScopeBuffer& getScope() { return scope_; }
 
     std::atomic<bool> limiterEnabled{true};
@@ -39,7 +46,8 @@ private:
     std::array<AudioEngine, kMaxTracks> engines_;
     std::array<SharedState, kMaxTracks> shared_;
     std::array<TrackMixState, kMaxTracks> mix_;
-    PeakLimiter limiter_;
+    PeakLimiter limiter_;  // left (and the one the GR readout shows)
+    PeakLimiter limiterR_;
     ScopeBuffer scope_;
 };
 

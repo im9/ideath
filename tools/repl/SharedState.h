@@ -22,6 +22,8 @@ enum class LfoTarget { Off, Pitch, Filter, Volume };
 enum class LfoWaveform { Sine, Triangle, Square, Saw, SampleAndHold };
 enum class FgTarget { Off, Pitch, Filter, Volume };
 enum class ReverbType { Off, Room, Hall, Shimmer };
+enum class TapeStereo { Mono, Offset, PingPong };
+enum class ShimmerMode { Feedback, Input };
 
 struct VoiceParams
 {
@@ -68,6 +70,10 @@ struct VoiceParams
     float tapeDelayLowpass = 6000.0f;
     float tapeDelayHighpass = 80.0f;
     float tapeDelayDrive = 2.0f;
+    bool tapeDelaySaturation = true;
+    float tapeDelayDiffusion = 0.0f;
+    TapeStereo tapeDelayStereo = TapeStereo::Mono;
+    float tapeDelayOffset = 0.012f;
 
     // LFO
     LfoTarget lfoTarget = LfoTarget::Off;
@@ -105,11 +111,15 @@ struct VoiceParams
     float reverbDamp = 0.3f;
     float reverbMix = 0.3f;
     bool reverbFreeze = false;
-    // Hall-specific
+    // Hall + Shimmer (shared tank)
     float reverbPreDelay = 0.03f;
     float reverbModDepth = 0.5f;
+    float reverbModRate = 0.6f;
     // Shimmer-specific
     float reverbShimmer = 0.5f;
+    ShimmerMode reverbShimmerMode = ShimmerMode::Feedback;
+    float reverbVoicePitch[2] = { 12.0f, 19.0f };
+    float reverbVoiceLevel[2] = { 1.0f, 0.0f };
 
     // Wavefolder
     bool foldEnabled = false;

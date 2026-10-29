@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "SharedState.h"
 #include <ideath/Oscillator.h>
 #include <ideath/Wavetable.h>
@@ -44,8 +46,8 @@ public:
     /// Called from audio thread at top of each buffer.
     void applyPendingState(SharedState& shared);
 
-    /// Process one sample. Called from audio callback.
-    float process();
+    /// Process one sample. Called from audio callback.  Returns {L, R}.
+    std::pair<float, float> process();
 
 private:
     float sampleRate_ = 44100.0f;

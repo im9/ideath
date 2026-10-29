@@ -175,6 +175,69 @@ static VoiceParams makeLofi()
     return p;
 }
 
+// Shimmer audition presets: a slow sustained pad into the shimmer reverb,
+// so the tail (not the attack) carries the sound.
+static VoiceParams makeShimmerBase()
+{
+    VoiceParams p;
+    p.source = SourceType::Wavetable;
+    p.wtShape = WtShape::Triangle;
+    p.envelopeEnabled = true;
+    p.attack = 1.2f;
+    p.decay = 0.5f;
+    p.sustain = 0.8f;
+    p.release = 2.5f;
+    p.filterType = FilterType::Lowpass;
+    p.filterFreq = 2500.0f;
+    p.filterQ = 0.707f;
+    p.reverbType = ReverbType::Shimmer;
+    p.reverbSize = 0.75f;
+    p.reverbDamp = 0.3f;
+    p.reverbMix = 0.6f;
+    p.reverbPreDelay = 0.04f;
+    p.reverbModDepth = 0.5f;
+    p.reverbModRate = 0.5f;
+    p.reverbShimmerMode = ShimmerMode::Feedback;
+    return p;
+}
+
+// +12 sparkle: one octave-up voice regenerating in the tank.
+static VoiceParams makeShimmerOctave()
+{
+    VoiceParams p = makeShimmerBase();
+    p.reverbShimmer = 0.7f;
+    p.reverbVoicePitch[0] = 12.0f;
+    p.reverbVoiceLevel[0] = 1.0f;
+    p.reverbVoiceLevel[1] = 0.0f;
+    return p;
+}
+
+// +12 and +19 stacked (octave + octave-fifth).
+static VoiceParams makeShimmerFifth()
+{
+    VoiceParams p = makeShimmerBase();
+    p.reverbShimmer = 0.6f;
+    p.reverbVoicePitch[0] = 12.0f;
+    p.reverbVoiceLevel[0] = 1.0f;
+    p.reverbVoicePitch[1] = 19.0f;
+    p.reverbVoiceLevel[1] = 0.7f;
+    return p;
+}
+
+// −12 and +12: three octaves around the note.  Input mode, so the two
+// shifts do not cascade into each other.
+static VoiceParams makeShimmerSpan()
+{
+    VoiceParams p = makeShimmerBase();
+    p.reverbShimmer = 0.8f;
+    p.reverbShimmerMode = ShimmerMode::Input;
+    p.reverbVoicePitch[0] = 12.0f;
+    p.reverbVoiceLevel[0] = 1.0f;
+    p.reverbVoicePitch[1] = -12.0f;
+    p.reverbVoiceLevel[1] = 0.8f;
+    return p;
+}
+
 static const std::vector<PresetEntry> kPresets = {
     { "acid",     "303-style acid (saw + LP + resonance + sat)",     makeAcid()     },
     { "chiptune", "8-bit chiptune (square wt + bitcrusher)",         makeChiptune() },
@@ -186,6 +249,9 @@ static const std::vector<PresetEntry> kPresets = {
     { "hihat",    "hi-hat (noise + very fast decay + HP)",           makeHihat()    },
     { "ambient",  "ambient (triangle wt + slow ADSR + delay + LP)",  makeAmbient()  },
     { "lofi",     "lo-fi (sine wt + bitcrusher + saturation)",       makeLofi()     },
+    { "shimmer-octave", "shimmer +12 sparkle (feedback, regenerating)",       makeShimmerOctave() },
+    { "shimmer-fifth",  "shimmer +12 and +19 stacked (feedback)",             makeShimmerFifth()  },
+    { "shimmer-span",   "shimmer -12 and +12, three octaves (input mode)",    makeShimmerSpan()   },
 };
 
 const PresetEntry* getPreset(const std::string& name)

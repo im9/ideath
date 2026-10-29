@@ -66,7 +66,7 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **MultiShapeWavetable** — General-purpose multi-shape band-limited wavetable engine (inboil-style). 10 shapes (Sine, Square, Saw, Triangle, Pulse, SuperSaw, Metallic, Spectral, FormantA, FormantO) baked into 2048-sample tables with 9 mipmap levels keyed by playback frequency → alias-free from ~10 Hz to Nyquist. Continuous morph between adjacent shapes via `setShapePosition`. Tables are shared across instances per sample rate (mutex-guarded lazy init in `prepare()`, lock-free `process()`)
 - **BitCrusher** — Bit depth reduction + sample rate reduction (lo-fi digital)
 - **DelayLine** — Circular buffer delay with linear interpolation, feedback, dry/wet mix
-- **TapeDelay** — Tape-style delay with wow/flutter modulation, feedback LP/HP coloring, saturation
+- **TapeDelay** — Tape-style delay with wow/flutter modulation, feedback LP/HP coloring, saturation (or clean digital repeats via `setSaturation(false)`), 4-point Hermite reads, in-loop diffusion (`setDiffusion`, four allpasses whose length is taken out of the read so the echo time holds; below ≈ 10.4 ms the undiffused copy is read, crossfaded so the threshold never clicks), and `processStereo` (Offset: right side read later; PingPong: two cross-fed loops; wow/flutter in quadrature on the right)
 - **LFO** — Low-frequency oscillator (sine/tri/square/saw/S&H, uni/bipolar, one-shot, Shape/Curve/Quantize morph)
 - **Portamento** — Exponential pitch/value glide
 - **Voice** — Single synth voice (source + ADSR + filter + LFO + effects chain)
@@ -74,8 +74,9 @@ Polyphony) are excluded because the REPL itself serves that role.
 - **FMSynth** — Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 spec — Sega Mega Drive sound). Algorithm 0-7 maps directly to YM2612 hardware. For general-purpose / DX7-class FM use `DXFMSynth`
 - **DXFMSynth** — General-purpose DX7-style FM synthesizer: 6 operators × 32 algorithms (DX7 wiring table sourced from dexed/msfa). Per-op continuous ratio + fine detune (cents) + ADSR + feedback + velocity sensitivity, plus per-op PMS/AMS for the global LFO (sine/tri/sq/saw/S&H). NOT DX7-patch-compatible (no rate scaling, no key scaling level, uses ADSR instead of DX7's 4-stage rate/level envelope); just borrows the algorithm topology. Operator indexing `op[0]` = DX7 OP6, `op[5]` = DX7 OP1 (matches dexed storage order)
 - **Reverb** — Freeverb (8 comb + 4 allpass, size/damp/freeze, stereo out)
-- **HallReverb** — Pre-delay + LFO-modulated Freeverb (size/damp/preDelay/modDepth/freeze, stereo out)
-- **ShimmerReverb** — Cross-coupled allpass network + octave pitch shift feedback (size/damp/shimmer/freeze, stereo out)
+- **ReverbTank** — Shared reverb core: 8-line Householder FDN with Jot per-line absorption (low-frequency T60 exact), 2nd-order Butterworth damping per line (DC gain 1), allpass-interpolated modulated lines, Dattorro input diffuser behind a 20 Hz DC blocker, one all-line output tap split into L/R by two equal-length allpass decorrelators (L and R carry equal energy at every frequency, decorrelated diffuse tail). Steady-state RMS gain √(T60 / 3.87 s). Exposed in the REPL through HallReverb (tank + pre-delay)
+- **HallReverb** — Pre-delay (0–120 ms) + ReverbTank. Size → T60 = 0.5 s · 60^size (size/damp/preDelay/modDepth/modRate/freeze, stereo out)
+- **ShimmerReverb** — Pre-delay + ReverbTank + two pitch-shift voices (each −24…+24 st with its own level; 4-grain 100 ms overlap-add, each grain spliced in where it best matches the grains already playing, scaled by how coherently the grains add — unity-power for tones, diffuse material and short notes). Feedback mode (shift inside the tank, climbs every pass) or Input mode (shift once before the tank). Shimmer amount is an energy ratio per generation, independent of the T60; wet level matches HallReverb (pink noise, ±1 dB). Freeze holds in the same tank and stops injecting shifted sound, so the pitch never climbs while frozen
 - **PeakLimiter** — Lookahead brickwall limiter (threshold/release/lookahead)
 - **Compressor** — Peak envelope compressor (threshold/ratio/attack/release/makeup/knee)
 - **Wavefolder** — sin(input * drive) wavefolder (West Coast timbre shaping, drive/mix)
@@ -108,8 +109,8 @@ Polyphony) are excluded because the REPL itself serves that role.
 
   | Primitive | Max output | Cause |
   |-----------|-----------|-------|
-  | Reverb / HallReverb | ±1.5 | kWetScale=3, multi-comb sum |
-  | ShimmerReverb | ±6.0 | pitch-shift feedback regeneration + kWetScale=3 |
+  | Reverb | ±1.5 | kWetScale=3, multi-comb sum |
+  | HallReverb / ShimmerReverb | ±35 | steady sine parked on the strongest tank mode at size 1 (T60 30 s): peak/mean modal power 2·T60 / (6.908·ΣL) = 16.9 × broadband power gain 30 / 3.87 = 7.75 → amplitude 11.4, × 3.03 for the strongest of ≈ 10⁴ Rayleigh-distributed modes (paper worst case with modulation off; modulation smears the modes and program material sits far below). Shimmer's wet output is RMS-normalised to the Hall level |
   | FormantFilter | ±Q (up to ±10) | 3 parallel BPs, Q=1/k at max resonance |
   | SVFilter | ±Q (up to ±5) | resonant peak at cutoff, Q=1/(2−2×resonance) |
   | Biquad | ±Q | resonant peak, Q passed directly |
@@ -132,12 +133,12 @@ Polyphony) are excluded because the REPL itself serves that role.
 - Header in `include/ideath/`, implementation in `src/`, test in `tests/test_<Name>.cpp`
 - No `using namespace` in headers
 - **Denormal protection** — every primitive with feedback state must guard against denormalized floats. Two patterns:
-  - **DC offset** (`+ 1e-25f`): for linear feedback state (filters, delay buffers). Applied to: SVFilter, Biquad, Reverb combs/allpasses, HallReverb, ShimmerReverb, DelayLine, FeedbackBuffer.
+  - **DC offset** (`+ 1e-25f`): for linear feedback state (filters, delay buffers). Applied to: SVFilter, Biquad, Reverb combs/allpasses, ReverbTank (lines, damping, diffusers, decorrelators, DC blockers) and through it HallReverb / ShimmerReverb, DelayLine, FeedbackBuffer.
   - **Flush-to-zero threshold**: for exponential decays (envelopes, compressor). Applied to: DecayEnvelope, AdsrEnvelope, PeakLimiter, Compressor, Portamento.
   - New primitives with feedback MUST use one of these patterns. See `eede258` for the original reference.
 - **Parameter clamping** — setters must clamp to valid ranges (`std::clamp`, `std::max`) before storing or computing coefficients. Frequencies to `[minHz, sampleRate * 0.45]`, Q/resonance to `[floor, ceiling]`, time values to `[small positive, max]`. Never trust caller input in `set<Param>()`.
 - **Phase wrapping** — phase accumulators must wrap via `phase -= std::floor(phase)` every sample to stay in `[0, 1)`. Prevents float precision loss over long playback. See `bd500ec` for a case where missing wrap caused drift.
-- **Crossfades between decorrelated signals** — use equal-power (`cos²+sin²=1`), not linear. A linear crossfade between two uncorrelated signals produces a ~3 dB RMS dip at the midpoint; equal-power keeps the summed RMS constant. Applies to ShimmerReverb freeze blend (`src/ShimmerReverb.cpp`) and FeedbackBuffer loop-seam (`src/FeedbackBuffer.cpp`); a lookup table is OK for real-time paths that can't afford `cos` / `sin` per sample. See commits `c924a7f`, `87d001c`.
+- **Crossfades between decorrelated signals** — use equal-power (`cos²+sin²=1`), not linear. A linear crossfade between two uncorrelated signals produces a ~3 dB RMS dip at the midpoint; equal-power keeps the summed RMS constant. Applies to FeedbackBuffer loop-seam (`src/FeedbackBuffer.cpp`) and applied to the former ShimmerReverb freeze blend (since replaced by freezing in the tank); a lookup table is OK for real-time paths that can't afford `cos` / `sin` per sample. See commits `c924a7f`, `87d001c`.
 
 ## Adding or Changing a Primitive
 
@@ -201,7 +202,6 @@ file. Outstanding ports:
 - [ ] Distortion — overdrive (tube asymmetric) + fuzz (hard clip) flavors
 
 ### Robustness / Refactoring
-- [ ] ShimmerReverb — Freverb is processed every sample even when freeze is inactive (pure CPU waste for sessions that never touch freeze). Naive skip breaks the "capture current tail on freeze press" semantic (Freverb would hold stale/empty state); needs either (a) a pre-warm window right before freeze engages, or (b) an explicit API to opt out of freeze support. Scope ~30–60 min + test
 - [ ] UnisonOscillator — improve gain compensation (account for waveform harmonic richness)
 - [ ] Library-wide NaN hardening of setters — every primitive's `set<Param>` uses `std::clamp` / `std::max` for finite-range enforcement, but all of these propagate NaN per IEEE 754 (`std::max(NaN, x)` → NaN, `std::clamp(NaN, …)` → NaN). A single NaN from an upstream modulation source corrupts filter coefficients / delay indices / envelope state permanently. Decide policy: (a) add an `isfinite`-guarded front door at each setter, (b) rely on the plugin layer to sanitise, or (c) treat NaN as user error and document it. Current behaviour matches Biquad's pre-migration behaviour (not a regression), but worth a deliberate decision
 
@@ -220,10 +220,11 @@ Rules:
 
 ### Performance / SIMD (future)
 Identified candidates, ordered by expected ROI:
-- [ ] Reverb/HallReverb comb banks — 8 independent filters, process 4 in parallel (SSE) → 3-6x
+- [ ] Reverb comb banks — 8 independent filters, process 4 in parallel (SSE) → 3-6x
+- [ ] ReverbTank lines — 8 independent reads / damping filters per sample, process 4 in parallel → 2-4x
 - [ ] UnisonOscillator voice loop — up to 16 oscillators, independent phases → 3-4x
 - [ ] Polyphony voice mix — process 4 voices in parallel with active mask → 2-4x
-- [ ] ShimmerReverb allpass chains — L/R independent, process as stereo pair → 2-4x
+- [ ] ShimmerReverb voices — splice-search correlation (5 ms window × 12 ms span every 25 ms per voice) is a dot product → 4x with SIMD
 - [ ] Wavetable sine generation — one-time init loop, trivially vectorizable → 4-8x
 
 Prerequisites: benchmark suite (Catch2 BENCHMARK) to measure before/after.

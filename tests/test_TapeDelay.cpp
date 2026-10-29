@@ -263,3 +263,317 @@ TEST_CASE("TapeDelay: 10-second stability at aggressive settings", "[tapedelay][
         REQUIRE(std::fabs(out) <= 1.0f + 1e-5f);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Stereo output, clean (unsaturated) repeats, diffusion
+// ---------------------------------------------------------------------------
+
+static int argmaxAbs(const std::vector<float>& x)
+{
+    int best = 0;
+    for (int i = 1; i < static_cast<int>(x.size()); ++i)
+        if (std::fabs(x[i]) > std::fabs(x[best]))
+            best = i;
+    return best;
+}
+
+// Clean digital repeats: a typical DIGITAL setting (LP wide open,
+// HP 20 Hz) with saturation off.
+static void cleanDelay(ideath::TapeDelay& d, float delaySec, float fb)
+{
+    d.prepare(kSampleRate, 1.0f);
+    d.setDelay(delaySec);
+    d.setFeedback(fb);
+    d.setMix(1.0f);
+    d.setLowpass(20000.0f);
+    d.setHighpass(20.0f);
+    d.setSaturation(false);
+}
+
+TEST_CASE("TapeDelay: stereo Offset mode delays the right channel by the offset", "[tapedelay]")
+{
+    // Impulse, no feedback: L echo at D, R echo at D + offset.  ±1 sample
+    // covers the HP/LP group delay (< 1 sample at 20 Hz / 20 kHz corners
+    // near the echo peak).
+    ideath::TapeDelay d;
+    cleanDelay(d, 0.1f, 0.0f);
+    d.setStereoMode(ideath::TapeDelay::StereoMode::Offset);
+    d.setStereoOffset(0.02f);
+    std::vector<float> l(8000), r(8000);
+    for (int i = 0; i < 8000; ++i)
+    {
+        auto [a, b] = d.processStereo(i == 0 ? 1.0f : 0.0f);
+        l[i] = a;
+        r[i] = b;
+    }
+    REQUIRE(std::abs(argmaxAbs(l) - 4410) <= 1);
+    REQUIRE(std::abs(argmaxAbs(r) - (4410 + 882)) <= 1);
+}
+
+TEST_CASE("TapeDelay: stereo Offset mode left channel equals mono process", "[tapedelay]")
+{
+    // The left channel is the mono loop itself, bit for bit.
+    ideath::TapeDelay mono, stereo;
+    for (auto* d : { &mono, &stereo })
+    {
+        d->prepare(kSampleRate, 1.0f);
+        d->setDelay(0.05f);
+        d->setFeedback(0.6f);
+        d->setMix(0.5f);
+        d->setWowDepth(0.002f);
+        d->setFlutterDepth(0.0005f);
+        d->setDiffusion(0.5f);
+    }
+    for (int i = 0; i < 20000; ++i)
+    {
+        const float x = 0.5f * std::sin(0.03f * static_cast<float>(i));
+        REQUIRE(mono.process(x) == stereo.processStereo(x).first);
+    }
+}
+
+TEST_CASE("TapeDelay: stereo PingPong alternates echoes L, R, L", "[tapedelay]")
+{
+    // Mono input enters the left loop; each loop feeds the other.  Echo k
+    // (at k·D) lands in L for odd k and in R for even k.  The silent side
+    // must stay 60 dB below the active side: all that crosses is the 20 Hz
+    // high-pass's ring from the previous echo (τ = 1/(ζ·ω₀) ≈ 11 ms, so
+    // ≈ e⁻⁹ in amplitude after D = 100 ms).
+    ideath::TapeDelay d;
+    cleanDelay(d, 0.1f, 0.5f);
+    d.setStereoMode(ideath::TapeDelay::StereoMode::PingPong);
+    const int D = 4410;
+    std::vector<float> l(5 * D), r(5 * D);
+    for (int i = 0; i < 5 * D; ++i)
+    {
+        auto [a, b] = d.processStereo(i == 0 ? 1.0f : 0.0f);
+        l[i] = a;
+        r[i] = b;
+    }
+    auto energy = [](const std::vector<float>& x, int c) {
+        double e = 0.0;
+        for (int i = c - 100; i <= c + 100; ++i)
+            e += static_cast<double>(x[i]) * x[i];
+        return e;
+    };
+    for (int k = 1; k <= 4; ++k)
+    {
+        const double el = energy(l, k * D), er = energy(r, k * D);
+        INFO("echo " << k << ": L " << el << " R " << er);
+        if (k % 2 == 1)
+            REQUIRE(er < el * 1e-6);
+        else
+            REQUIRE(el < er * 1e-6);
+    }
+}
+
+TEST_CASE("TapeDelay: wow/flutter run in quadrature on the right channel", "[tapedelay]")
+{
+    // With offset 0 and no modulation both channels read the same loop
+    // point and are identical; with wow on they must differ.
+    auto render = [](float wow) {
+        ideath::TapeDelay d;
+        d.prepare(kSampleRate, 1.0f);
+        d.setDelay(0.05f);
+        d.setFeedback(0.3f);
+        d.setMix(1.0f);
+        d.setWowDepth(wow);
+        d.setFlutterDepth(0.0f);
+        d.setStereoOffset(0.0f);
+        double diff = 0.0;
+        for (int i = 0; i < 44100; ++i)
+        {
+            auto [l, r] = d.processStereo(0.5f * std::sin(0.05f * static_cast<float>(i)));
+            diff += std::fabs(l - r);
+        }
+        return diff;
+    };
+    REQUIRE(render(0.0f) == 0.0);
+    REQUIRE(render(0.002f) > 0.0);
+}
+
+TEST_CASE("TapeDelay: saturation off keeps repeats linear", "[tapedelay]")
+{
+    // Below the 0.8 knee the clean path is the identity, so halving the
+    // input halves every output sample (up to one float rounding step,
+    // 2⁻²³ relative).  With saturation on the same check fails (tanh).
+    auto maxRelErr = [](bool sat) {
+        ideath::TapeDelay a, b;
+        for (auto* d : { &a, &b })
+        {
+            d->prepare(kSampleRate, 1.0f);
+            d->setDelay(0.01f);
+            d->setFeedback(0.7f);
+            d->setMix(1.0f);
+            d->setDrive(1.0f);
+            d->setSaturation(sat);
+        }
+        double err = 0.0;
+        for (int i = 0; i < 20000; ++i)
+        {
+            const float x = 0.3f * std::sin(0.02f * static_cast<float>(i));
+            const float ya = a.process(x);
+            const float yb = b.process(0.5f * x);
+            if (std::fabs(ya) > 1e-3f)
+                err = std::max(err, static_cast<double>(std::fabs(yb - 0.5f * ya) / std::fabs(ya)));
+        }
+        return err;
+    };
+    REQUIRE(maxRelErr(false) < 1e-5);
+    REQUIRE(maxRelErr(true) > 1e-3);
+}
+
+TEST_CASE("TapeDelay: clean repeats stay bright at a fractional delay", "[tapedelay]")
+{
+    // Delay of 441.5 samples (worst-case fraction 0.5).  The 8 kHz content
+    // of the 4th echo, corrected for fb³, must be within 3 dB (half power)
+    // of the 1st echo's.  Linear interpolation loses 1.5 dB per pass at
+    // 8 kHz (|cos(πf/sr)|) → −4.5 dB after three passes; 4-point Hermite
+    // loses 0.32 dB per pass.
+    ideath::TapeDelay d;
+    cleanDelay(d, 441.5f / kSampleRate, 0.8f);
+    const int D = 442;
+    std::vector<float> y(5 * D);
+    for (int i = 0; i < 5 * D; ++i)
+        y[i] = d.process(i == 0 ? 1.0f : 0.0f);
+    auto power8k = [&](int k) {
+        // Goertzel over the 128 samples centred on echo k.
+        const double w = 2.0 * 3.14159265358979 * 8000.0 / kSampleRate;
+        const double c = 2.0 * std::cos(w);
+        double s1 = 0.0, s2 = 0.0;
+        for (int i = k * D - 64; i < k * D + 64; ++i)
+        {
+            const double s0 = y[i] + c * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        return s1 * s1 + s2 * s2 - c * s1 * s2;
+    };
+    const double fb3 = 0.8 * 0.8 * 0.8;
+    const double lossDb = 10.0 * std::log10(power8k(4) / (power8k(1) * fb3 * fb3));
+    INFO("8 kHz loss over three passes: " << lossDb << " dB");
+    REQUIRE(lossDb >= -3.0);
+}
+
+TEST_CASE("TapeDelay: shortest delay is 2 samples", "[tapedelay]")
+{
+    ideath::TapeDelay d;
+    cleanDelay(d, 0.0f, 0.0f);
+    std::vector<float> y(16);
+    for (int i = 0; i < 16; ++i)
+        y[i] = d.process(i == 0 ? 1.0f : 0.0f);
+    REQUIRE(argmaxAbs(y) == 2);
+}
+
+TEST_CASE("TapeDelay: diffusion smears each echo without moving or losing it", "[tapedelay]")
+{
+    // D = 0.2 s, fb 0.7.  Echo windows span ±D/2 (the diffuser at g = 0.7
+    // rings ≈ 19 × its longest stage, ≈ 80 ms, well inside D/2).
+    auto render = [](float diffusion) {
+        ideath::TapeDelay d;
+        cleanDelay(d, 0.2f, 0.7f);
+        d.setDiffusion(diffusion);
+        std::vector<float> y(3 * 8820 + 4410);
+        for (size_t i = 0; i < y.size(); ++i)
+            y[i] = d.process(i == 0 ? 1.0f : 0.0f);
+        return y;
+    };
+    const int D = 8820;
+    auto energy = [](const std::vector<float>& y, int from, int to) {
+        double e = 0.0;
+        for (int i = from; i < to; ++i)
+            e += static_cast<double>(y[i]) * y[i];
+        return e;
+    };
+    auto dry = render(0.0f);
+    auto wet = render(1.0f);
+
+    // Diffusion 0: the first echo is a single click (≥ 99 % of its energy
+    // within ±5 samples).  Diffusion 1: spread out (< 50 % there).
+    const double dryEcho = energy(dry, D - D / 2, D + D / 2);
+    const double wetEcho = energy(wet, D - D / 2, D + D / 2);
+    REQUIRE(energy(dry, D - 5, D + 6) >= 0.99 * dryEcho);
+    REQUIRE(energy(wet, D - 5, D + 6) < 0.5 * wetEcho);
+
+    // Not moved: an allpass's mean group delay is its length for any g,
+    // and that length is taken out of the read, so the smeared echo's
+    // energy centroid sits at D.  ±1 ms is below the ≈ 2 ms temporal-order
+    // threshold for clicks.
+    double moment = 0.0;
+    for (int i = D - D / 2; i < D + D / 2; ++i)
+        moment += static_cast<double>(i) * wet[static_cast<size_t>(i)] * wet[static_cast<size_t>(i)];
+    const double centroid = moment / wetEcho;
+    INFO("echo centroid " << centroid << " samples, D = " << D);
+    REQUIRE(std::fabs(centroid - D) <= 0.001 * kSampleRate);
+
+    // Not lost: allpasses are lossless, so the echo-to-echo energy ratio
+    // matches the undiffused loop within the 1 dB level JND.
+    const double dryRatio = energy(dry, 2 * D - D / 2, 2 * D + D / 2) / dryEcho;
+    const double wetRatio = energy(wet, 2 * D - D / 2, 2 * D + D / 2) / wetEcho;
+    INFO("echo2/echo1: dry " << dryRatio << " wet " << wetRatio);
+    REQUIRE(std::fabs(10.0 * std::log10(wetRatio / dryRatio)) <= 1.0);
+}
+
+TEST_CASE("TapeDelay: stereo 10 s stability, clean repeats at max feedback", "[tapedelay][stability]")
+{
+    // Saturation off keeps |out| ≤ 1 through the soft ceiling.
+    for (auto mode : { ideath::TapeDelay::StereoMode::Offset, ideath::TapeDelay::StereoMode::PingPong })
+    {
+        ideath::TapeDelay d;
+        d.prepare(kSampleRate, 1.0f);
+        d.setDelay(0.13f);
+        d.setFeedback(0.999f);
+        d.setMix(1.0f);
+        d.setSaturation(false);
+        d.setDiffusion(1.0f);
+        d.setStereoMode(mode);
+        d.setStereoOffset(0.05f);
+        d.setWowDepth(0.0003f);
+        for (int i = 0; i < 441000; ++i)
+        {
+            auto [l, r] = d.processStereo(0.8f * std::sin(0.01f * static_cast<float>(i)));
+            REQUIRE(std::isfinite(l));
+            REQUIRE(std::fabs(l) <= 1.0f + 1e-5f);
+            REQUIRE(std::fabs(r) <= 1.0f + 1e-5f);
+        }
+    }
+}
+
+TEST_CASE("TapeDelay: sweeping across the diffuser threshold does not click", "[tapedelay]")
+{
+    // The diffuser is bypassed below ≈ 10.4 ms (its own length).  Sweep
+    // the delay 9.5 → 11.5 → 9.5 ms over 2 s on a 200 Hz sine (0.3, fb
+    // 0.5, mix 1), clean repeats with the tone filters wide open so the
+    // loop gain is the feedback alone.  The wet signal is then bounded by
+    // 0.3 / (1 − 0.5) = 0.6, so its steepest sample step is
+    // 0.6 · 2π · 200 / 44 100 = 0.0171; the 0.4 %/s delay sweep adds no
+    // meaningful Doppler.  A jump of the read point (≈ 10 ms) shows up as a
+    // step far above that (0.38 before the crossfade); allow twice the
+    // signal's own steepest step.
+    for (float diffusion : { 0.0f, 0.7f })
+    {
+        ideath::TapeDelay d;
+        d.prepare(kSampleRate, 1.0f);
+        d.setFeedback(0.5f);
+        d.setMix(1.0f);
+        d.setDiffusion(diffusion);
+        d.setSaturation(false);
+        d.setLowpass(20000.0f);
+        d.setHighpass(5.0f);
+        d.setDelay(0.0095f);
+        float prev = 0.0f, maxStep = 0.0f;
+        const int n = static_cast<int>(2.0f * kSampleRate);
+        for (int i = 0; i < n; ++i)
+        {
+            const float t = static_cast<float>(i) / static_cast<float>(n); // 0 … 1
+            const float tri = t < 0.5f ? 2.0f * t : 2.0f - 2.0f * t;      // 0 → 1 → 0
+            d.setDelay(0.0095f + 0.002f * tri);
+            const float y = d.process(0.3f * std::sin(2.0f * 3.14159265f * 200.0f
+                                                      * static_cast<float>(i) / kSampleRate));
+            if (i > static_cast<int>(0.05f * kSampleRate))
+                maxStep = std::max(maxStep, std::fabs(y - prev));
+            prev = y;
+        }
+        INFO("diffusion " << diffusion << ": largest step " << maxStep);
+        REQUIRE(maxStep <= 2.0f * 0.0171f);
+    }
+}

@@ -52,7 +52,8 @@ than comparing cross-host.
 | Wavefolder::process                |           3.445 µs |        6.73 |
 | BitCrusher::process                |           2.282 µs |        4.46 |
 | DelayLine::process                 |           2.091 µs |        4.08 |
-| TapeDelay::process                 |          11.000 µs |       21.48 |
+| TapeDelay::process                 |          18.444 µs |       36.02 |
+| TapeDelay::processStereo (ping-pong, diffusion) | 29.090 µs |  56.82 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
 | KarplusStrong::process             |           2.636 µs |        5.15 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
@@ -66,8 +67,9 @@ than comparing cross-host.
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
 | Reverb::process                    |          11.359 µs |       22.19 |
-| HallReverb::process                |          56.732 µs |      110.80 |
-| ShimmerReverb::process             |          53.239 µs |      103.98 |
+| HallReverb::process                |          26.907 µs |       52.55 |
+| ShimmerReverb::process             |          57.074 µs |      111.47 |
+| ShimmerReverb::process (two voices)|          72.760 µs |      142.11 |
 | FMSynth::process                   |          19.455 µs |       38.00 |
 | DXFMSynth::process (algo 1)        |          55.222 µs |      107.86 |
 | DXFMSynth::process (algo 32 add)   |          29.006 µs |       56.65 |
@@ -154,3 +156,20 @@ than comparing cross-host.
   front of the octave-up pitch shifters (one per channel) plus the
   direct/shifted feedback blend; the true-Schroeder allpass form adds one
   multiply per stage. Within the 20 % regression threshold.
+- `HallReverb` / `ShimmerReverb` / `TapeDelay` re-measured 2026-10-29 on the
+  same Apple M2 Max host (cross-check: unchanged `Reverb::process` = 21.45
+  ns/sample vs. 22.19 in the table; 20.22 on the final run). Both reverbs
+  were rebuilt on the shared `ReverbTank` (8-line FDN):
+  - `HallReverb` 108.9 → 52.6 ns/sample (−52 %).
+  - `ShimmerReverb` (one active voice, the bench default) 109.9 → 111.5
+    ns/sample (+1 %). Two active voices at ±24 st: 142.1 ns/sample. A voice
+    at level 0 skips its grain reads and splice search.
+  - `TapeDelay::process` 22.7 → 36.0 ns/sample (+59 %, over the 20 % rule —
+    investigated): ≈ 3 ns is the 4-point Hermite read (clean repeats at
+    fractional delays), ≈ 12 ns the in-loop diffuser chain, which runs even
+    at diffusion 0 so changing diffusion never shifts the echo time
+    (bypassing it at 0 would make the 0 ↔ >0 change a ~10 ms loop jump);
+    each loop also keeps an undiffused copy so the short-delay threshold is
+    crossfaded, not jumped (one extra buffer write, not measurable).
+    Inlining the allpasses did not help (serial dependency chain). One
+    instance per master bus is ≈ 0.2 % of the A15 128-sample budget.
