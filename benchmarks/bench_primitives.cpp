@@ -798,6 +798,27 @@ TEST_CASE("Bench: GranularProcessor", "[bench]")
         }
         return acc;
     };
+
+    // Same cloud with the optional paths on: a read-modify-write per
+    // writeSample and a seam-distance check per reverse grain.
+    gp.setSos(0.5f);
+    gp.setPlaybackDirection(true);
+    for (int i = 0; i < static_cast<int>(kSR); ++i)
+    {
+        gp.writeSample(sineAt(i));
+        (void)gp.process();
+    }
+
+    BENCHMARK("GranularProcessor::process reverse + SOS")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            gp.writeSample(sineAt(i));
+            acc += gp.process();
+        }
+        return acc;
+    };
 }
 
 TEST_CASE("Bench: LowPassGate", "[bench]")

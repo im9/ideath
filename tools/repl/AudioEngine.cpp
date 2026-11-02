@@ -745,6 +745,9 @@ std::pair<float, float> AudioEngine::process()
         granular_.setPitchOffset(params_.granularPitchOffset);
         granular_.setPositionScatter(params_.granularScatter);
         granular_.setFreeze(params_.granularFreeze);
+        granular_.setSos(params_.granularSos);
+        granular_.setPlaybackDirection(params_.granularReverse);
+        granular_.setSeed(params_.granularSeed);
         granular_.writeSample(sample);
         const float wet = granular_.process();
         sample = sample * (1.0f - params_.granularMix) + wet * params_.granularMix;

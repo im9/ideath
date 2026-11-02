@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cctype>
 #include <algorithm>
+#include <cstdlib>
 #include <random>
 
 namespace ideath { namespace repl {
@@ -107,6 +108,9 @@ ideath REPL commands:
   granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
                                 Granular cloud (or "granular off")
   granular freeze [on|off]      Freeze granular ring buffer
+  granular sos <0-1>            Overdub amount (0 overwrite, 1 keep buffer)
+  granular reverse [on|off]     Launch grains reading backwards
+  granular seed <n>             Grain RNG seed (32-bit unsigned)
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
@@ -747,6 +751,9 @@ bool parseCommand(const std::string& line, SharedState& shared)
     {
         // granular off                                  → disable
         // granular freeze [on|off]                      → toggle / set freeze
+        // granular sos <0-1>                            → overdub amount
+        // granular reverse [on|off]                     → toggle / set direction
+        // granular seed <n>                             → RNG seed
         // granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
         if (tokens.size() > 1 && tokens[1] == "off")
         {
@@ -760,6 +767,33 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.granularFreeze = true;
             else
                 shared.staging.granularFreeze = !shared.staging.granularFreeze;
+        }
+        else if (tokens.size() > 1 && tokens[1] == "sos")
+        {
+            if (tokens.size() > 2)
+                shared.staging.granularSos = parseFloat(tokens[2], 0.0f);
+        }
+        else if (tokens.size() > 1 && tokens[1] == "reverse")
+        {
+            if (tokens.size() > 2 && tokens[2] == "off")
+                shared.staging.granularReverse = false;
+            else if (tokens.size() > 2 && tokens[2] == "on")
+                shared.staging.granularReverse = true;
+            else
+                shared.staging.granularReverse = !shared.staging.granularReverse;
+        }
+        else if (tokens.size() > 1 && tokens[1] == "seed")
+        {
+            if (tokens.size() > 2)
+            {
+                const int base = tokens[2].rfind("0x", 0) == 0 ? 16 : 10;
+                char* end = nullptr;
+                const unsigned long seed = std::strtoul(tokens[2].c_str(), &end, base);
+                if (end != tokens[2].c_str() && *end == '\0')
+                    shared.staging.granularSeed = static_cast<uint32_t>(seed);
+                else
+                    std::cout << "Invalid seed: " << tokens[2] << std::endl;
+            }
         }
         else
         {

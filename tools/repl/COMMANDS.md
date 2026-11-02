@@ -106,6 +106,9 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `phaser <rate_hz> <depth> [stages] [center_hz] [feedback] [mix]` | Serial first-order allpass phaser. `stages` 2–8 (even preferred, default 4), `depth` 0–1 (± octaves around centre; 1 = ±2 oct), `center_hz` 50–8000 (default 800), `feedback` ±0.95 (tanh-limited on the feedback tap for op-amp-style saturation), `mix` 0–1. Notches at ~0.414·centre and ~2.414·centre for a 4-stage cascade. `phaser off` to disable. |
 | `granular <rate_hz> <size_sec> [pitchSpread_st] [scatter] [mix] [pitchOffset_st]` | Granular cloud (2 s ring buffer). `pitchOffset` shifts the random spread window's centre (bipolar transposition, 0 = unity, clamped ±24 st) |
 | `granular freeze [on\|off]` | Freeze granular ring buffer (no on/off arg toggles) |
+| `granular sos <0-1>` | Sound-on-sound: each write is `input·(1−amount) + existing·amount`. 0 overwrites (default), 1 keeps the buffer and holds the write head, same as freeze |
+| `granular reverse [on\|off]` | New grains read backwards; sounding grains keep their direction (no on/off arg toggles). Grain length does not change |
+| `granular seed <n>` | Grain RNG seed, decimal or `0x` hex (default `0x9E3779B9`). A new value applies at once; the same value does nothing |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
 | `loop feedback <0-1>` | Looper overdub feedback |
 | `loop mix <0-1>` | Looper dry/wet mix |
@@ -317,6 +320,9 @@ ideath[1]> note C3
 ideath[1]> granular 40 0.08 5 0.5 0.7    # 40 grains/sec, 80 ms, ±5 st, mid scatter, 70% wet
 ideath[1]> granular 40 0.08 3 0.5 0.7 12 # same, centred an octave up (bipolar transposition)
 ideath[1]> granular freeze on            # capture current buffer, keep scrubbing
+ideath[1]> granular freeze off
+ideath[1]> granular reverse on           # grains read backwards
+ideath[1]> granular sos 0.8              # overdub onto the buffer instead of replacing it
 ```
 
 ## Note Names

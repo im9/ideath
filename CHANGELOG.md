@@ -9,6 +9,12 @@ The format is based on Keep a Changelog, adapted for the project's current stage
 
 ### Added
 
+- `GranularProcessor` additions, all bit-identical to the previous behaviour
+  at their defaults: `setSos(amount)` overdubs instead of overwriting (1 keeps
+  the buffer and holds the write head, same as freeze);
+  `setPlaybackDirection(reverse)` launches backward grains, which fade through
+  the write-head seam; `setSeed(seed)` sets the RNG seed that `reset()` returns
+  to. REPL: `granular sos`, `granular reverse`, `granular seed`
 - CMake package export and install support for `find_package(ideath CONFIG REQUIRED)`
 - Exported CMake target namespace `ideath::ideath`
 - GitHub Actions CI for Linux and macOS build/test/install/package-consumer verification

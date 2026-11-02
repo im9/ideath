@@ -243,6 +243,9 @@ struct VoiceParams
     float granularScatter = 0.5f;        // [0, 1]
     float granularMix = 0.5f;            // dry/wet
     bool  granularFreeze = false;
+    float granularSos = 0.0f;            // 0 = overwrite, 1 = keep buffer
+    bool  granularReverse = false;
+    uint32_t granularSeed = 0x9E3779B9u;
 
     // Looper (FeedbackBuffer)
     enum class LoopAction { None, Record, Stop, Play, Overdub, Off };
