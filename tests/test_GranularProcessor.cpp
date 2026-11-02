@@ -3,6 +3,9 @@
 #include <ideath/GranularProcessor.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 
@@ -1672,4 +1675,837 @@ TEST_CASE("GranularProcessor: setPitchOffset clamps to [-24, +24] semitones",
         REQUIRE(hi[i]  == hiCap[i]);
         REQUIRE(lo[i]  == loCap[i]);
     }
+}
+
+// =============================================================================
+// SOS / reverse / seed
+// -----------------------------------------------------------------------------
+// readRing() recovers the ring contents through the public API: freeze the
+// buffer, then let one unity-pitch Hann grain traverse it from the oldest
+// sample (window [0, 0]), so y[n] = g · env(n) · ring[(head + n) mod N] with
+// g = 1 / sqrt(max(O · 0.5, 0.5)) = sqrt(2) because O = 1 Hz · 0.1 s < 1.
+//
+// Only the centre half of the grain is compared (env >= 0.5).  envPhase sums
+// 1/N about 4410 times in float, rounding by at most 2^-25 per add, so the
+// phase error is <= 1.3e-4 and the Hann error <= pi · 1.3e-4 = 4.1e-4.
+// Relative to env >= 0.5 that is 8.2e-4, hence kEnvTol = 1e-3.
+//
+// Grain-output comparisons have the same 4.1e-4 Hann error plus the linear-
+// interpolation error (w^2/8 = 1.2e-4 at 220 Hz), both scaled by g:
+// 7.6e-4, which stays under the same kEnvTol.
+// =============================================================================
+
+namespace
+{
+    constexpr int   kRingLen = 4410;               // 0.1 s at 44.1 kHz
+    constexpr float kEnvTol  = 1e-3f;              // see the derivation above
+    const     float kSparseGain = std::sqrt(2.0f); // g for O < 1
+
+    float hannAt(int n, int len)
+    {
+        return 0.5f - 0.5f * std::cos(2.0f * kPi * static_cast<float>(n)
+                                      / static_cast<float>(len));
+    }
+
+    // White noise in [-1, 1), independent of the processor's own RNG.
+    float noiseSample(uint32_t& state)
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return static_cast<float>(state) / 2147483648.0f - 1.0f;
+    }
+
+    // Expects a processor that has only been written to (spawn timer still
+    // at zero, no process() call yet).  Returns the ring from oldest to
+    // newest, valid over [kRingLen/4, 3·kRingLen/4).
+    std::vector<float> readRing(ideath::GranularProcessor& gp)
+    {
+        gp.setFreeze(true);
+        gp.setGrainRate(1.0f);
+        gp.setGrainSize(static_cast<float>(kRingLen) / kSampleRate);
+        gp.setPitchSpread(0.0f);
+        gp.setReadWindow(0.0f, 0.0f);
+
+        std::vector<float> ring(kRingLen, 0.0f);
+        for (int n = 0; n < kRingLen; ++n)
+        {
+            const float y = gp.process();
+            if (n >= kRingLen / 4 && n < 3 * kRingLen / 4)
+                ring[static_cast<std::size_t>(n)] = y / (kSparseGain * hannAt(n, kRingLen));
+        }
+        return ring;
+    }
+
+    float correlation(const std::vector<float>& a, const std::vector<float>& b)
+    {
+        double ab = 0.0, aa = 0.0, bb = 0.0;
+        for (int i = kRingLen / 4; i < 3 * kRingLen / 4; ++i)
+        {
+            const double x = a[static_cast<std::size_t>(i)];
+            const double y = b[static_cast<std::size_t>(i)];
+            ab += x * y;
+            aa += x * x;
+            bb += y * y;
+        }
+        return static_cast<float>(ab / std::sqrt(aa * bb));
+    }
+
+    void configureBusy(ideath::GranularProcessor& gp)
+    {
+        gp.setGrainRate(50.0f);
+        gp.setGrainSize(0.04f);
+        gp.setPitchSpread(7.0f);
+        gp.setPositionScatter(0.6f);
+    }
+
+    std::vector<float> runBusy(ideath::GranularProcessor& gp, int samples = 22050)
+    {
+        std::vector<float> out(static_cast<std::size_t>(samples));
+        for (int i = 0; i < samples; ++i)
+        {
+            gp.writeSample(sineAt(i, 330.0f, kSampleRate));
+            out[static_cast<std::size_t>(i)] = gp.process();
+        }
+        return out;
+    }
+
+    void requireBitIdentical(const std::vector<float>& a, const std::vector<float>& b)
+    {
+        REQUIRE(a.size() == b.size());
+        int mismatches = 0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            if (a[i] != b[i]) ++mismatches;
+        REQUIRE(mismatches == 0);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// SOS
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: SOS 0 is bit-identical to the untouched default", "[granular][sos]")
+{
+    // Every path to amount 0 must collapse to the plain overwrite: the
+    // explicit 0, a clamped negative, and returning from a non-zero amount
+    // before any sample has been written.
+    ideath::GranularProcessor plain, zero, negative, returned;
+    for (auto* gp : { &plain, &zero, &negative, &returned })
+    {
+        gp->prepare(kSampleRate, 22050);
+        configureBusy(*gp);
+    }
+    zero.setSos(0.0f);
+    negative.setSos(-1.0f);
+    returned.setSos(0.7f);
+    returned.setSos(0.0f);
+
+    const auto reference = runBusy(plain);
+    requireBitIdentical(reference, runBusy(zero));
+    requireBitIdentical(reference, runBusy(negative));
+    requireBitIdentical(reference, runBusy(returned));
+}
+
+TEST_CASE("GranularProcessor: SOS 0 stores the input unchanged", "[granular][sos]")
+{
+    // The comparison above runs both sides through the same write path, so
+    // it cannot see an offset on that path.  Overwriting a full ring with
+    // silence must leave exact zeros: no denormal guard, no old material.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, kRingLen);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(1.0f);
+    gp.setSos(0.0f);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(0.0f);
+
+    const auto ring = readRing(gp);
+    for (int i = kRingLen / 4; i < 3 * kRingLen / 4; ++i)
+        REQUIRE(ring[static_cast<std::size_t>(i)] == 0.0f);
+}
+
+TEST_CASE("GranularProcessor: SOS 1 writes no input and matches freeze", "[granular][sos]")
+{
+    // Same prefill, then one instance is frozen and the other held at
+    // SOS 1 (also through the clamp).  NaN and inf inputs prove the input
+    // is not even multiplied by zero (0 · NaN = NaN would poison the ring).
+    // Output and head position must match freeze exactly.
+    ideath::GranularProcessor frozen, sos, sosClamped;
+    for (auto* gp : { &frozen, &sos, &sosClamped })
+    {
+        gp->prepare(kSampleRate, 22050);
+        configureBusy(*gp);
+        for (int i = 0; i < 22050; ++i)
+        {
+            gp->writeSample(sineAt(i, 330.0f, kSampleRate));
+            (void)gp->process();
+        }
+    }
+    frozen.setFreeze(true);
+    sos.setSos(1.0f);
+    sosClamped.setSos(2.0f);
+
+    const float inputs[] = { 0.9f, std::numeric_limits<float>::quiet_NaN(),
+                             std::numeric_limits<float>::infinity(), -0.9f };
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = inputs[i % 4];
+        frozen.writeSample(x);
+        sos.writeSample(x);
+        sosClamped.writeSample(x);
+        const float expected = frozen.process();
+        REQUIRE(expected == expected);   // never NaN
+        REQUIRE(sos.process() == expected);
+        REQUIRE(sosClamped.process() == expected);
+        REQUIRE(sos.writePos() == frozen.writePos());
+    }
+}
+
+TEST_CASE("GranularProcessor: SOS writes input·(1−a) + existing·a", "[granular][sos]")
+{
+    // One overdub pass of constant 0.5 over constant 1.0 at a = 0.25:
+    // 0.5 · 0.75 + 1.0 · 0.25 = 0.625 by the specified formula.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, kRingLen);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(1.0f);
+    gp.setSos(0.25f);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(0.5f);
+
+    const auto ring = readRing(gp);
+    for (int i = kRingLen / 4; i < 3 * kRingLen / 4; ++i)
+        REQUIRE_THAT(ring[static_cast<std::size_t>(i)], WithinAbs(0.625f, kEnvTol));
+}
+
+TEST_CASE("GranularProcessor: each SOS overdub lowers correlation with the original", "[granular][sos]")
+{
+    // k passes of independent unit-variance noise over original noise at
+    // amount a leave:
+    //   original share  a^k
+    //   overdub energy  (1−a)² · Σ_{j<k} a^{2j} = (1−a)² (1−a^{2k}) / (1−a²)
+    //   ρ(k) = a^k / sqrt(a^{2k} + (1−a)² (1−a^{2k}) / (1−a²))
+    // a = 0.5 gives ρ(1) = 0.707, ρ(2) = 0.408, ρ(4) = 0.108.  Sample
+    // correlation of N independent pairs has σ ≈ 1/√N = 1/√2205 = 0.021, so
+    // ±4σ = 0.085 holds without letting neighbouring pass counts overlap
+    // (their expected gaps are 0.30).
+    constexpr float a = 0.5f;
+    constexpr float kFourSigma = 0.085f;
+
+    float previous = 1.0f;
+    for (int passes : { 1, 2, 4 })
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, kRingLen);
+
+        uint32_t state = 0x13572468u;
+        std::vector<float> original(kRingLen);
+        for (auto& x : original)
+        {
+            x = noiseSample(state);
+            gp.writeSample(x);
+        }
+
+        gp.setSos(a);
+        for (int i = 0; i < passes * kRingLen; ++i)
+            gp.writeSample(noiseSample(state));
+
+        const auto ring = readRing(gp);
+        const float rho = correlation(original, ring);
+
+        const float ak  = std::pow(a, static_cast<float>(passes));
+        const float dub = (1.0f - a) * (1.0f - a) * (1.0f - ak * ak) / (1.0f - a * a);
+        const float expected = ak / std::sqrt(ak * ak + dub);
+
+        CAPTURE(passes, rho, expected);
+        REQUIRE_THAT(rho, WithinAbs(expected, kFourSigma));
+        REQUIRE(rho < previous);
+        previous = rho;
+    }
+}
+
+TEST_CASE("GranularProcessor: SOS decay over silence never goes subnormal", "[granular][sos]")
+{
+    // Overdubbing silence at a = 0.5 halves the ring every pass.  After 140
+    // passes an unguarded unit sample is 0.5^140 = 7.2e-43, inside the
+    // subnormal range (1.4e-45, 1.2e-38).  The guarded loop settles at
+    // 1e-25 / (1 − a) = 2e-25 instead, which stays normal after read-back.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, kRingLen);
+    uint32_t state = 0x13572468u;
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(noiseSample(state));
+
+    gp.setSos(0.5f);
+    for (int i = 0; i < 140 * kRingLen; ++i)
+        gp.writeSample(0.0f);
+
+    const auto ring = readRing(gp);
+    int subnormals = 0;
+    for (int i = kRingLen / 4; i < 3 * kRingLen / 4; ++i)
+        if (std::fpclassify(ring[static_cast<std::size_t>(i)]) == FP_SUBNORMAL)
+            ++subnormals;
+    REQUIRE(subnormals == 0);
+}
+
+TEST_CASE("GranularProcessor: freeze still wins over SOS", "[granular][sos]")
+{
+    // Freeze is documented as a hard no-op on writeSample: a partial SOS
+    // must not leak input into a frozen ring or move the head.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, kRingLen);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(1.0f);
+    gp.setFreeze(true);
+    gp.setSos(0.5f);
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(0.0f);
+    gp.setSos(0.0f);
+
+    const auto ring = readRing(gp);
+    for (int i = kRingLen / 4; i < 3 * kRingLen / 4; ++i)
+        REQUIRE_THAT(ring[static_cast<std::size_t>(i)], WithinAbs(1.0f, kEnvTol));
+}
+
+// -----------------------------------------------------------------------------
+// Reverse playback
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: reverse grains move readPos backwards by pitch per sample", "[granular][reverse]")
+{
+    // pitchOffset +12 → ratio 2.  Between snapshots the wrapped distance
+    // must be exactly the ratio, negative in reverse and positive forward.
+    // Positions sit in [8192, 32768), where float spacing is at most 2^-9,
+    // so a difference of two rounded positions is good to 2 · 2^-9 ≈ 0.004.
+    constexpr int   kBuffer = 22050;
+    constexpr float kPosTol = 0.004f;
+
+    for (bool reverse : { true, false })
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, kBuffer);
+        gp.setPlaybackDirection(reverse);
+        gp.setGrainRate(1.0f);       // one grain for the whole run
+        gp.setGrainSize(0.05f);
+        gp.setPitchOffset(12.0f);
+        gp.setReadWindow(0.5f, 0.5f);
+
+        ideath::GranularProcessor::GrainSnapshot snap[ideath::GranularProcessor::kMaxGrains];
+        (void)gp.process();
+        gp.snapshotGrains(snap);
+        REQUIRE(snap[0].active);
+        REQUIRE(snap[0].pitch > 0.0f);   // documented as a positive ratio
+        float previous = snap[0].readPos;
+
+        for (int i = 0; i < 500; ++i)
+        {
+            (void)gp.process();
+            gp.snapshotGrains(snap);
+            const float expected = reverse ? -2.0f : 2.0f;
+            REQUIRE_THAT(snap[0].readPos - previous, WithinAbs(expected, kPosTol));
+            previous = snap[0].readPos;
+        }
+    }
+}
+
+TEST_CASE("GranularProcessor: reverse plays the recorded material time-reversed", "[granular][reverse]")
+{
+    // A linear ramp in a frozen ring; a unity reverse grain starts mid-ring
+    // and must read ring[start − n], so y[n] = g · env(n) · ramp(start − n).
+    constexpr int kGrain = kRingLen / 2;
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, kRingLen);
+    const auto ramp = [](float i) { return i / static_cast<float>(kRingLen); };
+    for (int i = 0; i < kRingLen; ++i)
+        gp.writeSample(ramp(static_cast<float>(i)));
+
+    gp.setFreeze(true);
+    gp.setPlaybackDirection(true);
+    gp.setGrainRate(1.0f);
+    gp.setGrainSize(static_cast<float>(kGrain) / kSampleRate);
+    gp.setReadWindow(0.25f, 0.25f);   // 0.25 behind the head at 0 = index 3N/4
+
+    const float start = 0.75f * static_cast<float>(kRingLen);   // 3307.5
+    for (int n = 0; n < kGrain; ++n)
+    {
+        const float y = gp.process();
+        const float expected = ramp(start - static_cast<float>(n));
+        REQUIRE_THAT(y, WithinAbs(kSparseGain * hannAt(n, kGrain) * expected, kEnvTol));
+    }
+}
+
+TEST_CASE("GranularProcessor: direction is latched per grain", "[granular][reverse]")
+{
+    // Flipping the direction must not bend a grain already in flight,
+    // otherwise a knob move would fold every active grain at once.
+    for (bool launchedReverse : { false, true })
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, 22050);
+        gp.setPlaybackDirection(launchedReverse);
+        gp.setGrainRate(1.0f);
+        gp.setGrainSize(0.05f);
+        gp.setReadWindow(0.5f, 0.5f);
+
+        ideath::GranularProcessor::GrainSnapshot snap[ideath::GranularProcessor::kMaxGrains];
+        (void)gp.process();
+        gp.snapshotGrains(snap);
+        const float before = snap[0].readPos;
+
+        gp.setPlaybackDirection(!launchedReverse);
+        (void)gp.process();
+        gp.snapshotGrains(snap);
+        REQUIRE((snap[0].readPos < before) == launchedReverse);
+    }
+}
+
+TEST_CASE("GranularProcessor: setPlaybackDirection(false) is bit-identical to the default", "[granular][reverse]")
+{
+    ideath::GranularProcessor plain, toggled;
+    for (auto* gp : { &plain, &toggled })
+    {
+        gp->prepare(kSampleRate, 22050);
+        configureBusy(*gp);
+    }
+    toggled.setPlaybackDirection(true);
+    toggled.setPlaybackDirection(false);
+    requireBitIdentical(runBusy(plain), runBusy(toggled));
+}
+
+TEST_CASE("GranularProcessor: grain length does not depend on speed or direction", "[granular][reverse]")
+{
+    // setGrainSize(0.05) at 44.1 kHz is 2205 samples of lifetime at any
+    // ratio, in either direction, and whether or not the traversal
+    // (ratio 4 → 8820 samples) wraps a 4096-sample ring.  envPhase rounding
+    // is <= 2205 · 2^-25 = 6.6e-5 of the lifetime = 0.15 samples, so the
+    // phase sum reaches 1 on process() call 2205, or 2206 if it rounds low.
+    constexpr int kExpected = 2205;
+
+    for (bool reverse : { false, true })
+        for (float semis : { -24.0f, 0.0f, 24.0f })
+            for (int bufferLen : { 22050, 4096 })
+            {
+                ideath::GranularProcessor gp;
+                gp.prepare(kSampleRate, bufferLen);
+                gp.setPlaybackDirection(reverse);
+                gp.setGrainRate(1.0f);   // no second spawn inside the window
+                gp.setGrainSize(0.05f);
+                gp.setPitchOffset(semis);
+
+                int calls = 1;
+                (void)gp.process();
+                REQUIRE(gp.activeGrainCount() == 1);
+                while (gp.activeGrainCount() > 0 && calls < 3 * kExpected)
+                {
+                    ++calls;
+                    (void)gp.process();
+                }
+
+                CAPTURE(reverse, semis, bufferLen, calls);
+                REQUIRE(calls >= kExpected);
+                REQUIRE(calls <= kExpected + 1);
+            }
+}
+
+TEST_CASE("GranularProcessor: reverse read is seamless across the physical ring edge", "[granular][reverse]")
+{
+    // Write 1.5 rings so index 0 sits inside continuous material: indices
+    // 0..4095 hold input samples 8192..12287, indices 4096..8191 hold
+    // 4096..8191.  A unity reverse grain starts at index 2205 and crosses
+    // index 0 at its Hann peak.  At every sample y must equal the analytic
+    // sine, read at integer positions and at half-sample positions so the
+    // interpolation pair (8191, 0) is covered.  A wrong wrap repeats or
+    // skips a sample and misses by one sine step at the crossing: full-slope
+    // step 2π · 220 / 44100 = 0.031 × |cos| 0.67 at this phase × g = 0.030,
+    // far above kEnvTol.
+    constexpr int   kBuffer = 8192;
+    constexpr int   kHead   = 4096;
+    constexpr int   kGrain  = 4410;
+    constexpr int   kStart  = 2205;
+    constexpr float kFreq   = 220.0f;
+
+    for (float fraction : { 0.0f, 0.5f })
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, kBuffer);
+        for (int i = 0; i < kBuffer + kHead; ++i)
+            gp.writeSample(std::sin(2.0f * kPi * kFreq * static_cast<float>(i) / kSampleRate));
+        REQUIRE(gp.writePos() == kHead);
+
+        gp.setFreeze(true);
+        gp.setPlaybackDirection(true);
+        gp.setGrainRate(1.0f);
+        gp.setGrainSize(static_cast<float>(kGrain) / kSampleRate);
+        const float behind = (static_cast<float>(kHead - kStart) - fraction)
+                             / static_cast<float>(kBuffer);
+        gp.setReadWindow(behind, behind);
+
+        ideath::GranularProcessor::GrainSnapshot snap[ideath::GranularProcessor::kMaxGrains];
+        bool crossed = false;
+        float previous = static_cast<float>(kStart);
+        for (int n = 0; n < kGrain; ++n)
+        {
+            const float y = gp.process();
+            gp.snapshotGrains(snap);
+            if (n + 1 < kGrain)
+            {
+                crossed = crossed || snap[0].readPos > previous;
+                previous = snap[0].readPos;
+            }
+
+            const float t = static_cast<float>(kBuffer + kStart - n) + fraction;
+            const float x = std::sin(2.0f * kPi * kFreq * t / kSampleRate);
+            CAPTURE(n, fraction);
+            REQUIRE_THAT(y, WithinAbs(kSparseGain * hannAt(n, kGrain) * x, kEnvTol));
+        }
+        REQUIRE(crossed);
+    }
+}
+
+TEST_CASE("GranularProcessor: reverse read does not click at the write-head seam", "[granular][reverse]")
+{
+    // The newest and oldest samples are neighbours in the ring and carry a
+    // large step here: a slow ramp spanning 2 rings gives a jump of ≈ 0.9.
+    // A reverse grain crossing the head must fade through it.  y = g·env·s·f
+    // with every factor bounded by 1, so away from the jump, per sample
+    //   |Δy| <= g · (|Δenv| + |Δs| + |Δf|)
+    //   |Δenv| <= π / L                (Hann peak slope)
+    //   |Δs|   <= ratio · ramp slope   (the ramp, read at the grain's speed)
+    //   |Δf|   <= 1.5 / (2 ms · sr)    (smoothstep peak slope over the 2 ms
+    //                                   fade specified in setPlaybackDirection)
+    // The fade takes the same time whether the head runs or is held, at any
+    // ratio and sample rate.  At the jump itself the read straddles the seam
+    // at f = 0, and the samples on either side have f <= 3 (1 / (2 ms · sr))²,
+    // a far smaller step than the |Δf| term even after the 0.9 jump.
+    //
+    // The grain starts 400 samples past the seam, so it gets there inside
+    // its 2205-sample life at the slowest closing speed, ratio 1/4 with the
+    // head held (400 · 4 = 1600 samples).
+    constexpr int kBuffer = 8192;
+    constexpr int kGrain  = 2205;
+    constexpr int kTotal  = 2 * kBuffer + kGrain;
+    const     float rampStep = 2.0f / static_cast<float>(kTotal);
+    const auto ramp = [&](int i) { return -1.0f + static_cast<float>(i) * rampStep; };
+
+    enum class Head { Running, Frozen, HeldBySos };
+
+    for (float sr : { 8000.0f, 44100.0f, 192000.0f })
+        for (float semis : { -24.0f, 0.0f, 12.0f })
+            for (Head head : { Head::Running, Head::Frozen, Head::HeldBySos })
+            {
+                ideath::GranularProcessor gp;
+                gp.prepare(sr, kBuffer);
+                int written = 0;
+                for (; written < 2 * kBuffer; ++written)
+                    gp.writeSample(ramp(written));
+
+                gp.setFreeze(head == Head::Frozen);
+                gp.setSos(head == Head::HeldBySos ? 1.0f : 0.0f);
+                gp.setPlaybackDirection(true);
+                gp.setGrainRate(1.0f);
+                gp.setGrainSize(static_cast<float>(kGrain) / sr);
+                gp.setPitchOffset(semis);
+                const float behind = static_cast<float>(kBuffer - 400) / static_cast<float>(kBuffer);
+                gp.setReadWindow(behind, behind);
+
+                const float limit = kSparseGain
+                    * (kPi / static_cast<float>(kGrain)
+                       + std::pow(2.0f, semis / 12.0f) * rampStep
+                       + 1.5f / (0.002f * sr));
+
+                ideath::GranularProcessor::GrainSnapshot snap[ideath::GranularProcessor::kMaxGrains];
+                float previous = 0.0f;
+                float maxStep = 0.0f;
+                bool crossed = false;
+                float lastAhead = -1.0f;
+                for (int n = 0; n < kGrain; ++n)
+                {
+                    if (head == Head::Running)
+                        gp.writeSample(ramp(written++));
+                    const float y = gp.process();
+                    maxStep = std::max(maxStep, std::abs(y - previous));
+                    previous = y;
+
+                    if (n + 1 < kGrain)
+                    {
+                        gp.snapshotGrains(snap);
+                        float ahead = snap[0].readPos - static_cast<float>(gp.writePos());
+                        if (ahead < 0.0f) ahead += static_cast<float>(kBuffer);
+                        // Distance ahead of the head shrinks until the seam,
+                        // then jumps to nearly a full ring.
+                        crossed = crossed || (lastAhead >= 0.0f && ahead > lastAhead);
+                        lastAhead = ahead;
+                    }
+                }
+                CAPTURE(sr, semis, static_cast<int>(head), maxStep, limit);
+                REQUIRE(crossed);
+                REQUIRE(maxStep <= limit);
+            }
+}
+
+TEST_CASE("GranularProcessor: the seam fade lasts 2 ms in both head states", "[granular][reverse]")
+{
+    // A ring of constant 1 leaves only the fade in y / (g · env).  It lasts
+    // 2 ms = 88.2 samples either side of the seam, 176.4 in all, for any
+    // ratio and whether the head runs or is held.  A smoothstep passes 0.99
+    // at t = 0.942, so the gain stays below 0.99 for 176.4 · 0.942 = 166
+    // samples, up to 176.4 if it never settled.  ±2 for the whole samples at
+    // each end.  Crossing at n ≈ 1100 of 2205 keeps env >= 0.5, where kEnvTol
+    // is well under the 0.01 margin being counted.
+    constexpr int kBuffer = 8192;
+    constexpr int kGrain  = 2205;
+
+    enum class Head { Running, Frozen, HeldBySos };
+
+    for (Head head : { Head::Running, Head::Frozen, Head::HeldBySos })
+        for (float semis : { -24.0f, 0.0f })
+        {
+            const bool held = head != Head::Running;
+            ideath::GranularProcessor gp;
+            gp.prepare(kSampleRate, kBuffer);
+            for (int i = 0; i < kBuffer; ++i)
+                gp.writeSample(1.0f);
+
+            gp.setFreeze(head == Head::Frozen);
+            gp.setSos(head == Head::HeldBySos ? 1.0f : 0.0f);
+            gp.setPlaybackDirection(true);
+            gp.setGrainRate(1.0f);
+            gp.setGrainSize(static_cast<float>(kGrain) / kSampleRate);
+            gp.setPitchOffset(semis);
+
+            const float ratio = std::pow(2.0f, semis / 12.0f);
+            const float closing = held ? ratio : ratio + 1.0f;
+            const float start = std::round(1100.0f * closing);
+            const float behind = (static_cast<float>(kBuffer) - start) / static_cast<float>(kBuffer);
+            gp.setReadWindow(behind, behind);
+
+            int faded = 0;
+            for (int n = 0; n < kGrain; ++n)
+            {
+                if (!held)
+                    gp.writeSample(1.0f);
+                const float y = gp.process();
+                if (n >= kGrain / 4 && n < 3 * kGrain / 4
+                    && y < 0.99f * kSparseGain * hannAt(n, kGrain))
+                    ++faded;
+            }
+            CAPTURE(static_cast<int>(head), semis, faded);
+            REQUIRE(faded >= 164);
+            REQUIRE(faded <= 178);
+        }
+}
+
+// -----------------------------------------------------------------------------
+// Seed
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: same seed gives bit-identical output", "[granular][seed]")
+{
+    // Before and after prepare() must be equivalent: prepare() resets, and
+    // reset() has to restore the seed rather than the factory default.
+    ideath::GranularProcessor before, after;
+    before.setSeed(0xCAFEBABEu);
+    before.prepare(kSampleRate, 22050);
+    after.prepare(kSampleRate, 22050);
+    after.setSeed(0xCAFEBABEu);
+    configureBusy(before);
+    configureBusy(after);
+    requireBitIdentical(runBusy(before), runBusy(after));
+}
+
+TEST_CASE("GranularProcessor: different seeds give different output", "[granular][seed]")
+{
+    ideath::GranularProcessor a, b;
+    a.prepare(kSampleRate, 22050);
+    b.prepare(kSampleRate, 22050);
+    a.setSeed(1u);
+    b.setSeed(2u);
+    configureBusy(a);
+    configureBusy(b);
+
+    const auto outA = runBusy(a);
+    const auto outB = runBusy(b);
+    int differing = 0;
+    for (std::size_t i = 0; i < outA.size(); ++i)
+        if (outA[i] != outB[i]) ++differing;
+    REQUIRE(differing > 0);
+}
+
+TEST_CASE("GranularProcessor: reset returns to the given seed", "[granular][seed]")
+{
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setSeed(0x01234567u);
+    configureBusy(gp);
+
+    const auto first = runBusy(gp);
+    gp.reset();
+    requireBitIdentical(first, runBusy(gp));
+}
+
+TEST_CASE("GranularProcessor: reset keeps seed 0 usable", "[granular][seed]")
+{
+    // reset() must apply the same zero-state remap as setSeed(), or the
+    // second run would have a stuck RNG and diverge from the first.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setSeed(0u);
+    configureBusy(gp);
+
+    const auto first = runBusy(gp);
+    gp.reset();
+    requireBitIdentical(first, runBusy(gp));
+}
+
+TEST_CASE("GranularProcessor: settings survive prepare at a new buffer size", "[granular][sos][reverse][seed]")
+{
+    // Like every other parameter they are configuration, not audio state.
+    // Prepared twice with the settings set between must equal prepared once
+    // at the final size with the settings set up front.
+    ideath::GranularProcessor again, once;
+    again.prepare(kSampleRate, 4096);
+    for (auto* gp : { &again, &once })
+    {
+        gp->setSos(0.5f);
+        gp->setPlaybackDirection(true);
+        gp->setSeed(0xABCDu);
+    }
+    again.prepare(kSampleRate, 22050);
+    once.prepare(kSampleRate, 22050);
+    configureBusy(again);
+    configureBusy(once);
+    requireBitIdentical(runBusy(again), runBusy(once));
+
+    ideath::GranularProcessor plain;
+    plain.prepare(kSampleRate, 22050);
+    configureBusy(plain);
+    again.reset();
+    const auto kept = runBusy(again);
+    const auto defaults = runBusy(plain);
+    int differing = 0;
+    for (std::size_t i = 0; i < kept.size(); ++i)
+        if (kept[i] != defaults[i]) ++differing;
+    REQUIRE(differing > 0);
+}
+
+TEST_CASE("GranularProcessor: the default seed stays 0x9E3779B9", "[granular][seed]")
+{
+    ideath::GranularProcessor plain, seeded;
+    for (auto* gp : { &plain, &seeded })
+    {
+        gp->prepare(kSampleRate, 22050);
+        configureBusy(*gp);
+    }
+    seeded.setSeed(0x9E3779B9u);
+    requireBitIdentical(runBusy(plain), runBusy(seeded));
+}
+
+TEST_CASE("GranularProcessor: seed 0 still randomises and is not the default", "[granular][seed]")
+{
+    // xorshift32 maps state 0 to itself.  A raw zero state would pin every
+    // grain to the bottom of the pitch range and the near window edge, so
+    // two grains would never differ.  It must also stay distinct from the
+    // default seed, because different seeds must differ.
+    ideath::GranularProcessor zero, plain;
+    for (auto* gp : { &zero, &plain })
+    {
+        gp->prepare(kSampleRate, 22050);
+        configureBusy(*gp);
+    }
+    zero.setSeed(0u);
+
+    ideath::GranularProcessor::GrainSnapshot snap[ideath::GranularProcessor::kMaxGrains];
+    float lowest = 1e9f, highest = 0.0f;
+    std::vector<float> outZero(22050), outPlain(22050);
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = sineAt(i, 330.0f, kSampleRate);
+        zero.writeSample(x);
+        plain.writeSample(x);
+        outZero[static_cast<std::size_t>(i)]  = zero.process();
+        outPlain[static_cast<std::size_t>(i)] = plain.process();
+        zero.snapshotGrains(snap);
+        for (const auto& g : snap)
+            if (g.active)
+            {
+                lowest  = std::min(lowest, g.pitch);
+                highest = std::max(highest, g.pitch);
+            }
+    }
+    REQUIRE(highest > lowest);
+
+    int differing = 0;
+    for (std::size_t i = 0; i < outZero.size(); ++i)
+        if (outZero[i] != outPlain[i]) ++differing;
+    REQUIRE(differing > 0);
+}
+
+TEST_CASE("GranularProcessor: repeating setSeed with the same value does not restart the RNG", "[granular][seed]")
+{
+    // Setters are per-sample safe by library convention.  A host that
+    // pushes every parameter every block must not freeze the random
+    // sequence by re-seeding the same value.
+    ideath::GranularProcessor once, every;
+    for (auto* gp : { &once, &every })
+    {
+        gp->prepare(kSampleRate, 22050);
+        gp->setSeed(0xBEEFu);
+        configureBusy(*gp);
+    }
+    std::vector<float> a(22050), b(22050);
+    for (int i = 0; i < 22050; ++i)
+    {
+        const float x = sineAt(i, 330.0f, kSampleRate);
+        once.writeSample(x);
+        every.setSeed(0xBEEFu);
+        every.writeSample(x);
+        a[static_cast<std::size_t>(i)] = once.process();
+        b[static_cast<std::size_t>(i)] = every.process();
+    }
+    requireBitIdentical(a, b);
+}
+
+// -----------------------------------------------------------------------------
+// Combined extremes
+// -----------------------------------------------------------------------------
+
+TEST_CASE("GranularProcessor: 10 s of SOS + reverse at extreme settings stays bounded", "[granular][sos][reverse]")
+{
+    // SOS is a convex mix, so with |input| <= 1 the ring stays within
+    // 1 + 1e-25 / (1 − a).  Each grain contributes at most its Hann peak 1
+    // and the seam fade only attenuates, so the universal bound applies:
+    //   |y| <= kMaxGrains · max(|ring|) · g(O)
+    // O = 200 Hz · 1 s = 200 gives g = 1 / sqrt(100) = 0.1 → 1.6.  Buffer
+    // lengths run from the 16-sample floor upward, where the seam fade is
+    // capped by the ring size.  10 s per the long-run convention.
+    constexpr int   kSamples = 441000;
+    constexpr float kBound   = ideath::GranularProcessor::kMaxGrains * 0.1f;
+
+    for (int bufferLen : { 16, 441, 44100 })
+        for (float offset : { -24.0f, 24.0f })
+        {
+            ideath::GranularProcessor gp;
+            gp.prepare(kSampleRate, bufferLen);
+            gp.setGrainRate(200.0f);
+            gp.setGrainSize(1.0f);
+            gp.setPitchSpread(24.0f);
+            gp.setPitchOffset(offset);
+            gp.setReadWindow(0.0f, 1.0f);
+            gp.setPlaybackDirection(true);
+            gp.setSos(0.95f);
+
+            uint32_t state = 0x13572468u;
+            float peak = 0.0f;
+            bool finite = true;
+            for (int i = 0; i < kSamples; ++i)
+            {
+                gp.writeSample(noiseSample(state));
+                const float y = gp.process();
+                finite = finite && std::isfinite(y);
+                peak = std::max(peak, std::abs(y));
+            }
+            CAPTURE(bufferLen, offset, peak);
+            REQUIRE(finite);
+            REQUIRE(peak <= kBound);
+        }
 }

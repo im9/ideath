@@ -22,6 +22,12 @@ namespace ideath {
 /// When `freeze` is enabled `writeSample()` becomes a no-op (the write
 /// pointer holds its position), so the buffer becomes a static sample source
 /// while existing grains continue to scrub through the captured material.
+/// `setSos` sits between the two extremes: new input is recorded over the
+/// existing material instead of replacing it.
+///
+/// `setPlaybackDirection` launches grains that read backwards.  Grain length
+/// is set by `setGrainSize` alone: speed and direction change how far a grain
+/// travels, never how long it lasts.
 ///
 /// API contract:
 /// - `prepare(sr, bufferLengthSamples)` allocates the ring buffer.  This is
@@ -30,8 +36,9 @@ namespace ideath {
 ///   no locks).
 /// - `process()` may be called before `prepare()` and will return 0.0f.
 /// - Random pitch and position are driven by a deterministic xorshift32 RNG
-///   seeded in `reset()`; two instances with identical input and identical
-///   parameter histories produce bit-identical output.
+///   seeded in `reset()` from `setSeed` (default 0x9E3779B9); two instances
+///   with identical input, seed and parameter histories produce bit-identical
+///   output.
 ///
 /// Visualisation hooks (`snapshotGrains`, `writePos`, `bufferSize`) expose
 /// the current grain-pool state and ring-buffer geometry so that UIs can
@@ -58,10 +65,11 @@ public:
 
     /// Return to initial state: buffer cleared, all grains inactive, spawn
     /// timer zeroed (next `process()` will spawn immediately if `grainRate`
-    /// is positive), RNG re-seeded.
+    /// is positive), RNG re-seeded from the value given to `setSeed`.
     void reset();
 
-    /// Push one sample into the ring buffer.  No-op if `freeze` is on.
+    /// Push one sample into the ring buffer, mixed with what is already
+    /// there according to `setSos`.  No-op if `freeze` or SOS 1 is on.
     void writeSample(float input);
 
     /// Grain spawn rate in Hz.  Clamped to `[0, sampleRate]`.  Zero disables
@@ -100,7 +108,7 @@ public:
     ///
     /// A degenerate window (`nearOffset == farOffset`) pins every grain to
     /// the same relative offset (zero position randomness).  When `freeze`
-    /// is on, the write head is stationary, so the window becomes
+    /// or SOS 1 is on, the write head is stationary, so the window becomes
     /// effectively absolute within the frozen buffer.
     ///
     /// Default: `[0.0f, 0.5f]` — matches the previous `setPositionScatter(0.5f)`
@@ -111,6 +119,40 @@ public:
     /// no-op so the buffer contents stop changing — grain reads continue,
     /// turning the buffer into a static sample source for the cloud.
     void setFreeze(bool on);
+
+    /// Sound-on-sound amount.  `writeSample()` stores
+    /// `input * (1 - amount) + existing * amount`, so material fades by
+    /// `amount` per pass of the write head and repeated passes drift away
+    /// from the original recording.  Clamped to `[0, 1]`.
+    ///
+    /// 0 (default) overwrites, bit-identical to not calling this.  1 keeps the
+    /// buffer exactly as it is and holds the write pointer, which makes it the
+    /// same as `setFreeze(true)`: read windows stay put instead of sweeping
+    /// through the buffer.  The write gain follows this value immediately, so
+    /// glide it in the plugin layer if a large jump should not be recorded.
+    void setSos(float amount01);
+
+    /// Direction of newly launched grains; `true` reads backwards.  Grains
+    /// already in flight keep the direction they were launched with, so a
+    /// change never bends a sounding grain.  Default `false`.
+    ///
+    /// The ring holds its newest and oldest samples side by side at the write
+    /// head.  A reverse grain runs into that seam from the oldest side, so it
+    /// fades out through the seam and back in on the far side (2 ms each way
+    /// at any speed, set from the head state at launch and capped at a quarter
+    /// of the buffer).  The grain keeps its length and position while faded,
+    /// so a very short reverse grain launched right at the head is quieter.
+    void setPlaybackDirection(bool reverse);
+
+    /// RNG seed, kept across `reset()` and `prepare()`.  A new value takes
+    /// effect immediately; passing the current value is a no-op, so hosts can
+    /// push it with the other parameters without restarting the sequence
+    /// (`reset()` restarts it).  Bit-identical output needs the same seed;
+    /// different seeds give different grains unless nothing is random (zero
+    /// pitch spread and a degenerate read window).  xorshift32 cannot leave
+    /// state 0, so seed 0 runs from `kZeroSeedState` instead, the only pair of
+    /// seeds that share a sequence.  Default 0x9E3779B9.
+    void setSeed(uint32_t seed);
 
     /// Process one sample, returning the gain-compensated sum of all active
     /// grains.  Spawns new grains internally based on the spawn timer.
@@ -123,8 +165,8 @@ public:
     /// into the ring buffer (0..bufferSize) — sub-sample because grains read
     /// with linear interpolation.  `envPhase` is the grain's normalised
     /// lifetime position in `[0, 1)`.  `pitch` is the varispeed playback
-    /// ratio (2^(semis/12)).  Inactive slots have `active=false` and the
-    /// other fields are undefined.
+    /// ratio (2^(semis/12)), positive in both directions.  Inactive slots
+    /// have `active=false` and the other fields are undefined.
     struct GrainSnapshot
     {
         bool  active;
@@ -145,7 +187,7 @@ public:
     /// from `snapshotGrains` this lets a UI compute `offsetBehindHead =
     /// ((writePos - readPos) mod bufferSize) / bufferSize` for a cloud
     /// visualisation whose right edge tracks the write head.  When frozen
-    /// (`setFreeze(true)`), this value stops advancing.
+    /// (`setFreeze(true)` or `setSos(1)`), this value stops advancing.
     int writePos() const;
 
     /// Ring-buffer length in samples (as passed to `prepare`, subject to the
@@ -158,12 +200,15 @@ private:
         bool  active   = false;
         float readPos  = 0.0f;   // float index into ring buffer
         float pitch    = 1.0f;   // playback rate (1.0 = unity)
+        float step     = 1.0f;   // signed readPos increment, negative = reverse
         float envPhase = 0.0f;   // 0..1 over the grain's lifetime
         float envInc   = 0.0f;   // 1 / grainSizeSamples (frozen at spawn)
+        float seamFadeInv = 1.0f; // 1 / seam fade length in samples (reverse only)
     };
 
     void  trySpawnGrain();
     float renderGrain(Grain& g) const;
+    float reverseSeamGain(const Grain& g) const;
     float nextUniform01();              // xorshift32 in [0, 1)
     float nextUniformPM1();             // xorshift32 in [-1, +1)
 
@@ -185,6 +230,8 @@ private:
     float readWindowNear_  = 0.0f;
     float readWindowFar_   = 0.5f;
     bool  frozen_          = false;
+    float sos_             = 0.0f;      // 0 = overwrite, 1 = keep existing
+    bool  reverse_         = false;     // direction of newly spawned grains
 
     // Spawn timer.  Counts down by 1/sampleRate per call; when it reaches 0
     // (or below) a grain is launched and the timer is reset to 1/grainRate.
@@ -193,6 +240,10 @@ private:
     // Deterministic RNG (xorshift32, matching ideath::Noise).
     uint32_t rngState_ = 0x9E3779B9u;
     static constexpr uint32_t kRngSeed = 0x9E3779B9u;
+    // Mersenne Twister's init multiplier; any non-zero value other than the
+    // default seed works.
+    static constexpr uint32_t kZeroSeedState = 0x6C078965u;
+    uint32_t seed_ = kRngSeed;
 };
 
 } // namespace ideath

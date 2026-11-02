@@ -63,7 +63,8 @@ than comparing cross-host.
 | BowedString::process (steady bow)  |           8.654 µs |       16.90 |
 | LowPassGate::process (Decay)       |           2.246 µs |        4.39 |
 | LowPassGateVoice::process (Decay)  |           2.946 µs |        5.75 |
-| GranularProcessor::process         |          24.174 µs |       47.21 |
+| GranularProcessor::process         |          22.825 µs |       44.58 |
+| GranularProcessor::process reverse + SOS |    25.933 µs |       50.65 |
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
 | Reverb::process                    |          11.359 µs |       22.19 |

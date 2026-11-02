@@ -5,6 +5,15 @@
 
 namespace ideath {
 
+namespace {
+
+// Time a reverse grain takes to fade through the write-head seam.  Long enough
+// to turn a full-scale step into a ramp, short against the ≥ 10 ms grains the
+// seam matters for.
+constexpr float kSeamFadeSeconds = 0.002f;
+
+} // namespace
+
 void GranularProcessor::prepare(float sampleRate, int bufferLengthSamples)
 {
     // SR must be positive; buffer must be long enough that the modulo
@@ -25,16 +34,25 @@ void GranularProcessor::reset()
     for (auto& g : grains_)
         g.active = false;
     // Deterministic seed — two instances reset to the same state.
-    rngState_ = kRngSeed;
+    rngState_ = seed_ != 0u ? seed_ : kZeroSeedState;
 }
 
 void GranularProcessor::writeSample(float input)
 {
-    if (frozen_)
+    // SOS 1 stops here too, so it holds the head exactly like freeze and
+    // never touches a NaN or inf input.
+    if (frozen_ || sos_ >= 1.0f)
         return;
     if (bufferSize_ <= 0)
         return;
-    buffer_[static_cast<size_t>(writePos_)] = input;
+    float& slot = buffer_[static_cast<size_t>(writePos_)];
+    // SOS turns the ring into a feedback path, hence the denormal guard.  The
+    // overwrite path stays a plain copy: the guard and the 0 · existing term
+    // would both change the stored bits.
+    if (sos_ > 0.0f)
+        slot = input * (1.0f - sos_) + slot * sos_ + 1e-25f;
+    else
+        slot = input;
     ++writePos_;
     if (writePos_ >= bufferSize_)
         writePos_ = 0;
@@ -96,6 +114,24 @@ void GranularProcessor::setReadWindow(float nearOffset01, float farOffset01)
 void GranularProcessor::setFreeze(bool on)
 {
     frozen_ = on;
+}
+
+void GranularProcessor::setSos(float amount01)
+{
+    sos_ = std::clamp(amount01, 0.0f, 1.0f);
+}
+
+void GranularProcessor::setPlaybackDirection(bool reverse)
+{
+    reverse_ = reverse;
+}
+
+void GranularProcessor::setSeed(uint32_t seed)
+{
+    if (seed == seed_)
+        return;
+    seed_ = seed;
+    rngState_ = seed_ != 0u ? seed_ : kZeroSeedState;
 }
 
 int GranularProcessor::activeGrainCount() const
@@ -196,8 +232,33 @@ void GranularProcessor::trySpawnGrain()
     slot->active   = true;
     slot->readPos  = readPos;
     slot->pitch    = pitch;
+    slot->step     = reverse_ ? -pitch : pitch;
     slot->envPhase = 0.0f;
     slot->envInc   = 1.0f / grainSamples;
+
+    // The read point closes on the seam at pitch samples per sample, plus one
+    // while the head runs against it, so the fade spans that many samples per
+    // unit of time and lasts the same at any speed.
+    const bool  headHeld = frozen_ || sos_ >= 1.0f;
+    const float closingSpeed = headHeld ? pitch : pitch + 1.0f;
+    const float seamFade = std::clamp(kSeamFadeSeconds * sampleRate_ * closingSpeed,
+                                      1.0f, bs * 0.25f);
+    slot->seamFadeInv = 1.0f / seamFade;
+}
+
+float GranularProcessor::reverseSeamGain(const Grain& g) const
+{
+    // The seam lies between buffer_[writePos_ - 1] (newest) and
+    // buffer_[writePos_] (oldest).  `ahead` is how far the read point sits
+    // past the oldest sample; the two-point read straddles the seam once
+    // `ahead` exceeds bufferSize - 1, where the distance below goes negative.
+    const float bs = static_cast<float>(bufferSize_);
+    float ahead = g.readPos - static_cast<float>(writePos_);
+    if (ahead < 0.0f) ahead += bs;
+    const float t = std::min(ahead, bs - 1.0f - ahead) * g.seamFadeInv;
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+    return t * t * (3.0f - 2.0f * t);
 }
 
 float GranularProcessor::renderGrain(Grain& g) const
@@ -221,7 +282,7 @@ float GranularProcessor::renderGrain(Grain& g) const
     const float env = 0.5f - 0.5f * std::cos(kTwoPi * g.envPhase);
 
     // Advance read pointer (varispeed) and envelope.
-    g.readPos += g.pitch;
+    g.readPos += g.step;
     // Wrap read pos into [0, bufferSize_).  std::floor on the quotient
     // gives the correct positive remainder for both positive and negative
     // readPos.  The two trailing single-step adjustments guard against
@@ -265,12 +326,23 @@ float GranularProcessor::process()
             spawnTimer_ = 1.0f / grainRate_;
     }
 
-    // Sum active grains.
+    // Sum active grains.  The reverse branch stays out of renderGrain():
+    // inside it, the forward path measured about 20% slower.
     float sum = 0.0f;
     for (auto& g : grains_)
     {
         if (g.active)
-            sum += renderGrain(g);
+        {
+            if (g.step < 0.0f)
+            {
+                const float seamGain = reverseSeamGain(g);
+                sum += renderGrain(g) * seamGain;
+            }
+            else
+            {
+                sum += renderGrain(g);
+            }
+        }
     }
 
     // Gain compensation — see test_GranularProcessor.cpp threshold
