@@ -394,7 +394,7 @@ static std::string prompt()
 
 int main()
 {
-    constexpr float kSampleRate = 44100.0f;
+    constexpr float kSampleRate = ideath::repl::kReplSampleRate;
 
     g_tracks.prepare(kSampleRate);
 

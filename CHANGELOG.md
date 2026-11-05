@@ -7,7 +7,30 @@ The format is based on Keep a Changelog, adapted for the project's current stage
 
 ## [Unreleased]
 
+### Changed
+
+- `BowedString` rebuilt as a two-segment waveguide (bow splits the string into
+  bridge and nut segments, Smith / STK bowed-string layout) with a bow-table
+  junction. The old single loop applied the friction map once per period and
+  period-doubled: at the pressures where it began to speak ≈ 100 % of the
+  energy sat on (n+½)·f0 (an octave low), and it went chaotic above them. The
+  new model sounds f0 in Helmholtz motion. Public setters unchanged; semantics:
+  pressure is now bow force relative to bow speed, position is the bow's
+  distance from the bridge (clamped to 0.02-0.45, was 0.02-0.5), damping maps
+  to a 10 s → 1 s ring-out (was 10 s → 0.1 s) plus a bridge low-pass.
+  Output ceiling ±3.0 (was ±2.0). `kFrictionK` / `kFrictionScale` removed;
+  `setBowVelocity(0)` with pressure no longer self-excites
+- `KarplusStrong` tuning: the line delay is one period minus the in-loop
+  low-pass's phase delay at f0, recomputed on pitch and damping changes. The
+  loop was a whole LP phase delay too long and rang flat (−10 c at C4 /
+  −38 c at C6 with damping 0.5)
+
 ### Added
+
+- `BowedString::minimumPressure()` (and a static overload taking sample rate,
+  frequency, position, damping) — the Schelleng minimum pressure, from the
+  linearised loop's characteristic equation
+- `KarplusStrong::getLineDelaySamples()`
 
 - `GranularProcessor` additions, all bit-identical to the previous behaviour
   at their defaults: `setSos(amount)` overdubs instead of overwriting (1 keeps
@@ -39,19 +62,14 @@ The format is based on Keep a Changelog, adapted for the project's current stage
   per-partial modulation. Partials above `sampleRate × 0.45` are
   silently muted to prevent aliasing fold. Phase init is deterministic
   via a fixed xorshift32 seed so renders are bit-exact reproducible
-- `BowedString` — Friction-driven physical model: continuous-excitation
-  sibling of `KarplusStrong`. Single waveguide delay loop with an
-  analytical slip-stick friction curve
-  `f = pressure × scale × v_rel × exp(-k|v_rel|)` (peak normalised
-  to 1.0 so the friction reaches the negative-slope regime that drives
-  self-oscillation), `tanh` saturator on the loop input, one-pole LP
-  in the feedback path. Bow position implemented as a second tap into
-  the same delay loop (output = `mainTap − pickupTap`) giving the
-  pickup-position comb: `position=0.5` notches even harmonics,
-  `position → 0.02` pushes notches above the audio band. `Damping`
-  interpolates loop decay between 10 s (drone) and 0.1 s (snappy) at
-  fixed compensation against LP magnitude loss at the fundamental,
-  same closed-form mapping as `KarplusStrong::setDecay`
+- `BowedString` — Bowed-string physical model: continuous-excitation
+  sibling of `KarplusStrong`. Two-segment digital waveguide split at the
+  bow (bridge segment ending in −g·LP, nut segment ending in −1, loop tuned
+  to one period) with Smith's bow-table junction, so the string moves in
+  Helmholtz motion at f0. Pressure (relative to bow speed), position
+  (0.02-0.45 from the bridge), damping (ring-out 10 s → 1 s, darker bridge),
+  bow velocity, and `minimumPressure()` for the Schelleng threshold (see
+  Changed above for the rebuild from the first single-loop version)
 - `LowPassGate` — Buchla 292-style vactrol Low-Pass Gate. Single
   `trigger(velocity)` fires a ~1 ms exponential attack + a damping-
   controlled exponential fall (80 ms ↔ 600 ms log-linear) that drives

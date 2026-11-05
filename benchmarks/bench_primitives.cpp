@@ -871,11 +871,10 @@ TEST_CASE("Bench: LowPassGateVoice", "[bench]")
 
 TEST_CASE("Bench: BowedString", "[bench]")
 {
-    // Slothrop Bow engine steady-state config: bow held at the friction
-    // peak velocity, moderate pressure and damping, mid-bridge pickup.
-    // The inner loop is two DelayLine reads + one std::exp + one std::tanh
-    // per sample plus the LP filter — comparable workload to KS plus the
-    // friction nonlinearity.
+    // Slothrop Bow engine steady-state config: bow held on, moderate
+    // pressure and damping.  The inner loop is two buffer reads (one
+    // linearly interpolated), the bridge low-pass, the bow table (one
+    // divide, no transcendental) and the bow-speed smoother.
     ideath::BowedString b;
     b.prepare(kSR);
     b.setFrequency(220.0f);

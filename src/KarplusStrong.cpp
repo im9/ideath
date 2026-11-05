@@ -7,6 +7,7 @@ namespace ideath {
 
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+constexpr double kPiD = 3.14159265358979323846;
 } // namespace
 
 void KarplusStrong::prepare(float sampleRate)
@@ -43,35 +44,33 @@ void KarplusStrong::setFrequency(float hz)
     // Nyquist (0.45 × sr) so the delay length stays >> 1 sample and linear
     // interpolation is meaningful.
     const float maxFreq = sampleRate_ * 0.45f;
-    frequency_ = std::clamp(hz, kMinFreq, maxFreq);
+    const float clamped = std::clamp(hz, kMinFreq, maxFreq);
+    // Hosts call the setters per sample under modulation; an unchanged value
+    // skips the trig in recomputeLoopDelay / recomputeLoopGain.
+    if (clamped == frequency_ && sampleRate_ / frequency_ == delaySamples_)
+        return;
+    frequency_ = clamped;
     delaySamples_ = sampleRate_ / frequency_;
-    // DelayLine's setDelay takes seconds; converting via 1/frequency keeps
-    // the fractional delay (linear interp) intact for in-tune playback.
-    line_.setDelay(1.0f / frequency_);
+    recomputeLoopDelay();
     recomputeLoopGain();
-
-    // If a pluck is in flight, re-clamp the remaining burst to the new
-    // delay length. pluck() clamps burst ≤ delaySamples_ - 1 against the
-    // delay at pluck time; without this re-clamp, raising the pitch
-    // (shrinking D) mid-pluck would leave the burst longer than the new
-    // delay, causing the burst to overlap itself in the line and push the
-    // output past the ±1 nominal bound.
-    if (exciterRemaining_ > 0)
-    {
-        const int maxBurst = std::max(1, static_cast<int>(delaySamples_) - 1);
-        exciterRemaining_  = std::min(exciterRemaining_, maxBurst);
-    }
 }
 
 void KarplusStrong::setDecay(float seconds)
 {
-    decaySeconds_ = std::clamp(seconds, kMinDecay, kMaxDecay);
+    const float clamped = std::clamp(seconds, kMinDecay, kMaxDecay);
+    if (clamped == decaySeconds_)
+        return;
+    decaySeconds_ = clamped;
     recomputeLoopGain();
 }
 
 void KarplusStrong::setDamping(float amount)
 {
-    damping_ = std::clamp(amount, 0.0f, 1.0f);
+    const float clamped = std::clamp(amount, 0.0f, 1.0f);
+    if (clamped == damping_)
+        return;
+    damping_ = clamped;
+    recomputeLoopDelay();
     recomputeLoopGain();
 }
 
@@ -82,7 +81,7 @@ void KarplusStrong::setExciter(float amount)
 
 void KarplusStrong::pluck()
 {
-    // Burst length in samples. Clamp to (delaySamples_ - 1) so the burst
+    // Burst length in samples. Clamp to (line delay - 1) so the burst
     // window never overlaps itself: each delay-line slot is written at most
     // once per pluck. Without this clamp, at f0 > 1/kExciterSec ≈ 1 kHz the
     // wavelength is shorter than the 1 ms burst, and the burst would
@@ -95,8 +94,56 @@ void KarplusStrong::pluck()
     // to inject broadband noise covering the loop's first traversal, which is
     // the only purpose of the burst.
     const int wanted   = static_cast<int>(kExciterSec * sampleRate_);
-    const int maxBurst = std::max(1, static_cast<int>(delaySamples_) - 1);
+    const int maxBurst = std::max(1, static_cast<int>(lineDelaySamples_) - 1);
     exciterRemaining_  = std::max(1, std::min(wanted, maxBurst));
+}
+
+void KarplusStrong::recomputeLoopDelay()
+{
+    // The loop is: delay line (linear-interpolated read) → one-pole LP →
+    // back into the line. Reading before writing in process() adds no
+    // extra sample, so the loop delay at the fundamental is
+    //
+    //   lineDelay + τ_LP(ω0) = one period P = sr / f0,
+    //
+    // where τ_LP(ω) = atan(d·sin ω / (1 − d·cos ω)) / ω is the one-pole's
+    // phase delay. A line delay of exactly P would leave the loop
+    // τ_LP samples too long and the string rings flat — by up to ~50 cents
+    // at C6 with damping 0.5.
+    //
+    // The fractional part of the line delay goes through linear
+    // interpolation, whose phase delay at ω0 is not the fraction itself
+    // but atan(f·sin ω / (1 − f + f·cos ω)) / ω. Solving that for the
+    // fraction f that gives the remaining phase θ = ω0·(L − Dint) exactly:
+    //
+    //   f = sin θ / (sin(ω0 − θ) + sin θ),   0 ≤ θ < ω0 < π.
+    //
+    // The line delay in samples is Dint + f. τ_LP < P/4 for every d in
+    // [0, 1] (at d = 1 it is (π − ω0) / (2ω0)), so L = P − τ_LP stays above
+    // 1.5π/ω0 > 1 sample across the whole clamped pitch range, and the
+    // line never has to be shorter than the one sample DelayLine needs.
+    const double w  = 2.0 * kPiD * static_cast<double>(frequency_)
+                    / static_cast<double>(sampleRate_);
+    const double d  = static_cast<double>(damping_);
+    const double tauLp = std::atan2(d * std::sin(w), 1.0 - d * std::cos(w)) / w;
+    const double L     = std::max(1.0, static_cast<double>(delaySamples_) - tauLp);
+    const double whole = std::floor(L);
+    const double theta = w * (L - whole);
+    const double frac  = std::sin(theta) / (std::sin(w - theta) + std::sin(theta));
+    lineDelaySamples_  = static_cast<float>(whole + frac);
+    lineFrac_          = static_cast<float>(frac);
+    line_.setDelay(lineDelaySamples_ / sampleRate_);
+
+    // A shorter line (higher pitch or more damping) can leave a pluck in
+    // flight with more burst to write than the line holds. pluck() clamps
+    // the burst to (line − 1) at pluck time; re-clamp here so the burst
+    // never overlaps itself in the line, which would push the output past
+    // the ±1 nominal bound.
+    if (exciterRemaining_ > 0)
+    {
+        const int maxBurst = std::max(1, static_cast<int>(lineDelaySamples_) - 1);
+        exciterRemaining_  = std::min(exciterRemaining_, maxBurst);
+    }
 }
 
 float KarplusStrong::filterMagnitudeAtPitch() const
@@ -129,10 +176,17 @@ void KarplusStrong::recomputeLoopGain()
     //   g_raw^cycles = 10^(-3)  →  g_raw = 10^(-3 / cycles).
     const float gRaw = std::pow(10.0f, -3.0f / cycles);
 
-    // Compensate for the in-loop filter's magnitude loss at the fundamental.
-    // Without this, more damping silently shortens the decay; the spec calls
-    // out this compensation as required behaviour.
-    const float H = filterMagnitudeAtPitch();
+    // Compensate for the in-loop filter's magnitude loss at the fundamental,
+    // and for the linear interpolator's (|1 − f + f·e^−jω0| < 1 for a
+    // fractional line; the fraction depends on damping since the line is
+    // shortened by the LP's phase delay). Without this, more damping — or a
+    // fraction near ½ at high pitch — silently shortens the decay; the spec
+    // calls out this compensation as required behaviour.
+    const float omega = 2.0f * kPi * frequency_ / sampleRate_;
+    const float a = lineFrac_;
+    const float interpMag = std::sqrt((1.0f - a) * (1.0f - a) + a * a
+                                      + 2.0f * a * (1.0f - a) * std::cos(omega));
+    const float H = filterMagnitudeAtPitch() * interpMag;
     const float g = (H > 1e-6f) ? (gRaw / H) : kMaxLoopGain;
 
     // Hard ceiling. A sufficiently long decay + heavy damping combination

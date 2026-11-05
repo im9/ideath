@@ -526,9 +526,9 @@ std::pair<float, float> AudioEngine::process()
             break;
 
         case SourceType::Bowed:
-            // setFrequency short-circuits on no-op; recompute hits both
-            // delay-line lengths and the loopGain when pitch actually
-            // moves.  Pressure / position / damping are block-rate.
+            // setFrequency short-circuits on no-op; a real pitch change
+            // recomputes both segment lengths, the nut fraction and the
+            // bridge gain.  Pressure / position / damping are block-rate.
             bowed_.setFrequency(freq);
             sample = bowed_.process();
             break;

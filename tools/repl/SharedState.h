@@ -14,6 +14,9 @@ namespace ideath { namespace repl {
 
 static constexpr int kMaxSeqSteps = 64;
 
+/// The REPL engine runs at a fixed rate (main.cpp opens the device at it).
+inline constexpr float kReplSampleRate = 44100.0f;
+
 enum class SourceType { Oscillator, Wavetable, Noise, FM, Unison, KarplusStrong, Modal, Harmonic, Bowed, Ping, MultiShape, DXFM, None };
 enum class OscWaveform { Saw, Square };
 enum class WtShape { Square, Saw, Triangle, Sine };
@@ -192,19 +195,16 @@ struct VoiceParams
     float harmonicHigh     = 0.25f;
     float harmonicShape    = 0.0f;
 
-    // BowedString (friction-driven physical model, Bow engine).  Fundamental
-    // tracks `frequency`; the bow is held on at a fixed mid-curve velocity
-    // (0.3, matching the friction-curve operating regime) whenever a note
-    // is active, and released to 0 on note-off.  Pressure / Position /
-    // Damping match the slothrop 3-knob Bow UI.
+    // BowedString (two-segment waveguide + bow table, Bow engine).
+    // Fundamental tracks `frequency`; the bow is held on at `bowedVelocity`
+    // whenever a note is active and released to 0 on note-off.  Pressure /
+    // Position / Damping match the slothrop 3-knob Bow UI.
     float bowedPressure = 0.6f;
     float bowedPosition = 0.1f;
     float bowedDamping  = 0.2f;
-    /// Bow velocity used while a note is active.  Tuned to the friction
-    /// peak v_rel = 1/kFrictionK = 0.2 plus a small overhead so the loop
-    /// sits in the negative-slope (slip) regime where self-oscillation
-    /// lives.  Below 0.1 the model goes quiet; above ~0.5 it saturates
-    /// into a duller tone.
+    /// Bow velocity used while a note is active.  Pressure is relative to
+    /// bow speed (BowedString's stick width scales with |v|), so the speed
+    /// only sets the level; 0.3 leaves headroom under the master limiter.
     float bowedVelocity = 0.3f;
 
     // LowPassGateVoice (Buchla 292-style LPG + saw/square morph carrier,
