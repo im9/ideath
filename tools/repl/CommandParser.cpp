@@ -69,8 +69,10 @@ ideath REPL commands:
   bowed <fund> [pressure] [position] [damping]
                                 Bowed-string physical model (continuous-
                                 excitation, sibling of pluck). fund Hz,
-                                pressure 0-1, position 0.02-0.5 (pickup),
-                                damping 0-1 (sustain at 0 = 10s, at 1 = 0.1s).
+                                pressure 0-1 (relative to bow speed; prints
+                                the minimum that speaks), position 0.02-0.45
+                                (bow distance from the bridge), damping 0-1
+                                (ring-out 10 s at 0, 1 s at 1; darker).
                                 Bow engages on note-on, releases on note-off.
   ping <fund> [tone] [damping] [brightness]
                                 West Coast Low-Pass Gate (Buchla 292-style)
@@ -1273,7 +1275,7 @@ bool parseCommand(const std::string& line, SharedState& shared)
     if (cmd == "bowed")
     {
         // bowed <fund> [pressure] [position] [damping]
-        // Friction-driven bowed-string source.  Pitch tracks `frequency`;
+        // Bowed-string source (two-segment waveguide).  Pitch tracks `frequency`;
         // pressure / position / damping match the slothrop 3-knob Bow UI.
         // Bow velocity is gated by note-on / note-off in the audio engine
         // (set to bowedVelocity on note-on, back to 0 on note-off).
@@ -1287,10 +1289,21 @@ bool parseCommand(const std::string& line, SharedState& shared)
         if (tokens.size() > 4)
             shared.staging.bowedDamping = parseFloat(tokens[4], 0.2f);
         shared.paramsReady.store(true, std::memory_order_release);
+        // Schelleng threshold for these settings at the engine's rate:
+        // below it the bow slides without sustaining the string.  Computed
+        // at <fund>; a note at another pitch has its own threshold.
+        // Position is shown clamped, as the engine applies it.
+        const float minPressure = BowedString::minimumPressure(
+            kReplSampleRate, shared.staging.frequency,
+            shared.staging.bowedPosition, shared.staging.bowedDamping);
         std::cout << "Bowed: fund=" << shared.staging.frequency
                   << " pressure=" << shared.staging.bowedPressure
-                  << " position=" << shared.staging.bowedPosition
+                  << " position=" << std::clamp(shared.staging.bowedPosition,
+                                                BowedString::kMinPosition,
+                                                BowedString::kMaxPosition)
                   << " damping="  << shared.staging.bowedDamping
+                  << " (at " << shared.staging.frequency
+                  << " Hz speaks above pressure " << minPressure << ")"
                   << std::endl;
         return true;
     }

@@ -1,70 +1,62 @@
 #pragma once
 
-#include <ideath/DelayLine.h>
+#include <vector>
 
 namespace ideath {
 
 /// Bowed-string physical model — friction-driven sibling of `KarplusStrong`.
 ///
-/// A single waveguide-style delay loop of length `D = sampleRate / freq`
-/// circulates the string velocity wave; an analytical slip-stick friction
-/// curve injects energy each sample based on the relative velocity between
-/// an external "bow" and the string's current velocity at the bow position.
-/// A one-pole LP in the feedback path controls timbre and post-bow decay;
-/// a `tanh()` saturator on the loop input keeps the recursion strictly
-/// bounded even under heavy bow pressure.
+/// Two-segment digital waveguide (Smith's bowed string; the same layout as
+/// STK's `Bowed`).  The bow sits at fraction β = position of the string
+/// length from the bridge and splits the string into
 ///
-/// Friction law:
+///   bridge segment: round trip β·L samples, ends in the bridge reflection
+///                   −g·LP(z) (inverting, lossy, low-passed)
+///   nut segment:    round trip (1 − β)·L samples, ends in the nut
+///                   reflection −1 (inverting, lossless)
 ///
-///     v_rel = bowVelocity - v_string
-///     f     = pressure × scale × v_rel × exp(-k × |v_rel|)
+/// where L = one period minus the bridge low-pass's phase delay at the
+/// fundamental, so the whole loop — both segments plus the filter — is
+/// exactly one period long (the two inversions cancel).  This is what makes
+/// Helmholtz motion possible: a single corner circulates the string, the
+/// bow sticks for (1 − β) of the period and slips for β of it, and the
+/// motion repeats once per loop.  A single delay loop with the friction
+/// map applied once per period (the previous model) has no such structure;
+/// it period-doubles to f0/2 as soon as the map's slope passes −1.
 ///
-/// where `k = kFrictionK` is fixed and `scale = e × k` (= `kFrictionScale`)
-/// normalises the curve so the peak force is exactly 1.0 at `pressure = 1`.
-/// This is the user-spec'd analytical approximation of the bowed-string
-/// slip-stick curve: peak force at `|v_rel| = 1/k` (the "transition
-/// velocity") and exponential roll-off on either side.  Captures the
-/// qualitative slip-stick character (peaked friction at small relative
-/// velocity, negative-slope on the slip side which is what drives the
-/// loop's self-oscillation) without a tabulated friction lookup.  Strict
-/// slip-stick hysteresis is a v2 nicety.
+/// Bow–string junction.  The two waves arriving at the bow point sum to
+/// the string velocity the bow would see if it were not there,
+/// v_h = v_from_nut + v_from_bridge.  With Δ = v_bow − v_h the bow adds the
+/// same velocity Δ_out = φ(Δ) to both outgoing waves:
 ///
-/// **Known v1 quirk — stuck-bow self-excitation.**  With `bowVelocity = 0`
-/// and `pressure > 0` the friction term linearises to `f ≈ -scale × v_string`
-/// (since `v_rel = -v_string`), which combined with the contractive loop
-/// gain ≈ 0.999 gives a small-signal loop gain of magnitude `scale - 0.999
-/// ≈ 12.6` — positive feedback.  The loop self-excites from any denormal
-/// residue and tanh-saturates at a steady ±1 amplitude.  A real bowed
-/// string under a stuck (non-moving) bow would damp via static friction;
-/// the 1-port analytical curve has no static-friction regime, so this is
-/// a documented limitation.  Use `setPressure(0)` to silence the model
-/// rather than relying on `setBowVelocity(0)`.  A tabulated friction LUT
-/// (v2) would fix it.
+///   φ(Δ) = Δ · min(1, (|Δ| / w + 0.75)^−4),   w = pressure · kStickWidth · |v_bow|
 ///
-/// Bow position is implemented as a second tap into the same delay loop:
+/// (Smith's bow table; the STK curve).  For |Δ| ≤ w/4 the reflection is 1:
+/// the string is carried at exactly the bow velocity (stick).  Beyond it
+/// the coupling falls off steeply (slip).  w — how far the string may be
+/// pulled away from the bow speed before it breaks free — scales with the
+/// bow speed, so `pressure` is bow force relative to bow speed: the motion
+/// is the same at every speed, only its amplitude scales with |v_bow|.
+/// Bow speed 0 means no coupling at all (the string rings freely).
 ///
-///     output = mainTap[n - D] - pickupTap[n - position × D]
+/// Minimum pressure (Schelleng).  Below a pressure threshold the bow just
+/// slides: the string settles into a static deflection and any attack
+/// transient dies away at the string's own decay rate.  Above it the
+/// sliding state is unstable and Helmholtz motion builds up.  The threshold
+/// follows from linearising φ about the sliding state and finding where a
+/// root of the loop's characteristic equation leaves the unit circle;
+/// `minimumPressure()` computes it.  It depends on pitch, position and
+/// damping, not on the bow speed (scale invariance above).
 ///
-/// i.e. a comb filter at the OUTPUT stage.  Comb response at the n-th
-/// harmonic for a pickup fraction p:  `|H(n)| = 2 |sin(π × n × p)|`.
-/// So at `position = 0.5` even harmonics are notched (sul ponticello-like
-/// emphasis on odd content); at `position → 0` the comb's notches are
-/// pushed above the audio band (no spectral coloring, mellow sul tasto).
-/// This is not a 2-port waveguide model (the bow excites the whole
-/// loop, not a chosen point on the string) — it's a 1-port loop plus a
-/// pickup-position comb on the output, which captures 90% of the position
-/// timbre at < 2× the CPU.
+/// Output is the velocity wave arriving at the bridge — proportional to
+/// the transverse force on the bridge, the signal a real instrument body
+/// radiates — times `kOutputGain`.  It is mono and scales with |v_bow|.
 ///
-/// Output is mono.  Worst-case bound: each tap saturates inside `tanh()` to
-/// `[-1, 1]`, so `mainTap - pickupTap` is bounded to `[-2, 2]` by triangle
-/// inequality.  Documented as `±2.0` in CLAUDE.md's output-levels table.
-/// The plugin layer's PeakLimiter handles the final ceiling.
-///
-/// Real-time safe: two `DelayLine` instances allocate only inside
-/// `prepare()`; `process()` does no allocation, no exceptions, and the
-/// only library calls are `std::exp` and `std::tanh` (single-cycle on any
-/// modern CPU).  Denormal protection rides on `DelayLine`'s `+1e-25f` DC
-/// injection.
+/// Real-time safe: the two delay buffers allocate only inside `prepare()`;
+/// `process()` allocates nothing, throws nothing, takes no locks.  Every
+/// buffer write and the low-pass state carry the library's +1e-25 DC
+/// offset against denormals; the bow-speed smoother flushes to its target
+/// once within 1e-9.
 class BowedString
 {
 public:
@@ -73,99 +65,141 @@ public:
     /// Allocate the delay buffers (sized for the lowest supported pitch).
     void prepare(float sampleRate);
 
-    /// Zero both delay lines and the LP-filter memory.  Bit-exact
-    /// reproducibility under identical parameter streams.
+    /// Zero both delay lines, the low-pass memory and the bow-speed
+    /// smoother.  Bit-exact reproducibility under identical parameter
+    /// streams.
     void reset();
 
     /// Set the pitch (Hz).  Clamped to `[kMinFreq, sampleRate × 0.45]`.
-    /// Resizes both delay-line read pointers; the loop's spectral content
-    /// shifts at the next sample.
     void setFrequency(float hz);
 
-    /// Set the external bow velocity.  Clamped to `[-1, 1]`.
-    /// 0 = bow not moving (loop decays under LP damping); ±1 = full-velocity
-    /// drag.  Sign carries up-bow vs down-bow direction; phase of the
-    /// circulating wave inverts with sign, but timbre and amplitude are
-    /// invariant to it.
+    /// Bow velocity, clamped to `[-1, 1]`.  The sign is the bow direction
+    /// (timbre is the same either way); the magnitude scales the output.
+    /// The model follows changes through a one-pole smoother with time
+    /// constant `kBowSmoothingSec`, so a bow placed on the string at speed
+    /// does not start with a step (no click, no attack kick).
     void setBowVelocity(float v);
 
-    /// Bow pressure / friction-force scale.  Clamped to `[0, 1]`.
-    /// 0 = bow not touching the string → no friction → loop decays;
-    /// 1 = full pressure → maximum friction-force amplitude (analytically
-    /// capped at `1 / (kFrictionK × e)` per sample by the curve shape).
+    /// Bow pressure relative to bow speed, clamped to `[0, 1]`.  Below
+    /// `minimumPressure()` the bow slides without sustaining the string.
     void setPressure(float p);
 
-    /// Bow / pickup position as a fraction of the string length.  Clamped
-    /// to `[kMinPosition, kMaxPosition]`.  Controls the comb filter on the
-    /// output (see class comment).  `0.5` = mid-string (even harmonics
-    /// notched), `→ kMinPosition` = near the bridge (comb notches pushed
-    /// above the audio band).
+    /// Bow position as a fraction of the string length measured from the
+    /// bridge.  Clamped to `[kMinPosition, kMaxPosition]`.  Near the bridge
+    /// (small values) the tone is bright and needs more pressure to speak;
+    /// toward the middle it is softer.
     void setPosition(float p);
 
-    /// Per-loop low-pass damping in `[0, 1]`.  Same shape as
-    /// `KarplusStrong::setDamping`: `y[n] = (1-d) × x[n] + d × y[n-1]`.
-    /// Higher damping → more HF loss per loop iteration → shorter decay
-    /// after the bow disengages.  The loop gain compensates for the LP's
-    /// magnitude loss at the fundamental so the steady-state ring length
-    /// follows damping monotonically without a separate decay-seconds knob.
+    /// Damping in `[0, 1]`.  Sets the decay after the bow lets go, from
+    /// `kMaxDecaySec` (0) to `kMinDecaySec` (1), and the bridge low-pass
+    /// `y = (1 − c)·x + c·y[n−1]` with c = kMaxBridgeLowpass × damping
+    /// (more damping → darker).  The loop gain compensates the low-pass's
+    /// and the interpolator's loss at the fundamental so the decay time is
+    /// what damping asks for, up to the kMaxLoopGain ceiling (it binds at
+    /// high pitch with long decays, above ≈ 1.4 kHz at damping 0).
     void setDamping(float d);
 
     /// Produce one output sample.
     float process();
 
+    /// Schelleng minimum pressure for the current pitch, position and
+    /// damping (see the class comment).  Below it the string does not
+    /// speak; above it, it does.  Returns +infinity when no pressure
+    /// in the model can destabilise the sliding state (only above ≈ 12 kHz
+    /// at 44.1 kHz; up to there the threshold stays in 0.017-0.43).
+    /// Independent of the bow speed.  Costs ≈ 25-60 µs (M2 Max) — call it
+    /// when a parameter changes, not per sample or per block.
+    float minimumPressure() const;
+
+    /// The same threshold for explicit parameters (values are clamped as
+    /// the setters clamp them).
+    static float minimumPressure(float sampleRate, float frequency,
+                                 float position, float damping);
+
     // ---- spec constants --------------------------------------------------
 
     static constexpr float kMinFreq = 30.0f;
 
-    /// Minimum pickup-position fraction.  Below this, the second tap
-    /// collapses onto the main tap and the comb output goes silent
-    /// (mainTap − pickupTap ≈ 0).  0.02 keeps both taps at least a few
-    /// fractional samples apart at any supported pitch.
+    /// Closest bow position to the bridge, as a fraction of the string.
     static constexpr float kMinPosition = 0.02f;
-    /// Maximum pickup-position fraction.  Symmetric reflection at 0.5
-    /// (positions p and 1−p produce the same comb), so capping at 0.5
-    /// covers the full unique-timbre range.
-    static constexpr float kMaxPosition = 0.5f;
+    /// The bridge segment is never shorter than this many samples (round
+    /// trip), except at the very top of the pitch range (above ≈ 14.5 kHz,
+    /// where the loop is under 3 samples and the nut segment keeps 1).  With a one-sample bridge segment the bow position is
+    /// quantised to the sample grid and the motion beats (partials 1-3
+    /// spread over ±25 cents at C6, β = 0.02); two samples keep it periodic.
+    /// Binds once β·L rounds below 2, i.e. above f = β · sr / 1.5 (≈ 590 Hz
+    /// at 44.1 kHz for the bridge-most β = 0.02): there the bow sits a
+    /// 2-sample round trip from the bridge.
+    static constexpr int kMinBridgeSamples = 2;
+    /// Furthest bow position from the bridge.  At exactly mid-string the
+    /// two segments are equal, every even mode has a node under the bow and
+    /// the motion alternates between two different periods (≈ 10 % of the
+    /// energy lands on (n + ½)·f0).  0.45 keeps the segments distinct.
+    static constexpr float kMaxPosition = 0.45f;
 
-    /// Friction-curve sharpness.  Peak force at `|v_rel| = 1/k`.
-    /// `k = 5` puts the peak at `|v_rel| = 0.2`, near the middle of the
-    /// musically interesting bow-velocity range, so the friction nonlinearity
-    /// is engaged across typical performance dynamics.
-    static constexpr float kFrictionK = 5.0f;
+    /// Stick width per unit pressure and bow speed: w = p · kStickWidth · |v|.
+    /// The string sticks while it is within w/4 of the bow speed, so at
+    /// p = 1 the bow can hold the string against a velocity difference of
+    /// 1.5 × the bow speed, and the Schelleng threshold lands between
+    /// p ≈ 0.02 and p ≈ 0.15 over the clamped position / damping ranges
+    /// from 30 Hz to C6 (up to 0.43 at the top of the pitch range).
+    static constexpr float kStickWidth = 6.0f;
 
-    /// Normalising factor so the friction curve peaks at exactly 1.0 at
-    /// `pressure = 1`.  Derived analytically: the curve `v × exp(-k|v|)`
-    /// peaks at `v = 1/k` with value `1 / (k × e)`, so multiplying by
-    /// `k × e` lifts the peak to 1.  Without this normalisation, the raw
-    /// curve peaks at ≈ 0.074 for k=5 — far too weak to drive the loop
-    /// into the negative-slope (slip) regime where self-oscillation lives.
-    static constexpr float kFrictionScale = 13.59140914229522f; // e × kFrictionK
+    /// Bridge low-pass coefficient at damping = 1 (−3 dB at ≈ 8.2 kHz at
+    /// 44.1 kHz).  The low-pass rounds the Helmholtz corner, and a rounded
+    /// corner trips the slip early, so the period shortens as the pressure
+    /// rises; at 0.5 that reaches +13 cents at C6, at 0.35 it stays inside
+    /// ±10 cents over the whole pressure range.
+    static constexpr float kMaxBridgeLowpass = 0.35f;
 
-    /// Hard ceiling on the loop's contractive base gain.  Keeps the
-    /// recursion strictly bounded even before the `tanh()` saturator.
+    /// Hard ceiling on the bridge reflection gain (always < 1).
     static constexpr float kMaxLoopGain = 0.9995f;
 
-    /// Decay time at minimum damping — very long sustain ("drone" use case).
+    /// Decay time (−60 dB) after the bow lets go, at damping 0 and 1.
     static constexpr float kMaxDecaySec = 10.0f;
-    /// Decay time at maximum damping — snappy / quickly-fading bow gesture.
-    static constexpr float kMinDecaySec = 0.1f;
+    /// 1 s rather than shorter: with a loop that loses more than −60 dB
+    /// per second the bow only just sustains it, and just above the
+    /// threshold the string falls into a near-sinusoidal regime whose
+    /// upper partials are 40 dB down and wander in pitch.
+    static constexpr float kMinDecaySec = 1.0f;
+
+    /// Bow-speed smoothing time constant.  5 ms is short against any bow
+    /// gesture and long against one period of every supported pitch.
+    static constexpr float kBowSmoothingSec = 0.005f;
+
+    /// Output scale applied to the bridge wave.
+    static constexpr float kOutputGain = 0.25f;
 
 private:
-    void recomputeLoopGain();
-    void recomputeDelays();
-    float filterMagnitudeAtPitch() const;
+    struct Loop
+    {
+        int   bridgeDelay = 1;     // integer samples
+        int   nutDelayInt = 1;     // integer part of the nut-segment delay
+        float nutDelayFrac = 0.0f; // linear-interpolation fraction
+        float lowpass = 0.0f;      // bridge low-pass coefficient c
+        float loopGain = 0.99f;    // bridge reflection gain g
+    };
+
+    static Loop computeLoop(float sampleRate, float frequency,
+                            float position, float damping);
+    void recomputeLoop();
 
     float sampleRate_   = 44100.0f;
     float frequency_    = 220.0f;
     float bowVelocity_  = 0.0f;
+    float bowSmoothed_  = 0.0f;
+    float bowCoef_      = 0.0f;
     float pressure_     = 0.5f;
     float position_     = 0.1f;
     float damping_      = 0.2f;
 
-    DelayLine mainTap_;
-    DelayLine pickupTap_;
-    float     filterState_ = 0.0f;
-    float     loopGain_    = 0.99f;
+    Loop loop_;
+
+    std::vector<float> bridgeBuf_;
+    std::vector<float> nutBuf_;
+    int   mask_       = 0;
+    int   writePos_   = 0;
+    float lpState_    = 0.0f;
 };
 
 } // namespace ideath

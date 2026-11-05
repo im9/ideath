@@ -55,12 +55,12 @@ than comparing cross-host.
 | TapeDelay::process ¹               |                  — |  17.5–18.2 |
 | TapeDelay::processStereo (ping-pong, diffusion) ² | 30.313 µs |  59.20 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
-| KarplusStrong::process             |           2.636 µs |        5.15 |
+| KarplusStrong::process             |           2.685 µs |        5.24 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
 | ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
 | HarmonicOscillator::process (8 part.)  |      12.156 µs |       23.74 |
 | HarmonicOscillator::process (32 part.) |     115.658 µs |      225.89 |
-| BowedString::process (steady bow)  |           8.654 µs |       16.90 |
+| BowedString::process (steady bow)  |           3.772 µs |        7.37 |
 | LowPassGate::process (Decay)       |           2.246 µs |        4.39 |
 | LowPassGateVoice::process (Decay)  |           2.946 µs |        5.75 |
 | GranularProcessor::process         |          22.825 µs |       44.58 |
@@ -108,13 +108,16 @@ than comparing cross-host.
   not algorithmic. A sine LUT / polynomial approx is the obvious future
   optimisation (per the SIMD candidates list in `CLAUDE.md`); not landed
   in v1 to keep the implementation auditable.
-- `BowedString` measured 2026-06-12 on the same Apple M2 Max host.
-  Steady-state bow (loop has reached its limit cycle) is the realistic
-  workload — at note-on the loop builds up over a few hundred ms but the
-  per-sample cost is the same. Inner loop is two `DelayLine::readDelay`
-  taps + `std::exp` + `std::tanh` + LP filter; comparable to KarplusStrong
-  with one extra `exp` and one extra delay-line write. ≈ 3× KS's
-  5.15 ns/sample, dominated by the second `DelayLine`.
+- `BowedString` re-measured 2026-11-05 after the rebuild as a two-segment
+  waveguide (was 16.90 ns/sample with the single-loop friction model).
+  Steady-state bow is the realistic workload. Inner loop: two masked
+  buffer reads (one linearly interpolated), the bridge one-pole, the bow
+  table (one divide, no `exp` / `tanh`) and the bow-speed smoother with
+  its flush-to-zero check. Median of three 200-sample runs.
+- `KarplusStrong` re-measured 2026-11-05 after the LP-phase tuning fix
+  (+2 % vs 5.15, within run-to-run noise: three runs gave 2.47-2.80 µs;
+  `process()` is unchanged — the delay is recomputed in the setters, which
+  now return early when the value is unchanged).
 - `LowPassGate` / `LowPassGateVoice` measured 2026-06-12 on the same
   host. Decay-stage workload is the dominant runtime (attack is sub-ms);
   inner loop is one `std::exp` (cutoff) + Biquad LP coefficient recompute

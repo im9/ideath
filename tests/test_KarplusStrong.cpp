@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/KarplusStrong.h>
+#include "PitchAnalysis.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -629,7 +630,7 @@ TEST_CASE("KarplusStrong: extreme combo (low freq + high damp + loud exciter) st
 TEST_CASE("KarplusStrong: setFrequency mid-pluck preserves output bound",
           "[karplus][boundary]")
 {
-    // pluck() clamps the burst length to (delaySamples_ - 1) so the burst
+    // pluck() clamps the burst length to (line delay - 1) so the burst
     // window never overlaps itself in the delay line (see test #3 derivation).
     // But that clamp is computed against the delay length AT pluck time. If
     // setFrequency() raises the pitch (shrinks D) while the burst is still
@@ -674,18 +675,43 @@ TEST_CASE("KarplusStrong: setFrequency mid-pluck preserves output bound",
     }
 }
 
+TEST_CASE("KarplusStrong: setDamping mid-pluck re-clamps the burst to the line",
+          "[karplus][boundary]")
+{
+    // The line delay is one period minus the LP's phase delay, so raising
+    // the damping shortens the line (by up to P/4). The burst must never be
+    // longer than the line minus one sample — otherwise it overlaps itself
+    // and breaks the ±1 bound (see test #3). At f0 = 1100 Hz, damping 0,
+    // the line is ≈ 40 samples and pluck() clamps the burst to 39; damping
+    // 0.95 shortens the line to ≈ 31.5 samples (τ_LP ≈ 8.5 at ω0 = 0.157).
+    // After the change, the burst may run for at most int(line) − 1 more
+    // samples.
+    ideath::KarplusStrong ks;
+    ks.prepare(kSampleRate);
+    ks.setFrequency(1100.0f);
+    ks.setDamping(0.0f);
+    ks.setExciter(1.0f);
+    ks.pluck();
+    (void)ks.process();
+
+    ks.setDamping(0.95f);
+    const int maxRemaining = static_cast<int>(ks.getLineDelaySamples()) - 1;
+    int remaining = 0;
+    while (ks.exciterActive()) { (void)ks.process(); ++remaining; }
+    INFO("line=" << ks.getLineDelaySamples() << " remaining=" << remaining);
+    REQUIRE(remaining <= maxRemaining);
+}
+
 // ---------------------------------------------------------------------------
 // 12. Sample-rate independence — pitch matches at 44.1 kHz and 48 kHz
 // ---------------------------------------------------------------------------
 
 TEST_CASE("KarplusStrong: pitch is independent of sample rate", "[karplus][pitch]")
 {
-    // The KS loop's effective period in seconds = (delay + filter group delay)
-    // / sampleRate. The delay is set to sampleRate/freq, so the delay-in-
-    // seconds is exactly 1/freq independent of sampleRate; the one-pole LP
-    // group delay (≈ d/(1-d) samples) is sub-sample at the damping used here
-    // so its time contribution scales inversely with sampleRate and is
-    // negligible compared to one-sample resolution.
+    // The KS loop's period in seconds = (line delay + LP phase delay) /
+    // sampleRate. The line delay is set to sampleRate/freq minus the LP's
+    // phase delay at f0, so the loop is exactly 1/freq seconds at any
+    // sample rate.
     //
     // We measure period by locating the autocorrelation peak. The ZC-counting
     // approach used in earlier KS impls is invalid here because at any
@@ -751,4 +777,110 @@ TEST_CASE("KarplusStrong: pitch is independent of sample rate", "[karplus][pitch
     // ±1 sample of timing resolution at each sample rate.
     REQUIRE_THAT(period44, WithinAbs(expected, 1.0f / 44100.0f));
     REQUIRE_THAT(period48, WithinAbs(expected, 1.0f / 48000.0f));
+}
+
+// ---------------------------------------------------------------------------
+// 13. Tuning — the loop resonances sit on the requested pitch
+// ---------------------------------------------------------------------------
+
+TEST_CASE("KarplusStrong: partial resonances 1-3 sit within ±10 cents of the set pitch",
+          "[karplus][pitch][tuning]")
+{
+    // The loop is delay line + one-pole LP. The LP delays the fundamental by
+    // its phase delay τ(ω0) = atan(d·sin ω0 / (1 − d·cos ω0)) / ω0 samples,
+    // so a delay of exactly sr/f0 makes the loop longer than one period and
+    // the string rings flat (tristero measured −16 c at C4 and −54 c at C6).
+    // The delay must be shortened so that delay + LP phase delay + the
+    // linear-interpolation phase delay is exactly one period.
+    //
+    // Metric: median over partials n = 1..3 of the resonance-peak position
+    // (peak_n / n) relative to f0, from a 5.9 s Hann-windowed FFT
+    // (0.17 Hz bins, peak refined by a log-parabola; see PitchAnalysis.h).
+    //
+    // Tolerance ±10 cents: the upper end of the 5-10 cent range within which
+    // a mistuned sustained tone stops being heard as out of tune.
+    //
+    // Pitches: C2 / C4 / E4 / C6 (65.4 / 261.6 / 329.6 / 1046.5 Hz) — the
+    // span tristero plays the engine over, low enough that the delay is
+    // hundreds of samples and high enough that τ(ω0) is a large share of it.
+    //
+    // Damping 0, 0.25 and 0.5 (tristero's default patch). Both setter orders
+    // are exercised so the delay is recomputed whichever parameter changes
+    // last.
+    using namespace pitch_analysis;
+    constexpr size_t kN = size_t(1) << 18;
+    const double binHz = kSampleRate / static_cast<double>(kN);
+
+    for (float f0 : { 65.4f, 261.6f, 329.6f, 1046.5f })
+        for (float damping : { 0.0f, 0.25f, 0.5f })
+            for (bool frequencyLast : { false, true })
+            {
+                ideath::KarplusStrong ks;
+                ks.prepare(kSampleRate);
+                if (frequencyLast) { ks.setDamping(damping); ks.setFrequency(f0); }
+                else               { ks.setFrequency(f0); ks.setDamping(damping); }
+                ks.setDecay(2.0f);
+                ks.setExciter(1.0f);
+                ks.pluck();
+
+                std::vector<float> buf(kN);
+                for (auto& s : buf) s = ks.process();
+
+                const auto r = partialPitch(powerSpectrum(buf, kN), binHz, f0);
+                INFO("f0=" << f0 << " damping=" << damping << " frequencyLast=" << frequencyLast
+                     << " partials(c)=" << r.partialCents[0] << ", " << r.partialCents[1]
+                     << ", " << r.partialCents[2] << " median=" << r.medianCents);
+                REQUIRE(std::fabs(r.medianCents) <= 10.0);
+            }
+}
+
+TEST_CASE("KarplusStrong: fundamental decays at the set rate at high pitch and damping",
+          "[karplus][decay]")
+{
+    // The loop gain compensates the LP's and the linear interpolator's
+    // magnitude at f0, so the fundamental falls 60 dB in exactly `decay`
+    // seconds whatever the line fraction (up to the kMaxLoopGain ceiling).
+    // Without the
+    // interpolator term a fraction near ½ at C6 loses 0.9972 per cycle —
+    // ≈ −50 dB extra over 2 s — so this is checked where it matters.
+    //
+    // Measured on the fundamental with a single-bin DFT over 0.1 s windows
+    // at 0.2 s and 1.2 s after the pluck: expected drop 60 dB × 1 s / 2 s
+    // = 30 dB. Tolerance ±1 dB, the just-noticeable level step; the window
+    // sees the 2nd partial ≥ 10 bins away (rectangular sidelobes ≤ −30 dB,
+    // and the 2nd partial is far weaker than f0 under damping), < 0.3 dB.
+    auto amp = [](const std::vector<float>& b, double f) {
+        double re = 0.0, im = 0.0;
+        for (size_t n = 0; n < b.size(); ++n)
+        {
+            const double ph = 2.0 * 3.14159265358979323846 * f * double(n) / kSampleRate;
+            re += b[n] * std::cos(ph);
+            im += b[n] * std::sin(ph);
+        }
+        return std::sqrt(re * re + im * im);
+    };
+    struct Case { float f0, damping; };
+    // Cases are chosen where the compensated gain stays under kMaxLoopGain
+    // (the ceiling keeps the loop's DC gain below 1; where it binds — e.g.
+    // C6 with damping 0.5, needed g ≈ 1.02 — the tail is shorter than set,
+    // a documented limit). C6 / damping 0: line fraction 0.141, uncompensated
+    // interpolator loss would add ≈ −12 dB/s.
+    for (const Case c : { Case{ 1046.5f, 0.0f }, Case{ 329.6f, 0.3f }, Case{ 65.4f, 0.5f } })
+    {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(c.f0);
+        ks.setDamping(c.damping);
+        ks.setDecay(2.0f);
+        ks.pluck();
+        const int win = static_cast<int>(0.1f * kSampleRate);
+        for (int i = 0; i < static_cast<int>(0.2f * kSampleRate); ++i) ks.process();
+        std::vector<float> a(win), b(win);
+        for (auto& v : a) v = ks.process();
+        for (int i = 0; i < static_cast<int>(0.9f * kSampleRate); ++i) ks.process();
+        for (auto& v : b) v = ks.process();
+        const double drop = 20.0 * std::log10(amp(a, c.f0) / amp(b, c.f0));
+        INFO("f0=" << c.f0 << " damping=" << c.damping << " drop=" << drop);
+        REQUIRE(std::fabs(drop - 30.0) <= 1.0);
+    }
 }

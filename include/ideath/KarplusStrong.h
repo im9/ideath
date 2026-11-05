@@ -14,7 +14,11 @@ namespace ideath {
 /// `setDamping`), producing the characteristic plucked-string decay.
 ///
 /// Loop math:
-///   D       = sampleRate / freq         (delay length, fractional)
+///   P       = sampleRate / freq         (one period, samples)
+///   D       = P − τ_LP(ω0)              (delay length, fractional; the
+///                                        one-pole's phase delay at the
+///                                        fundamental is taken out so the
+///                                        loop as a whole is one period)
 ///   N_cyc   = decay_seconds * freq      (number of loop cycles to reach -60 dB)
 ///   g_raw   = 10^(-3 / N_cyc)           (per-cycle gain for -60 dB at decay)
 ///   H(f0)   = filter magnitude at pitch (≤ 1; depends on damping)
@@ -41,7 +45,9 @@ public:
     void reset();
 
     /// Set the pitch in Hz. Clamped to [kMinFreq, sampleRate * 0.45].
-    /// Internally sets the delay length to sampleRate / freq.
+    /// The delay line is set one period minus the in-loop LP's phase delay
+    /// at the fundamental, so the whole loop is exactly one period long
+    /// (recomputed whenever the pitch or the damping changes).
     void setFrequency(float hz);
 
     /// Set the -60 dB tail length in seconds.
@@ -67,7 +73,10 @@ public:
     float process();
 
     // ---- introspection (test-only, no setters here are needed at runtime) --
+    /// One period in samples (sampleRate / freq).
     float getDelaySamples() const { return delaySamples_; }
+    /// Delay-line length in samples: one period minus the LP phase delay.
+    float getLineDelaySamples() const { return lineDelaySamples_; }
     bool exciterActive() const   { return exciterRemaining_ > 0; }
 
     // ---- spec constants ---------------------------------------------------
@@ -89,7 +98,9 @@ private:
     float damping_         = 0.5f;
     float exciterLevel_    = 1.0f;
 
-    float delaySamples_    = 100.0f;   // sampleRate / frequency
+    float delaySamples_    = 100.0f;   // sampleRate / frequency (one period)
+    float lineDelaySamples_ = 100.0f;  // period − LP phase delay at f0
+    float lineFrac_         = 0.0f;    // interpolation fraction of the line
     float loopGain_        = 0.9f;     // g (compensated for filter loss)
 
     DelayLine line_;
@@ -101,6 +112,10 @@ private:
     /// Recompute loopGain_ from frequency_, decaySeconds_, damping_.
     /// Called from every setter that touches one of those three quantities.
     void recomputeLoopGain();
+
+    /// Recompute the delay-line length from frequency_ and damping_ so the
+    /// loop (line + LP) is exactly one period at the fundamental.
+    void recomputeLoopDelay();
 
     /// Magnitude of the one-pole LP `y = (1-d)*x + d*y[-1]` at the
     /// fundamental ω = 2π * frequency_ / sampleRate_.

@@ -44,11 +44,11 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
 | **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
 | **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
-| **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain |
+| **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain and LP-phase-compensated loop length (in tune at any damping) |
 | **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch, per-partial output gain for Rings-style Position-knob amplitude shaping |
 | **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze, sound-on-sound, reverse grains, settable RNG seed |
 | **HarmonicOscillator** | Plaits-style additive engine — up to 32 harmonically-related sines with LOW/MID/HIGH band controls and within-band taper |
-| **BowedString** | Friction-driven bowed-string physical model — waveguide delay loop + analytical slip-stick friction + pickup-position comb on the output (Pressure / Position / Damping) |
+| **BowedString** | Bowed-string physical model — two-segment waveguide split at the bow + bow-table friction (Helmholtz motion, in tune), Schelleng `minimumPressure()` (Pressure / Position / Damping) |
 | **LowPassGate** | Buchla 292-style vactrol Low-Pass Gate — single envelope drives both VCA and VCF cutoff (Damping / Brightness); takes an external carrier |
 | **LowPassGateVoice** | LowPassGate + morphing saw↔square carrier oscillator bundled for the slothrop Ping engine (Tone / Damping / Brightness) |
 | **Chorus** | Multi-voice bucket-brigade chorus — 1–8 voices at LFO-modulated fractional delays around a fixed ~12 ms base, `spread` staggers voice-to-voice LFO phase, `processStereo` pans voices across L/R for decorrelation; negative feedback + short depth yields flanger tone from the same primitive |
