@@ -106,6 +106,9 @@ private:
     float seqVelocity_ = 1.0f;
 
     void advanceSequencer();
+    /// Push the note's KarplusStrong settings, then pluck (pluck() takes the
+    /// exciter level and sizes its DC correction to the current line).
+    void pluckKarplus(float freq);
 };
 
 }} // namespace ideath::repl

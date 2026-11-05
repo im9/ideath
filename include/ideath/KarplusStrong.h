@@ -29,6 +29,14 @@ namespace ideath {
 /// `g` is clamped to a hard ceiling of 0.9995 so an aggressive (high damping)
 /// + (very long decay) combination cannot push the loop into runaway.
 ///
+/// The exciter puts no DC into the loop: the loop passes DC (line + LP,
+/// DC gain g), so any offset would ring on below the audio band — which a
+/// string's velocity wave does not carry. The noise burst is left as drawn
+/// (its sum is also what excites the low partials when the burst is short
+/// against the period), and the opposite of that sum is spread as a small
+/// constant over one loop length. A constant over a whole period has no
+/// component at the harmonics, so only the DC mode loses its excitation.
+///
 /// Output is mono, nominal range ±1.0 (the exciter is ±exciterAmount, and
 /// the loop gain never exceeds 1, so the steady-state envelope is monotonic
 /// downward).
@@ -60,13 +68,16 @@ public:
     /// Implementation: y[n] = (1-d)*x[n] + d*y[n-1].
     void setDamping(float amount);
 
-    /// Set the noise-burst level used by pluck(). Clamped to [0, 1].
+    /// Set the noise-burst level used by pluck(). Clamped to [0, 1]. Taken
+    /// at pluck() time: an exciter already in flight keeps its level.
     void setExciter(float amount);
 
     /// Fire the exciter: schedule writing the next ~1 ms of process() calls
-    /// with ±exciter-level noise added on top of the feedback signal. Calling
-    /// pluck() again while the previous burst is still in flight simply
-    /// replaces the remaining count (a fresh pluck restarts the burst).
+    /// with ±exciter-level noise added on top of the feedback signal, plus
+    /// the DC correction over the next loop length. Calling pluck() again
+    /// while the previous burst is still in flight simply replaces the
+    /// remaining count (a fresh pluck restarts the burst); the new
+    /// correction also cancels what the cut-short exciter wrote.
     void pluck();
 
     /// Process one sample. No input — KS is a self-contained source.
@@ -108,6 +119,32 @@ private:
     float     filterState_ = 0.0f;     // one-pole LP memory
 
     int exciterRemaining_  = 0;        // samples of burst left to write
+
+    // DC correction: a constant `dcStep_` added for `dcRemaining_` samples
+    // (one loop length from the pluck) so that everything the exciter writes
+    // sums to zero. `burstScale_` is the exciter level (taken at pluck()),
+    // lowered only when noise + correction would pass ±1. Both in output
+    // units; planned at pluck() and re-planned when the line changes while
+    // the exciter is in flight (the window then spans one new loop length
+    // from the pluck).
+    // Invariant: exciterRemaining_ ≤ dcRemaining_ (the burst lies inside
+    // the correction window).
+    int    dcRemaining_    = 0;
+    int    dcElapsed_      = 0;        // samples since the pluck
+    double planTotal_      = 0.0;      // what the current plan leaves uncancelled
+    float  dcStep_         = 0.0f;
+    float  burstScale_     = 1.0f;
+
+    /// Plan the remaining noise and correction so that, with `written` (what
+    /// this exciter has already put into the loop), everything sums to zero
+    /// and each sample stays within ±1. Reads ahead on a copy of the noise
+    /// generator (the stream itself is not advanced).
+    void planExciter(double written);
+
+    /// Sum of what the exciter in flight has written so far (0 when none is
+    /// in flight). Derived from the current plan, which makes written +
+    /// still-to-write = 0, so process() keeps no running sum.
+    double exciterWritten() const;
 
     /// Recompute loopGain_ from frequency_, decaySeconds_, damping_.
     /// Called from every setter that touches one of those three quantities.
