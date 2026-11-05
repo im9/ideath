@@ -129,9 +129,10 @@ TEST_CASE("BowedString: prepare() reinitialises and silences any tail", "[bowed]
 
 TEST_CASE("BowedString: steady tone is in tune and harmonic", "[bowed][tuning]")
 {
-    // Acceptance criteria (tristero report: the previous single-loop model
-    // sounded an octave low — 98-100 % of the energy on (n+½)·f0 at the
-    // pressures where it starts to speak — and went chaotic above them):
+    // Acceptance criteria.  A single loop that applies the friction map
+    // once per period period-doubles: it puts nearly all its energy on
+    // (n+½)·f0 at onset pressures and goes chaotic above them.  These
+    // criteria rule that out:
     //
     //  (1) Median over partials 1-3 of the resonance-peak position is within
     //      ±10 cents of f0.  10 cents is the upper end of the 5-10 cent range
@@ -143,7 +144,7 @@ TEST_CASE("BowedString: steady tone is in tune and harmonic", "[bowed][tuning]")
     //      energy: a partial series 10 dB down does not take the pitch over.
     //
     // Grid: the four pitches; bow position from the bridge-most setting
-    // (0.02) through tristero's 0.068 / 0.212 to 0.3 and the top of the range
+    // (0.02) through 0.068 / 0.212 to 0.3 and the top of the range
     // (0.45); damping 0 / 0.2 / 0.5 / 0.8 / 1; pressure just above the
     // Schelleng threshold (1.3 × minimumPressure), at the geometric middle of
     // the speaking range and at 1; bow speed at both ends of 0.05-0.85.
@@ -188,11 +189,12 @@ TEST_CASE("BowedString: steady tone is in tune and harmonic", "[bowed][tuning]")
             }
 }
 
-TEST_CASE("BowedString: tristero's reported patches are in tune and harmonic",
+TEST_CASE("BowedString: reference patches are in tune and harmonic",
           "[bowed][tuning]")
 {
-    // The exact settings of the tristero measurement that found the octave-
-    // low output.  Same criteria and derivations as the grid test above.
+    // Two plugin patches (bow speed / position / damping) at pressures from
+    // the onset of speaking to full.  Same criteria and derivations as the
+    // grid test above.
     using namespace pitch_analysis;
     constexpr size_t kN = size_t(1) << 18;
     const double binHz = kSR / static_cast<double>(kN);
@@ -470,9 +472,8 @@ TEST_CASE("BowedString: extreme combos stay finite and bounded", "[bowed][extrem
 
     SECTION("full pressure + bow speed 0 → silence")
     {
-        // The previous single-loop model self-excited here (its friction
-        // law had no stick regime).  Now speed 0 → stick width 0 → no
-        // coupling, and a resting string stays at rest.
+        // A friction law with no stick regime self-excites here.  Speed 0
+        // → stick width 0 → no coupling, and a resting string stays at rest.
         auto s = bowed({ 220.0f, 0.1f, 0.5f, 1.0f, 0.0f });
         auto out = capture(s, 44100);
         for (float v : out)

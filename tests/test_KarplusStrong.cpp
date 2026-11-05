@@ -789,7 +789,7 @@ TEST_CASE("KarplusStrong: partial resonances 1-3 sit within ±10 cents of the se
     // The loop is delay line + one-pole LP. The LP delays the fundamental by
     // its phase delay τ(ω0) = atan(d·sin ω0 / (1 − d·cos ω0)) / ω0 samples,
     // so a delay of exactly sr/f0 makes the loop longer than one period and
-    // the string rings flat (tristero measured −16 c at C4 and −54 c at C6).
+    // the string rings flat (−10 c at C4 and −38 c at C6 with damping 0.5).
     // The delay must be shortened so that delay + LP phase delay + the
     // linear-interpolation phase delay is exactly one period.
     //
@@ -801,10 +801,10 @@ TEST_CASE("KarplusStrong: partial resonances 1-3 sit within ±10 cents of the se
     // a mistuned sustained tone stops being heard as out of tune.
     //
     // Pitches: C2 / C4 / E4 / C6 (65.4 / 261.6 / 329.6 / 1046.5 Hz) — the
-    // span tristero plays the engine over, low enough that the delay is
+    // playing span of a plucked voice, low enough that the delay is
     // hundreds of samples and high enough that τ(ω0) is a large share of it.
     //
-    // Damping 0, 0.25 and 0.5 (tristero's default patch). Both setter orders
+    // Damping 0, 0.25 and 0.5 (a typical default patch). Both setter orders
     // are exercised so the delay is recomputed whichever parameter changes
     // last.
     using namespace pitch_analysis;

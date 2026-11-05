@@ -21,7 +21,7 @@ namespace ideath {
 /// Helmholtz motion possible: a single corner circulates the string, the
 /// bow sticks for (1 − β) of the period and slips for β of it, and the
 /// motion repeats once per loop.  A single delay loop with the friction
-/// map applied once per period (the previous model) has no such structure;
+/// map applied once per period has no such structure;
 /// it period-doubles to f0/2 as soon as the map's slope passes −1.
 ///
 /// Bow–string junction.  The two waves arriving at the bow point sum to

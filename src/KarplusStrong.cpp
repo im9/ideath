@@ -107,7 +107,7 @@ void KarplusStrong::recomputeLoopDelay()
     //   lineDelay + τ_LP(ω0) = one period P = sr / f0,
     //
     // where τ_LP(ω) = atan(d·sin ω / (1 − d·cos ω)) / ω is the one-pole's
-    // phase delay. A line delay of exactly P (as before) leaves the loop
+    // phase delay. A line delay of exactly P would leave the loop
     // τ_LP samples too long and the string rings flat — by up to ~50 cents
     // at C6 with damping 0.5.
     //
