@@ -55,7 +55,7 @@ than comparing cross-host.
 | TapeDelay::process ¹               |                  — |  17.5–18.2 |
 | TapeDelay::processStereo (ping-pong, diffusion) ² | 30.313 µs |  59.20 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
-| KarplusStrong::process             |           2.685 µs |        5.24 |
+| KarplusStrong::process             |           2.841 µs |        5.55 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
 | ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
 | HarmonicOscillator::process (8 part.)  |      12.156 µs |       23.74 |
@@ -114,6 +114,12 @@ than comparing cross-host.
   buffer reads (one linearly interpolated), the bridge one-pole, the bow
   table (one divide, no `exp` / `tanh`) and the bow-speed smoother with
   its flush-to-zero check. Median of three 200-sample runs.
+- `KarplusStrong` re-measured 2026-11-06 after the DC-free exciter (pluck
+  reads its ~1 ms burst ahead once to cancel its sum; the exciter adds one
+  constant per sample for one loop length). Median of five 500-sample runs
+  interleaved with main on the same host: 2.578 → 2.841 µs (+10 %, under
+  the 20 % rule). The bench re-plucks every 256 samples at 220 Hz, so the
+  correction runs on ≈ 85 % of samples — far denser than a played part.
 - `KarplusStrong` re-measured 2026-11-05 after the LP-phase tuning fix
   (+2 % vs 5.15, within run-to-run noise: three runs gave 2.47-2.80 µs;
   `process()` is unchanged — the delay is recomputed in the setters, which

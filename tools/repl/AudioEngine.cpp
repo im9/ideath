@@ -218,10 +218,11 @@ void AudioEngine::applyPendingState(SharedState& shared)
             dxfm_.noteOn(baseFreq_);
 
         // Karplus-Strong: re-pluck on note-on. Pitch/decay/damping/exciter
-        // are applied per-sample inside process() (setters are modulation-
-        // safe and cheap).
+        // are also applied per-sample inside process() (for modulation), but
+        // pluck() takes the exciter level and sizes its DC correction to the
+        // line as they stand, so the new note's values go in first.
         if (params_.source == SourceType::KarplusStrong)
-            karplus_.pluck();
+            pluckKarplus(baseFreq_);
 
         // Modal resonator: strike on every note-on so each note rings the
         // bell.  Per-note params are pushed into the modal source from the
@@ -298,7 +299,7 @@ void AudioEngine::applyPendingState(SharedState& shared)
                 if (params_.source == SourceType::DXFM)
                     dxfm_.noteOn(freq, seqVelocity_);
                 if (params_.source == SourceType::KarplusStrong)
-                    karplus_.pluck();
+                    pluckKarplus(freq);
                 if (params_.source == SourceType::Modal)
                     modal_.strike(seqVelocity_);
                 seqGateOpen_ = true;
@@ -314,6 +315,15 @@ void AudioEngine::applyPendingState(SharedState& shared)
             }
         }
     }
+}
+
+void AudioEngine::pluckKarplus(float freq)
+{
+    karplus_.setFrequency(freq);
+    karplus_.setDecay(params_.ksDecay);
+    karplus_.setDamping(params_.ksDamping);
+    karplus_.setExciter(params_.ksExciter);
+    karplus_.pluck();
 }
 
 void AudioEngine::advanceSequencer()
@@ -375,7 +385,7 @@ void AudioEngine::advanceSequencer()
         if (params_.source == SourceType::FM)
             fm_.noteOn(freq);
         if (params_.source == SourceType::KarplusStrong)
-            karplus_.pluck();
+            pluckKarplus(freq);
         if (params_.source == SourceType::Modal)
             modal_.strike(seqVelocity_);
         seqGateOpen_ = true;

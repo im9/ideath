@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/KarplusStrong.h>
+#include <ideath/Noise.h>
 #include "PitchAnalysis.h"
 #include <algorithm>
 #include <cmath>
@@ -883,4 +884,370 @@ TEST_CASE("KarplusStrong: fundamental decays at the set rate at high pitch and d
         INFO("f0=" << c.f0 << " damping=" << c.damping << " drop=" << drop);
         REQUIRE(std::fabs(drop - 30.0) <= 1.0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// 13. No DC — the loop carries nothing below the audio band
+// ---------------------------------------------------------------------------
+//
+// A string's velocity wave has no DC, so nothing the loop carries should sit
+// below the audible band. The burst is the only thing that enters the loop;
+// if its samples do not sum to zero the loop's DC mode (line + LP, DC gain g)
+// keeps that offset ringing — and since g is compensated for the LP's loss
+// at f0 but the LP passes DC at unity, the DC mode decays slower than the
+// fundamental, so the offset outlives the note.
+//
+// Measurement: energy below 30 Hz, as a fraction of the total. 30 Hz is
+// KarplusStrong::kMinFreq — no fundamental the string can be set to lies
+// below it. The low band is taken with an 8th-order Butterworth low-pass at
+// 30 Hz (double precision, four RBJ sections at the Butterworth Qs). Its
+// leakage of the lowest fundamental tested, 65.4 Hz (C2), is
+// |H|² = 1 / (1 + (65.4/30)^16) ≈ 4e-6 of that partial's energy — three
+// orders of magnitude under the 1 % bound, so the measure sees the DC /
+// sub-audio content and not the note.
+//
+// Bound: < 1 % of the energy. An inaudible component at 1 % of the energy
+// takes 10·log10(1 / 0.99) ≈ 0.04 dB of the output's level budget (and of
+// the PeakLimiter's headroom) — negligible.
+
+namespace {
+
+struct SubAudioMeter
+{
+    // RBJ low-pass sections; Qs of an 8th-order Butterworth:
+    //   Q_k = 1 / (2 cos((2k − 1)π / 16)), k = 1..4.
+    struct Section { double b0, b1, b2, a1, a2, z1 = 0.0, z2 = 0.0; };
+    Section s[4];
+    double lowEnergy = 0.0, totalEnergy = 0.0;
+
+    explicit SubAudioMeter(double sr, double fc = 30.0)
+    {
+        const double pi = 3.14159265358979323846;
+        const double w = 2.0 * pi * fc / sr;
+        for (int k = 0; k < 4; ++k)
+        {
+            const double q = 1.0 / (2.0 * std::cos((2.0 * (k + 1) - 1.0) * pi / 16.0));
+            const double alpha = std::sin(w) / (2.0 * q);
+            const double a0 = 1.0 + alpha;
+            s[k].b0 = (1.0 - std::cos(w)) / 2.0 / a0;
+            s[k].b1 = (1.0 - std::cos(w)) / a0;
+            s[k].b2 = s[k].b0;
+            s[k].a1 = -2.0 * std::cos(w) / a0;
+            s[k].a2 = (1.0 - alpha) / a0;
+        }
+    }
+    void push(float x)
+    {
+        double y = x;
+        for (auto& f : s)
+        {
+            const double out = f.b0 * y + f.z1;
+            f.z1 = f.b1 * y - f.a1 * out + f.z2;
+            f.z2 = f.b2 * y - f.a2 * out;
+            y = out;
+        }
+        lowEnergy += y * y;
+        totalEnergy += static_cast<double>(x) * x;
+    }
+    double fraction() const { return totalEnergy > 0.0 ? lowEnergy / totalEnergy : 0.0; }
+};
+
+// The four pitches tristero's PLUCK was measured at: C2, C4, E4, C6.
+constexpr float kDcPitches[] = { 65.4f, 261.6f, 329.6f, 1046.5f };
+
+} // namespace
+
+TEST_CASE("KarplusStrong: meter separates DC from the lowest fundamental",
+          "[karplus][dc]")
+{
+    // Self-check of the measure: a 65.4 Hz sine must read ≈ the filter's
+    // leakage (≈ 4e-6, see above) — well under the 1 % bound — and a DC
+    // offset of the same power must read ≈ 1 (the Butterworth's DC gain is
+    // 1). Both are measured in steady state — the second of a 2 s run — so
+    // the switch-on (a gated sine has real sub-audio content) and the
+    // filter's own settling (≈ 0.1 s for an 8th-order Butterworth at 30 Hz)
+    // are excluded. The 1e-4 / 0.99 bounds sit 25× above the 4e-6 leakage
+    // and one percent under unity — margins for float-rounded input only.
+    SubAudioMeter sine(kSampleRate), dc(kSampleRate);
+    for (int i = 0; i < static_cast<int>(2.0f * kSampleRate); ++i)
+    {
+        if (i == static_cast<int>(kSampleRate))
+        {
+            sine.lowEnergy = sine.totalEnergy = 0.0;
+            dc.lowEnergy = dc.totalEnergy = 0.0;
+        }
+        sine.push(static_cast<float>(std::sin(2.0 * 3.14159265358979323846 * 65.4 * i / kSampleRate)));
+        dc.push(0.7071f);
+    }
+    REQUIRE(sine.fraction() < 1e-4);
+    REQUIRE(dc.fraction() > 0.99);
+}
+
+TEST_CASE("KarplusStrong: a pluck leaves < 1 % of its energy below 30 Hz",
+          "[karplus][dc]")
+{
+    // Run from the pluck until every mode has decayed. The slowest is the
+    // DC mode, whose per-loop gain is at most kMaxLoopGain over a loop of
+    // ≈ one period P, so its −60 dB time is at most
+    //   ln(1000) · P / −ln(0.9995) ≈ 13 800 · P samples,
+    // 13.2 s at C6 (P = 42.1). 15 s covers that. At the lower pitches g
+    // sits below the ceiling (C2: ≈ 0.90 at decay 1 s, ≈ 0.70 at 0.3 s) and
+    // the period is longer, so the DC mode is down 60 dB well inside the
+    // run too.
+    // Decay 0.3 s and 1 s, damping 0.2 / 0.5 / 0.8: short decays make the
+    // fundamental die first (the leftover DC most exposed); 0.5 is the
+    // middle of the range, 0.8 the dark end.
+    for (float f0 : kDcPitches)
+        for (float decay : { 0.3f, 1.0f })
+            for (float damping : { 0.2f, 0.5f, 0.8f })
+            {
+                ideath::KarplusStrong ks;
+                ks.prepare(kSampleRate);
+                ks.setFrequency(f0);
+                ks.setDecay(decay);
+                ks.setDamping(damping);
+                ks.setExciter(1.0f);
+                ks.pluck();
+                SubAudioMeter m(kSampleRate);
+                for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+                    m.push(ks.process());
+                INFO("f0=" << f0 << " decay=" << decay << " damping=" << damping
+                     << " fraction=" << m.fraction());
+                REQUIRE(m.fraction() < 0.01);
+            }
+}
+
+TEST_CASE("KarplusStrong: repeated plucks do not build up DC (12 s)",
+          "[karplus][dc][stability]")
+{
+    // tristero re-plucks a held PLUCK note every sampleRate / 40 = 1103
+    // samples. Each burst's noise is independent, so the plucks add
+    // incoherently and the spectrum stays the single-pluck spectrum (no
+    // 40 Hz line); any DC each burst leaves, though, adds onto the DC mode
+    // that the earlier bursts left, which decays slowly (see above). Check
+    // every 1 s block of a 12 s run (> 10 s long-run convention) against
+    // the same < 1 % bound: a build-up shows as a block fraction that grows
+    // past it. The meter runs continuously, so its start-up transient only
+    // touches block 0.
+    for (float f0 : kDcPitches)
+    {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(f0);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setExciter(1.0f);
+        SubAudioMeter m(kSampleRate);
+        const int block = static_cast<int>(kSampleRate);
+        for (int b = 0; b < 12; ++b)
+        {
+            m.lowEnergy = m.totalEnergy = 0.0;
+            for (int i = 0; i < block; ++i)
+            {
+                if ((b * block + i) % 1103 == 0)
+                    ks.pluck();
+                m.push(ks.process());
+            }
+            INFO("f0=" << f0 << " block=" << b << " fraction=" << m.fraction());
+            REQUIRE(m.fraction() < 0.01);
+        }
+    }
+}
+
+TEST_CASE("KarplusStrong: a burst cut short still sums to zero",
+          "[karplus][dc]")
+{
+    // Two ways a burst stops early: a re-pluck while it is in flight
+    // (pluck() restarts the count), and a pitch / damping change that
+    // shortens the line below the remaining burst (the count is re-clamped).
+    // In both cases the samples written so far must still be balanced by
+    // what comes after, or the cut-short burst leaves DC. Same < 1 % bound
+    // and 15 s ring-out as the single-pluck test.
+    SECTION("re-pluck mid-burst")
+    {
+        for (float f0 : kDcPitches)
+        {
+            ideath::KarplusStrong ks;
+            ks.prepare(kSampleRate);
+            ks.setFrequency(f0);
+            ks.setDecay(1.0f);
+            ks.setDamping(0.5f);
+            ks.pluck();
+            SubAudioMeter m(kSampleRate);
+            for (int i = 0; i < 20; ++i) m.push(ks.process());
+            ks.pluck();
+            for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+                m.push(ks.process());
+            INFO("f0=" << f0 << " fraction=" << m.fraction());
+            REQUIRE(m.fraction() < 0.01);
+        }
+    }
+    SECTION("two plucks with no sample between")
+    {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(261.6f);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.pluck();
+        ks.pluck();
+        SubAudioMeter m(kSampleRate);
+        for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+            m.push(ks.process());
+        INFO("fraction=" << m.fraction());
+        REQUIRE(m.fraction() < 0.01);
+    }
+    SECTION("pluck above sr/3, then the real note before any sample")
+    {
+        // At 19 kHz the line is ≈ 2 samples: a one-sample window that can't
+        // cancel its own burst. Retuning and re-plucking before process()
+        // must not inject that uncancelled sample (nothing was written).
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setFrequency(19000.0f);
+        ks.pluck();
+        ks.setFrequency(261.6f);
+        ks.pluck();
+        SubAudioMeter m(kSampleRate);
+        for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+            m.push(ks.process());
+        INFO("fraction=" << m.fraction());
+        REQUIRE(m.fraction() < 0.01);
+    }
+    SECTION("level changed, then re-pluck mid-window")
+    {
+        // tristero sets the exciter level from the velocity right before
+        // each pluck(). At C2 the correction window (672 samples) is still
+        // running 300 samples after the first pluck, so the re-pluck must
+        // cancel what was written at the old level.
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(65.4f);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setExciter(1.0f);
+        ks.pluck();
+        SubAudioMeter m(kSampleRate);
+        for (int i = 0; i < 300; ++i) m.push(ks.process());
+        ks.setExciter(0.3f);
+        ks.pluck();
+        for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+            m.push(ks.process());
+        INFO("fraction=" << m.fraction());
+        REQUIRE(m.fraction() < 0.01);
+    }
+    SECTION("pitch raised mid-burst")
+    {
+        // 110 Hz burst = 44 samples; after 5, jump to 2093 Hz (line ≈ 20
+        // at damping 0.5), so the window is cut to (line − 1) − 5 samples
+        // and the remaining burst with it.
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(110.0f);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.pluck();
+        SubAudioMeter m(kSampleRate);
+        for (int i = 0; i < 5; ++i) m.push(ks.process());
+        ks.setFrequency(2093.0f);
+        for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+            m.push(ks.process());
+        INFO("fraction=" << m.fraction());
+        REQUIRE(m.fraction() < 0.01);
+    }
+}
+
+TEST_CASE("KarplusStrong: pitch set right after pluck() excites the new note fully",
+          "[karplus][dc]")
+{
+    // A host may pluck first and push the new note's pitch on the next
+    // sample (per-sample setters). The DC correction window must then span
+    // one loop length of the new pitch from the pluck — on a drop A3 → A2,
+    // a window sized to A3 covers half an A2 period, and a constant over
+    // half a period has a component at f0 that cancels part of the
+    // fundamental. Spec: plucking at A3 and retuning to A2 before the first
+    // sample is the same exciter as plucking at A2: same noise (fresh
+    // instances, deterministic seed), same burst count (44 ≤ both lines),
+    // same window, so the outputs agree sample for sample. Tolerance 1e-6:
+    // float rounding of the plan (double → float) at amplitude ≤ 1 is
+    // ≤ 6e-8 per sample; the loop is contractive, so rounding does not grow
+    // past a few ulps of the peak.
+    auto make = [](float first) {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setFrequency(first);
+        return ks;
+    };
+    ideath::KarplusStrong direct = make(110.0f);
+    ideath::KarplusStrong retuned = make(220.0f);
+    direct.pluck();
+    retuned.pluck();
+    retuned.setFrequency(110.0f);
+    float maxDiff = 0.0f;
+    for (int i = 0; i < static_cast<int>(0.5f * kSampleRate); ++i)
+        maxDiff = std::max(maxDiff, std::fabs(direct.process() - retuned.process()));
+    INFO("maxDiff=" << maxDiff);
+    REQUIRE(maxDiff < 1e-6f);
+}
+
+TEST_CASE("KarplusStrong: the exciter sums to zero and keeps the burst's fundamental",
+          "[karplus][dc]")
+{
+    // The spec behind the design, checked on the exciter itself. Until the
+    // first sample comes back round (≈ 2 line lengths after the pluck), the
+    // output is just the exciter read through the line, so over that first
+    // pass:
+    //  (a) its sum is zero — nothing feeds the loop's DC mode. Bound 1e-4:
+    //      float rounding of ≈ 700 terms ≤ 1 at ≈ 6e-8 each is ≈ 4e-5.
+    //  (b) its component at f0 matches the raw noise burst's (same seed:
+    //      KarplusStrong's Noise is default-seeded and reset in prepare()),
+    //      within 0.5 dB. A zero-mean burst would lose ≈ 22 dB here at C2
+    //      (the 1 ms burst's spectrum is flat from DC past f0, so its mean is
+    //      its fundamental). The correction is a constant over M = line − 1
+    //      samples, P − M ≈ 2.6 short of a period, so its f0 component is
+    //      |S|/M · |sin(ω0 M / 2) / sin(ω0 / 2)| ≈ |S| · 2.6 / M ≈ 0.4 % of
+    //      |S| ≈ |X(f0)|; the ±1 scaling costs ≤ |S|/M ≈ 1 % (0.09 dB);
+    //      the interpolator's magnitude at f0 is ≥ 0.9999. Total < 0.15 dB;
+    //      0.5 dB leaves margin under the 1 dB level JND.
+    const double pi = 3.14159265358979323846;
+    const double f0 = 65.4;
+    ideath::KarplusStrong ks;
+    ks.prepare(kSampleRate);
+    ks.setFrequency(static_cast<float>(f0));
+    ks.setDecay(1.0f);
+    ks.setDamping(0.5f);
+    ks.setExciter(1.0f);
+    ks.pluck();
+
+    // Exciter sample n (n ≤ int(line) − 2) is read at t = n + int(line)
+    // and n + int(line) + 1 (linear interpolation); the first sample fed
+    // back is written at t = int(line) and read again at 2·int(line). So
+    // t < 2·int(line) is the whole first pass and nothing else.
+    const int firstPass = 2 * static_cast<int>(ks.getLineDelaySamples());
+    const double w = 2.0 * pi * f0 / kSampleRate;
+    double sum = 0.0, re = 0.0, im = 0.0;
+    for (int t = 0; t < firstPass; ++t)
+    {
+        const double y = ks.process();
+        sum += y;
+        re += y * std::cos(w * t);
+        im -= y * std::sin(w * t);
+    }
+    ideath::Noise raw;
+    double rre = 0.0, rim = 0.0;
+    const int burst = static_cast<int>(ideath::KarplusStrong::kExciterSec * kSampleRate);
+    for (int n = 0; n < burst; ++n)
+    {
+        const double r = raw.process();
+        rre += r * std::cos(w * n);
+        rim -= r * std::sin(w * n);
+    }
+    const double levelDb = 20.0 * std::log10(std::hypot(re, im) / std::hypot(rre, rim));
+    INFO("sum=" << sum << " f0 level vs raw burst=" << levelDb << " dB");
+    REQUIRE(std::fabs(sum) < 1e-4);
+    REQUIRE(std::fabs(levelDb) < 0.5);
 }

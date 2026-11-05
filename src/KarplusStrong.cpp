@@ -36,6 +36,7 @@ void KarplusStrong::reset()
     noise_.reset();           // restore deterministic noise stream
     filterState_ = 0.0f;
     exciterRemaining_ = 0;
+    dcRemaining_ = 0;
 }
 
 void KarplusStrong::setFrequency(float hz)
@@ -95,7 +96,100 @@ void KarplusStrong::pluck()
     // the only purpose of the burst.
     const int wanted   = static_cast<int>(kExciterSec * sampleRate_);
     const int maxBurst = std::max(1, static_cast<int>(lineDelaySamples_) - 1);
+    const double written = exciterWritten();
     exciterRemaining_  = std::max(1, std::min(wanted, maxBurst));
+    dcRemaining_       = maxBurst;
+    dcElapsed_         = 0;
+    planExciter(written);
+}
+
+double KarplusStrong::exciterWritten() const
+{
+    // Each plan fixes the exciter's total, (written so far) + (still to
+    // write) = planTotal_ — zero, except where planExciter() could not
+    // cancel everything. So what has been written is the total minus what
+    // the current plan still has to write.
+    if (dcRemaining_ <= 0)
+        return 0.0;
+    Noise probe = noise_;
+    double rest = static_cast<double>(dcStep_) * dcRemaining_;
+    for (int i = 0; i < exciterRemaining_; ++i)
+        rest += static_cast<double>(burstScale_) * probe.process();
+    return planTotal_ - rest;
+}
+
+void KarplusStrong::planExciter(double written)
+{
+    // Why: the loop (line → LP → ×g) passes DC with gain g — the LP costs
+    // nothing at DC while g is raised to make up its loss at f0 — so the
+    // loop's DC mode decays slower than the fundamental (at the
+    // kMaxLoopGain ceiling, ≈ 13 800 periods to −60 dB). Whatever the
+    // exciter's samples sum to stays in the loop as that mode: a burst of N
+    // uniform ±1 samples sums to ≈ 0.58·√N, and nothing in a string's
+    // velocity wave is DC.
+    //
+    // Why not just remove the burst's mean: with the burst much shorter
+    // than the period (1 ms against 15 ms at C2), its spectrum is flat from
+    // DC up past the low partials — the sum that feeds the DC mode is the
+    // same number that feeds the fundamental. A zero-mean burst loses the
+    // fundamental with the DC (≈ −22 dB at C2).
+    //
+    // Instead the correction is a constant −S/M over the M = int(line) − 1
+    // samples after the pluck (one loop length, less the sample the
+    // interpolated read needs; M never overlaps itself in the line). It
+    // cancels the sum S exactly, so the DC mode gets nothing, while a
+    // constant across a full period has no component at k·f0 — the
+    // harmonics keep their excitation, short by the (P − M)/P of a period
+    // the window misses (a few samples: < 1 % at C2, where it matters).
+    //
+    // Re-plans (a re-pluck in flight, a pitch or damping change while the
+    // exciter runs) carry what was already written, W, into the new
+    // sum. The exciter level is taken here, at pluck time (a setExciter()
+    // while the exciter is in flight applies to the next pluck), so the
+    // plan, and W derived from it, are in output units. The noise gain s is
+    // the level, lowered only if noise + correction could pass ±1 — the
+    // output bound:
+    //   step = −(W + s·S) / M,   s·max|r| + s·|S|/M + |W|/M ≤ 1.
+    // |W|/M ≥ 1 cannot be met with any noise left (a cut-short window of a
+    // couple of samples after a jump of several octaves): the correction is
+    // then clamped to ±1 and the rest of W stays in the loop. Either way
+    // planTotal_ records what this plan leaves uncancelled, so a later
+    // re-plan still knows what was written.
+    const int M = dcRemaining_;
+    Noise probe = noise_;
+    double sum = 0.0, peak = 0.0;
+    for (int i = 0; i < exciterRemaining_; ++i)
+    {
+        const double r = probe.process();
+        sum += r;
+        peak = std::max(peak, std::fabs(r));
+    }
+    const double level = exciterLevel_;
+    if (M < 2)
+    {
+        // A one-sample window (pitch above ≈ sr/3) cannot hold a burst and
+        // its opposite: the burst goes in as drawn, and neither its sum nor
+        // the W of an earlier plan is cancelled.
+        burstScale_ = static_cast<float>(level);
+        dcStep_ = 0.0f;
+        planTotal_ = written + static_cast<double>(burstScale_) * sum;
+        return;
+    }
+    const double w = std::fabs(written) / M;
+    if (w >= 1.0)
+    {
+        burstScale_ = 0.0f;
+        dcStep_ = static_cast<float>(std::clamp(-written / M, -1.0, 1.0));
+        planTotal_ = written + static_cast<double>(dcStep_) * M;
+        return;
+    }
+    const double need = peak + std::fabs(sum) / M;
+    const double s = (need * level > 1.0 - w) ? (1.0 - w) / need : level;
+    burstScale_ = static_cast<float>(s);
+    dcStep_ = static_cast<float>(-(written + s * sum) / M);
+    // Zero up to the float rounding of the two stored values.
+    planTotal_ = written + static_cast<double>(burstScale_) * sum
+               + static_cast<double>(dcStep_) * M;
 }
 
 void KarplusStrong::recomputeLoopDelay()
@@ -139,10 +233,37 @@ void KarplusStrong::recomputeLoopDelay()
     // the burst to (line − 1) at pluck time; re-clamp here so the burst
     // never overlaps itself in the line, which would push the output past
     // the ±1 nominal bound.
-    if (exciterRemaining_ > 0)
+    //
+    // The DC correction window follows the line too: it should span one
+    // loop length from the pluck at the pitch the string now has. A host
+    // that plucks first and sets the new note's pitch after (the REPL's
+    // per-sample setters, tristero's per-sample pitch) would otherwise keep
+    // a window sized to the previous note — on a pitch drop a constant
+    // shorter than the period, which does carry energy at the low
+    // harmonics and cancels part of the fundamental. So on any change in
+    // flight the window becomes (line − 1) − elapsed samples still to
+    // write, re-planned to still cancel what the exciter has written. All
+    // writes then land within (line − 1) samples of the pluck, before the
+    // first of them comes back round, so the exciter never overlaps itself
+    // (the ±1 bound). If the line has shrunk below what is already written
+    // (a jump of an octave or more late in the window), the exciter ends
+    // there and what it wrote stays in the loop. exciterRemaining_ ≤
+    // dcRemaining_ holds throughout (both start at ≤ line − 1, the burst no
+    // longer).
+    // Re-planning reads ahead only over the burst still to write, so once
+    // the 1 ms burst is out it is O(1) — cheap under per-sample vibrato.
+    if (dcRemaining_ > 0)
     {
         const int maxBurst = std::max(1, static_cast<int>(lineDelaySamples_) - 1);
-        exciterRemaining_  = std::min(exciterRemaining_, maxBurst);
+        const int target   = std::max(0, maxBurst - dcElapsed_);
+        if (target != dcRemaining_)
+        {
+            const double written = exciterWritten();
+            dcRemaining_      = target;
+            exciterRemaining_ = std::min(exciterRemaining_, target);
+            if (target > 0)
+                planExciter(written);
+        }
     }
 }
 
@@ -211,12 +332,22 @@ float KarplusStrong::process()
     // 3. Apply loop gain (already compensated for filter loss at f0).
     float feedback = filtered * loopGain_;
 
-    // 4. Inject the exciter burst (additive, so re-plucks layer on top
-    //    of any existing tail instead of erasing it).
-    if (exciterRemaining_ > 0)
+    // 4. Inject the exciter (additive, so re-plucks layer on top of any
+    //    existing tail instead of erasing it): the noise burst plus the DC
+    //    correction spread over one loop length (see planExciter()).
+    //    The burst lies inside the correction window (exciterRemaining_ ≤
+    //    dcRemaining_), so one test covers both.
+    if (dcRemaining_ > 0)
     {
-        feedback += noise_.process() * exciterLevel_;
-        --exciterRemaining_;
+        float v = dcStep_;
+        if (exciterRemaining_ > 0)
+        {
+            v += burstScale_ * noise_.process();
+            --exciterRemaining_;
+        }
+        --dcRemaining_;
+        ++dcElapsed_;
+        feedback += v;
     }
 
     // 5. Write the new sample into the line. DelayLine::process applies its

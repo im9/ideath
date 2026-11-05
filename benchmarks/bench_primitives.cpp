@@ -703,8 +703,9 @@ TEST_CASE("Bench: KarplusStrong", "[bench]")
     // Re-pluck every 2× block to keep the loop alive across the benchmark
     // window without dominating the hot path. The dominant cost is the
     // delay-line readDelay (linear interp) + one-pole LP + the loop-gain
-    // multiply; the burst path adds one extra Noise::process call for a
-    // few samples per pluck.
+    // multiply. Each pluck reads its ~1 ms burst ahead once (to cancel its
+    // sum) and the exciter adds one constant per sample for one loop length
+    // (≈ 217 of every 256 samples here — far denser than a played part).
     ideath::KarplusStrong ks;
     ks.prepare(kSR);
     ks.setFrequency(220.0f);
