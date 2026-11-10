@@ -218,4 +218,45 @@ FreezeSteps freezeSteps(Reverb& rev, bool keepInput, double sr)
     return { press / own, release / own };
 }
 
+// Setter click measure, same stimulus and windows as freezeSteps.  After
+// the 2 s ring-up and 300 ms (the last 200 ms of it the reference),
+// `apply(rev, i)` is called before each of the next `applySamples`
+// samples (i = 0 … applySamples − 1; one call for a jump, every sample for
+// a sweep).  Returns the largest sample-to-sample change during those
+// samples and the 200 ms after them, divided by the reference's.
+template <typename Reverb, typename Apply>
+double setterStep(Reverb& rev, bool keepInput, double sr, Apply&& apply, size_t applySamples)
+{
+    double phase = 0.0;
+    auto sine = [&]() {
+        phase += 220.0 / sr;
+        phase -= std::floor(phase);
+        return 0.5f * static_cast<float>(std::sin(2.0 * kPi * phase));
+    };
+    for (size_t i = 0; i < static_cast<size_t>(2.0 * sr); ++i)
+        rev.process(sine());
+
+    double prevL = 0.0, prevR = 0.0;
+    bool first = true;
+    auto run = [&](size_t n, bool applying) {
+        double m = 0.0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (applying && i < applySamples)
+                apply(rev, i);
+            auto [l, r] = rev.process(keepInput ? sine() : 0.0f);
+            if (!first)
+                m = std::max({ m, std::fabs(l - prevL), std::fabs(r - prevR) });
+            first = false;
+            prevL = l;
+            prevR = r;
+        }
+        return m;
+    };
+    const size_t win = static_cast<size_t>(0.2 * sr);
+    run(static_cast<size_t>(0.1 * sr), false);
+    const double own = run(win, false);
+    return run(applySamples + win, true) / own;
+}
+
 } // namespace reverbtest

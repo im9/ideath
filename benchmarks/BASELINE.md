@@ -202,3 +202,9 @@ than comparing cross-host.
   kept.  The freeze blend runs in its own loop only while frozen or
   ramping; folding it into the line loop as a per-line select cost
   `HallReverb` ≈ +12 %.
+- `ReverbTank` damping filter moved from direct form to TPT (2026-11-10, same
+  host, load average ≈ 10): previous commit and this one built side by side,
+  three alternating runs, µs per 512-sample block.  `HallReverb` 28.4 / 26.2 /
+  26.8 vs. 27.0 / 26.9 / 27.9; `ShimmerReverb` 58.1 / 57.0 / 60.4 vs. 61.9 /
+  62.2 / 58.2; two voices 76.0 / 76.5 / 74.5 vs. 78.4 / 77.9 / 80.6 — within
+  run-to-run jitter (≤ +5 %), table rows kept.

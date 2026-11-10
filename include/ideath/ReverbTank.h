@@ -53,7 +53,7 @@ public:
     static constexpr float kMaxModSec = 0.001f;
 
     /// Freeze transition time (seconds).  Entering or leaving freeze moves
-    /// the line gains, the damping bypass and the input gain together,
+    /// the line gains, the damping mix-out and the input gain together,
     /// linearly over this time.  30 ms: a linear ramp of length T spreads
     /// each partial over ±1/T = ±33 Hz, inside the ≈ 100 Hz critical band
     /// at low frequencies, so it is heard as a level / timbre change and
@@ -149,17 +149,12 @@ private:
         float length = 0.0f;  // nominal delay (samples)
         float loss = 0.0f;    // 1 − g², g = Jot gain at the reference frequency
         float gain = 1.0f;    // Jot line gain (DC)
-        // Damping low-pass (2nd-order Butterworth, DC gain 1); omegaC = 0
-        // means bypassed (no damping needed at this setting).
-        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-        float z1 = 0.0f, z2 = 0.0f;
-        float omegaC = 0.0f;
-        void setBypass()
-        {
-            b0 = 1.0f;
-            b1 = b2 = a1 = a2 = 0.0f;
-            omegaC = 0.0f;
-        }
+        // Damping low-pass: 2nd-order Butterworth (DC gain 1) in TPT
+        // state-variable form, corner Ω_c = tan(π·f_c / sr).  Never
+        // bypassed: with no damping the corner sits at kNoDampCorner·sr.
+        float omegaC = 1.0f;
+        float a1 = 0.0f, a2 = 0.0f, a3 = 0.0f; // TPT coefficients from Ω_c
+        float ic1 = 0.0f, ic2 = 0.0f;         // integrator states
         float apState = 0.0f; // allpass-interpolator output memory
     };
 

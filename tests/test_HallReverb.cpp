@@ -292,6 +292,59 @@ TEST_CASE("HallReverb: freeze press and release do not click", "[hallreverb]")
         }
 }
 
+TEST_CASE("HallReverb: damp and size changes do not click", "[hallreverb]")
+{
+    // Same criterion as the freeze test: the largest sample-to-sample
+    // change after a setter change stays under 3× the reverb's own (a step
+    // written in one sample jumps 5–10×, a smooth change stays within 2×).
+    // Damp jumps and 0.5 s sweeps at size 0.8, including the ends at
+    // damp 0, where the damping filter has the least to do — before the
+    // TPT damping filter, 0 → 0.3 and 1 → 0 measured up to 3.3× here.
+    struct Case { const char* label; float size, damp, to; bool sweep; };
+    const Case damps[] = {
+        { "damp 0 -> 0.3", 0.8f, 0.0f, 0.3f, false },
+        { "damp 0.3 -> 0", 0.8f, 0.3f, 0.0f, false },
+        { "damp 0 -> 1", 0.8f, 0.0f, 1.0f, false },
+        { "damp 1 -> 0", 0.8f, 1.0f, 0.0f, false },
+        { "damp 0.3 -> 1", 0.8f, 0.3f, 1.0f, false },
+        { "damp sweep 0 -> 1", 0.8f, 0.0f, 1.0f, true },
+        { "damp sweep 1 -> 0", 0.8f, 1.0f, 0.0f, true },
+    };
+    const size_t sweep = static_cast<size_t>(0.5f * kSR);
+    for (const Case& c : damps)
+        for (bool keepInput : { true, false })
+        {
+            ideath::HallReverb rev;
+            rev.prepare(kSR);
+            rev.setMix(1.0f);
+            rev.setSize(c.size);
+            rev.setDamp(c.damp);
+            const double r = setterStep(rev, keepInput, kSR, [&](auto& x, size_t i) {
+                x.setDamp(c.sweep ? c.damp + (c.to - c.damp) * static_cast<float>(i + 1)
+                                                / static_cast<float>(sweep)
+                                  : c.to);
+            }, c.sweep ? sweep : 1);
+            INFO(c.label << (keepInput ? ", input on" : ", tail only") << ": ×" << r);
+            REQUIRE(r < 3.0);
+        }
+
+    // Size jumps, tail only.  With the input on, a longer T60 legitimately
+    // raises the level (steady-state RMS gain √(T60 / 3.87 s): 0 → 1 is
+    // +17.8 dB), so the ratio there measures the level change, not a step.
+    const float sizes[][2] = { { 0.3f, 0.8f }, { 0.8f, 0.3f }, { 0.0f, 1.0f }, { 1.0f, 0.0f } };
+    for (const auto& s : sizes)
+    {
+        ideath::HallReverb rev;
+        rev.prepare(kSR);
+        rev.setMix(1.0f);
+        rev.setSize(s[0]);
+        const double r = setterStep(rev, false, kSR,
+                                    [&](auto& x, size_t) { x.setSize(s[1]); }, 1);
+        INFO("size " << s[0] << " -> " << s[1] << ", tail only: ×" << r);
+        REQUIRE(r < 3.0);
+    }
+}
+
 TEST_CASE("HallReverb: dry/wet mix 0 passes the input bit-exact", "[hallreverb]")
 {
     ideath::HallReverb rev;
