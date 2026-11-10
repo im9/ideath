@@ -67,10 +67,23 @@ static int nextPow2(int n)
 // at T60 = 30 s; normalising it at 250 Hz instead would stretch the
 // sub-250 Hz decay to ≈ 35 s.  The Butterworth's droop at 250 Hz is
 // ≈ 0.0002 dB.)
+//
+// It runs as a Cytomic TPT state-variable filter (damping k = √2), which
+// has exactly this response.  Its states are the two integrators' memory,
+// not a mix of past signals weighted by the coefficients (as in a direct
+// form), so damp / size changes — which move the corner instantly, also
+// while hosts sweep them per sample — leave the output continuous.  The
+// direct form stepped by up to (b0_new − b0_old)·x — up to 3.3× the
+// tail's own steepest motion when damp left or reached 0.
+//
+// No damping is not a bypass but the corner at kNoDampCorner·sr: there
+// |H|² = 1 / (1 + (Ω/31.8)⁴), so even 16 kHz at 48 kHz (Ω = 1.73) loses
+// 4·10⁻⁵ dB per pass, and 20 kHz at 44.1 kHz (Ω = 6.8) 0.01 dB.  Leaving
+// the filter in keeps the state continuous through damp 0.
+static constexpr float kNoDampCorner = 0.49f;
+
 static float butterMag2(float omegaC, float hz, float sampleRate)
 {
-    if (omegaC <= 0.0f)
-        return 1.0f; // bypassed
     const float r = std::tan(3.14159265f * hz / sampleRate) / omegaC;
     return 1.0f / (1.0f + r * r * r * r);
 }
@@ -134,6 +147,7 @@ void ReverbTank::prepare(float sampleRate)
     inputGain_ = std::sqrt(loss);
     inputHp_.prepare(kInputHpHz, sampleRate);
     inputHp2_.prepare(kInputHpHz, sampleRate);
+    freezeStep_ = 1.0f / std::max(1.0f, std::round(kFreezeRampSec * sampleRate));
 
     setModRate(modRate_);
     setModDepth(modDepth_);
@@ -147,8 +161,8 @@ void ReverbTank::reset()
     {
         std::fill(line.buffer.begin(), line.buffer.end(), 0.0f);
         line.write = 0;
-        line.z1 = 0.0f;
-        line.z2 = 0.0f;
+        line.ic1 = 0.0f;
+        line.ic2 = 0.0f;
         line.apState = 0.0f;
     }
     for (auto* chain : { &diffusers_, &decorrLeft_, &decorrRight_ })
@@ -163,6 +177,9 @@ void ReverbTank::reset()
     lfoPhase2_ = 0.25f;
     lfoOut_ = 0.0f;
     monoTap_ = 0.0f;
+    // Buffers are empty, so there is nothing to click: start at the end
+    // of the ramp.
+    freezeAmount_ = freeze_ ? 1.0f : 0.0f;
 }
 
 float ReverbTank::Diffuser::process(float x)
@@ -208,59 +225,42 @@ void ReverbTank::setModRate(float rateHz)
 
 void ReverbTank::setFreeze(bool freeze)
 {
-    if (freeze == freeze_)
-        return;
+    // Only the target moves; process() ramps freezeAmount_ toward it.  The
+    // line gains and damping filters always hold the unfrozen settings.
     freeze_ = freeze;
-    updateGains();
 }
 
 void ReverbTank::updateGains()
 {
-    if (freeze_)
-    {
-        for (Line& line : lines_)
-        {
-            line.gain = 1.0f;
-            line.setBypass();
-            line.loss = 0.0f;
-        }
-        powerGain_ = INFINITY;
-        pinkPowerGain_ = INFINITY;
-        return;
-    }
-
     // Jot: a line of L samples with gain g = 10^(−3·L / (sr·T60)) loses
     // 60 dB per T60 seconds whatever L is, so all lines decay together.
     // Damping adds kMaxDampDbPerSec·damp dB/s at kDampRefHz:
     //   T60_hf = 60 / (60/T60 + kMaxDampDbPerSec·damp).
     // The Butterworth low-pass supplies the ratio t = g_hf / g at the
     // reference: 1 / (1 + (Ω_ref/Ω_c)⁴) = t²  →  Ω_c = Ω_ref / (1/t² − 1)^¼.
+    // t is the extra loss per pass alone: 1/T60_hf − 1/T60 =
+    // kMaxDampDbPerSec·damp / 60, so 1/t² − 1 = 10^(L·kMaxDampDbPerSec·damp
+    // / (10·sr)) − 1, taken with expm1.  (Dividing g_hf by g instead left
+    // rounding residue of a few ulp at damp 0, which put about 1 line in
+    // 1600 at a corner of 7–16 instead of the clamp.)
     const float refHz = std::min(kDampRefHz, 0.45f * sampleRate_);
     const float omegaRef = std::tan(3.14159265f * refHz / sampleRate_);
-    const float t60hf = 60.0f / (60.0f / t60_ + kMaxDampDbPerSec * damp_);
+    const float omegaMax = std::tan(3.14159265f * kNoDampCorner);
 
     float loss = 0.0f;
     for (Line& line : lines_)
     {
         const float g = std::pow(10.0f, -3.0f * line.length / (sampleRate_ * t60_));
-        const float ghf = std::pow(10.0f, -3.0f * line.length / (sampleRate_ * t60hf));
-        const float t = ghf / g;
         line.gain = g;
-        if (t >= 0.9999f)
-        {
-            line.setBypass();
-        }
-        else
-        {
-            const float k = omegaRef / std::pow(1.0f / (t * t) - 1.0f, 0.25f);
-            const float norm = 1.0f / (1.0f + 1.41421356f * k + k * k);
-            line.omegaC = k;
-            line.b0 = k * k * norm;
-            line.b1 = 2.0f * line.b0;
-            line.b2 = line.b0;
-            line.a1 = 2.0f * (k * k - 1.0f) * norm;
-            line.a2 = (1.0f - 1.41421356f * k + k * k) * norm;
-        }
+        // d = 0 (damp 0) puts the corner at infinity; it stops at
+        // kNoDampCorner.
+        const float d = std::expm1(2.30258509f * line.length * kMaxDampDbPerSec * damp_
+                                   / (10.0f * sampleRate_));
+        const float k = d > 0.0f ? std::min(omegaRef / std::pow(d, 0.25f), omegaMax) : omegaMax;
+        line.omegaC = k;
+        line.a1 = 1.0f / (1.0f + k * (k + 1.41421356f));
+        line.a2 = k * line.a1;
+        line.a3 = k * line.a2;
         line.loss = 1.0f - g * g;
         loss += line.loss;
     }
@@ -302,11 +302,36 @@ float ReverbTank::readLine(Line& line, float delay)
 
 std::pair<float, float> ReverbTank::process(float input)
 {
+    // --- Freeze ramp ---
+    // One position a ∈ [0, 1] moves the input gain (1 − a), each line's
+    // gain ((1 − a)·g + a) and how much of the damping is mixed out
+    // ((1 − a)·LP + a·dry) together and linearly.  Switching them in one
+    // sample clicks: the line output jumps from the damped to the undamped
+    // signal, the step is written into the line and comes back one pass
+    // (≈ 50 ms) later.  The filters keep their unfrozen coefficients and
+    // keep running; freeze only mixes them out.  Linear, not equal-power:
+    // LP(out) and out are the same signal, identical well below the
+    // damping corner, so the blend keeps the level there.  Around the
+    // corner the low-pass lags by 90° at |H| = 0.707, and mid-ramp
+    // (a = 1/3) |(1 − a)H + a| = 0.577, so the blend dips up to 1.8 dB
+    // below both ends for the one pass the ramp lasts — a brief timbre
+    // change, no step.  The (1 − a)·x + a forms give exactly 1 and exactly
+    // the dry read at a = 1 (lossless hold) and exactly the unfrozen values
+    // at a = 0.
+    if (freeze_ ? freezeAmount_ < 1.0f : freezeAmount_ > 0.0f)
+        freezeAmount_ = std::clamp(freezeAmount_ + (freeze_ ? freezeStep_ : -freezeStep_),
+                                   0.0f, 1.0f);
+    const float frz = freezeAmount_;
+    const float keep = 1.0f - frz;
+
     // --- Input diffusion (Schroeder allpasses, lossless) ---
+    // The input is muted after the diffusers and DC blockers, so they keep
+    // running on live input while frozen and nothing they hold drains into
+    // the held tail.
     float u = inputHp2_.process(inputHp_.process(input));
     for (Diffuser& d : diffusers_)
         u = d.process(u);
-    u *= inputGain_ * kInvSqrtN;
+    u *= inputGain_ * kInvSqrtN * keep;
 
     // --- LFOs: two quadrature pairs at incommensurate rates ---
     const float s1 = std::sin(kTwoPi * lfoPhase_);
@@ -323,17 +348,32 @@ std::pair<float, float> ReverbTank::process(float input)
     // --- Read, absorb, mix ---
     float out[kLines];
     float damped[kLines];
+    float lp[kLines];
     float sum = 0.0f;
     for (int i = 0; i < kLines; ++i)
     {
         Line& line = lines_[i];
         out[i] = readLine(line, line.length + mod[i] * modSamples_);
-        // Damping low-pass (transposed direct form II).
-        const float y = line.b0 * out[i] + line.z1;
-        line.z1 = line.b1 * out[i] - line.a1 * y + line.z2 + kAntiDenormal;
-        line.z2 = line.b2 * out[i] - line.a2 * y;
+        // Damping low-pass (TPT state-variable, low-pass output).
+        const float v3 = out[i] - line.ic2;
+        const float v1 = line.a1 * line.ic1 + line.a2 * v3;
+        const float y = line.ic2 + line.a2 * line.ic1 + line.a3 * v3;
+        line.ic1 = 2.0f * v1 - line.ic1 + kAntiDenormal;
+        line.ic2 = 2.0f * y - line.ic2 + kAntiDenormal;
+        lp[i] = y;
         damped[i] = line.gain * y;
         sum += damped[i];
+    }
+    if (frz != 0.0f)
+    {
+        // Freeze blend, only while frozen or ramping (the unfrozen loop
+        // above stays branch-free).
+        sum = 0.0f;
+        for (int i = 0; i < kLines; ++i)
+        {
+            damped[i] = (keep * lines_[i].gain + frz) * (keep * lp[i] + frz * out[i]);
+            sum += damped[i];
+        }
     }
 
     // Householder: A = I − (2/N)·1·1ᵀ (orthogonal, O(N)).

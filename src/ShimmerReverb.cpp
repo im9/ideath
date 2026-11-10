@@ -188,11 +188,7 @@ void ShimmerReverb::setMix(float mix)
 
 void ShimmerReverb::setFreeze(bool freeze)
 {
-    if (freeze == freeze_)
-        return;
-    freeze_ = freeze;
     tank_.setFreeze(freeze);
-    updateShimmer();
 }
 
 void ShimmerReverb::setPreDelay(float seconds)
@@ -333,19 +329,18 @@ void ShimmerReverb::updateShimmer()
         // times the energy that went in.  Injecting γ·shift(tap) adds
         // γ²·G·P_v of the source generation's energy; set that to ρ:
         //   γ = amount · √(ρ_max / G).
-        // Frozen: G = ∞ → γ = 0, nothing new is shifted into the tank.
+        // G is the unfrozen tank's gain, so γ does not move with freeze
+        // (the tank mutes the injection itself while frozen).
         const float g = tank_.powerGain();
-        inputShiftGain_ = std::isfinite(g) ? shimmer_ * std::sqrt(rhoMax / g) : 0.0f;
+        inputShiftGain_ = shimmer_ * std::sqrt(rhoMax / g);
         // Generations carry 1, ρκλ, (ρκλ)², … of the energy → Σ = 1/(1 − ρκλ).
         // λ = G_pink / G: γ is set from the low-frequency gain G, but a
         // generation's energy comes back through the gain its spectrum
         // sees, which damping lowers.  Pink weighting matches the level
         // spec; γ itself is left alone so darker material can only fall
-        // short of ρ, never exceed it.
-        // Frozen (G = ∞): keep the last λ so engaging freeze does not step
-        // the level.
-        if (std::isfinite(g))
-            lambda_ = std::clamp(tank_.pinkPowerGain() / g, 0.0f, 1.0f);
+        // short of ρ, never exceed it.  Both gains are the unfrozen tank's,
+        // so engaging freeze does not step the level.
+        lambda_ = std::clamp(tank_.pinkPowerGain() / g, 0.0f, 1.0f);
         outNorm_ = std::sqrt(1.0f - rho_ * kappa * lambda_);
     }
     else
@@ -491,21 +486,18 @@ std::pair<float, float> ShimmerReverb::process(float input)
         preDelay_[static_cast<size_t>((preDelayWrite_ - preDelaySamples_) & preDelayMask_)];
     preDelayWrite_ = (preDelayWrite_ + 1) & preDelayMask_;
 
-    // Frozen: the tank is lossless, so no input and no freshly shifted
-    // sound is fed (fresh shifting is what would make the held pitch climb
-    // forever in Feedback mode).  Only the input diffuser's last ≈ 30 ms
-    // drains in after the switch.
-    const float x = freeze_ ? 0.0f : delayed;
-
-    const float source = sourceHp_.process(mode_ == Mode::Feedback ? tank_.monoTap() : x);
+    const float source = sourceHp_.process(mode_ == Mode::Feedback ? tank_.monoTap() : delayed);
     const float detune = tank_.lfo() * tank_.modDepth() * kMaxDetuneCents;
     float shifted = 0.0f;
     shifted += voices_[0].level * processVoice(voices_[0], source, detune);
     shifted += voices_[1].level * processVoice(voices_[1], source, -detune);
     shifted *= voiceNorm_;
 
-    const float inject = freeze_ ? 0.0f : x + inputShiftGain_ * shifted;
-    auto [l, r] = tank_.process(inject);
+    // Frozen: the tank mutes this whole injection, input and freshly shifted
+    // sound alike (fresh shifting is what would make the held pitch climb
+    // forever in Feedback mode).  The mute glides over
+    // ReverbTank::kFreezeRampSec and is exactly zero once frozen.
+    auto [l, r] = tank_.process(delayed + inputShiftGain_ * shifted);
 
     const float dry = input * (1.0f - mix_);
     const float wet = mix_ * outNorm_;

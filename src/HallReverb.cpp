@@ -81,7 +81,6 @@ void HallReverb::setMix(float mix)
 
 void HallReverb::setFreeze(bool freeze)
 {
-    freeze_ = freeze;
     tank_.setFreeze(freeze);
 }
 
@@ -92,10 +91,10 @@ std::pair<float, float> HallReverb::process(float input)
         preDelay_[static_cast<size_t>((preDelayWrite_ - preDelaySamples_) & preDelayMask_)];
     preDelayWrite_ = (preDelayWrite_ + 1) & preDelayMask_;
 
-    // Frozen tank is lossless: anything fed now would stay forever and
-    // pile up, so the held tail gets silence (only the input diffuser's
-    // last ≈ 30 ms drains in after the switch).
-    auto [l, r] = tank_.process(freeze_ ? 0.0f : delayed);
+    // The tank mutes its own input while frozen (ramped with the freeze,
+    // ReverbTank::kFreezeRampSec): a lossless tank would keep anything fed
+    // to it forever.
+    auto [l, r] = tank_.process(delayed);
 
     const float dry = input * (1.0f - mix_);
     return { dry + l * mix_, dry + r * mix_ };

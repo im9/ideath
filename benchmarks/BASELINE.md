@@ -193,3 +193,18 @@ than comparing cross-host.
   - ² Stereo ping-pong with diffusion on: 59.2 ns/sample, measured before
     the phasor LFOs and the Hermite read (official bench, idle host); not
     re-measured.
+- `ReverbTank` freeze ramp (2026-11-10, same Apple M2 Max host, load
+  average 8–15): origin/main and the branch built side by side and run
+  alternately, three runs each, µs per 512-sample block.  `HallReverb`
+  main 27.9 / 25.8 / 27.7 vs. branch 27.1 / 26.6 / 26.5; `ShimmerReverb`
+  57.0 / 56.4 / 55.6 vs. 56.5 / 56.4 / 58.0; two voices 76.0 / 79.8 / 74.6
+  vs. 75.8 / 75.5 / 74.8 — no change beyond run-to-run jitter, table rows
+  kept.  The freeze blend runs in its own loop only while frozen or
+  ramping; folding it into the line loop as a per-line select cost
+  `HallReverb` ≈ +12 %.
+- `ReverbTank` damping filter moved from direct form to TPT (2026-11-10, same
+  host, load average ≈ 10): previous commit and this one built side by side,
+  three alternating runs, µs per 512-sample block.  `HallReverb` 28.4 / 26.2 /
+  26.8 vs. 27.0 / 26.9 / 27.9; `ShimmerReverb` 58.1 / 57.0 / 60.4 vs. 61.9 /
+  62.2 / 58.2; two voices 76.0 / 76.5 / 74.5 vs. 78.4 / 77.9 / 80.6 — within
+  run-to-run jitter (≤ +5 %), table rows kept.

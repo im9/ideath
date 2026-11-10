@@ -209,6 +209,54 @@ TEST_CASE("ReverbTank: freeze holds the tail for 10 s without growth", "[reverbt
     }
 }
 
+TEST_CASE("ReverbTank: freeze glides in and out over kFreezeRampSec", "[reverbtank]")
+{
+    // Spec: the freeze position moves linearly from 0 to 1 (and back) in
+    // round(kFreezeRampSec · sr) samples — 1440 at 48 kHz.  Halfway through
+    // it must read 1/2 (linear ramp; float accumulation of 720 increments
+    // of 1/1440 is off by < 720 · 2⁻²⁴ ≈ 4e−5, bound 1e−4).  One extra
+    // sample is allowed at the end for the same rounding.
+    ideath::ReverbTank tank;
+    tank.prepare(kSR);
+    const int n = static_cast<int>(std::round(ideath::ReverbTank::kFreezeRampSec * kSR));
+    for (bool on : { true, false })
+    {
+        tank.setFreeze(on);
+        for (int i = 0; i < n / 2; ++i)
+            tank.process(0.0f);
+        REQUIRE(std::fabs(tank.freezeAmount() - 0.5f) < 1e-4f);
+        for (int i = n / 2; i < n - 1; ++i)
+            tank.process(0.0f);
+        REQUIRE(tank.freezeAmount() != (on ? 1.0f : 0.0f)); // still moving
+        tank.process(0.0f);
+        tank.process(0.0f);
+        REQUIRE(tank.freezeAmount() == (on ? 1.0f : 0.0f));
+    }
+}
+
+TEST_CASE("ReverbTank: releasing mid-ramp turns back from where it is", "[reverbtank]")
+{
+    // A release halfway into the press must not jump: the position walks
+    // back down from 1/2 one step per sample and reaches 0 after the same
+    // number of samples it climbed (n/2), +1 sample of rounding slack.
+    // Step tolerance 1e−6: one increment is 1/1440 ≈ 6.9e−4; float
+    // rounding of a value in [0, 1) is ≤ 2⁻²⁴ ≈ 6e−8 per operation.
+    ideath::ReverbTank tank;
+    tank.prepare(kSR);
+    const int n = static_cast<int>(std::round(ideath::ReverbTank::kFreezeRampSec * kSR));
+    const float step = 1.0f / static_cast<float>(n);
+    tank.setFreeze(true);
+    for (int i = 0; i < n / 2; ++i)
+        tank.process(0.0f);
+    const float mid = tank.freezeAmount();
+    tank.setFreeze(false);
+    tank.process(0.0f);
+    REQUIRE(std::fabs(tank.freezeAmount() - (mid - step)) < 1e-6f);
+    for (int i = 1; i < n / 2 + 1; ++i)
+        tank.process(0.0f);
+    REQUIRE(tank.freezeAmount() == 0.0f);
+}
+
 TEST_CASE("ReverbTank: reset matches a freshly prepared tank", "[reverbtank]")
 {
     ideath::ReverbTank a, b;
