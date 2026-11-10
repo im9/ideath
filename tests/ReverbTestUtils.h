@@ -166,4 +166,56 @@ inline size_t tailSamples(double t60, double sr)
     return static_cast<size_t>((0.8 * t60 + 1.0) * sr);
 }
 
+// Freeze click measure.  A reverb (already prepared and set up) rings on a
+// 220 Hz sine for 2 s; then `keepInput` decides whether the sine goes on
+// or stops.  After 300 ms the freeze is pressed, held 200 ms and released,
+// and 200 ms more are rendered.  Returns the largest sample-to-sample
+// change |y[n] − y[n−1]| (L and R) in the 200 ms after the press and in
+// the 200 ms after the release, each divided by the largest change in the
+// 200 ms before the press — the reverb's own steepest motion.  200 ms
+// covers the ramp plus two passes of the longest line (85 ms), where a
+// step written into a line comes back out.
+struct FreezeSteps
+{
+    double press = 0.0;
+    double release = 0.0;
+};
+
+template <typename Reverb>
+FreezeSteps freezeSteps(Reverb& rev, bool keepInput, double sr)
+{
+    double phase = 0.0;
+    auto sine = [&]() {
+        phase += 220.0 / sr;
+        phase -= std::floor(phase);
+        return 0.5f * static_cast<float>(std::sin(2.0 * kPi * phase));
+    };
+    for (size_t i = 0; i < static_cast<size_t>(2.0 * sr); ++i)
+        rev.process(sine());
+
+    const size_t win = static_cast<size_t>(0.2 * sr);
+    double prevL = 0.0, prevR = 0.0;
+    bool first = true;
+    auto run = [&](size_t n) {
+        double m = 0.0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            auto [l, r] = rev.process(keepInput ? sine() : 0.0f);
+            if (!first)
+                m = std::max({ m, std::fabs(l - prevL), std::fabs(r - prevR) });
+            first = false;
+            prevL = l;
+            prevR = r;
+        }
+        return m;
+    };
+    run(static_cast<size_t>(0.1 * sr)); // input stop (if any) settles
+    const double own = run(win);
+    rev.setFreeze(true);
+    const double press = run(win);
+    rev.setFreeze(false);
+    const double release = run(win);
+    return { press / own, release / own };
+}
+
 } // namespace reverbtest

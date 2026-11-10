@@ -307,11 +307,73 @@ TEST_CASE("ShimmerReverb: engaging freeze does not step the level", "[shimmer]")
     INFO("level step at freeze: " << stepDb << " dB");
     // A free tail at size 0.6 (T60 5.8 s) falls 60·0.2/5.8 = 2.1 dB per
     // 0.2 s window.  The "before" window's mean sits half of that above
-    // the level at the freeze instant, which the frozen tank then holds:
-    // a step-free freeze reads −1.05 dB.  Allowed: ±1 dB (level JND)
-    // around it.  (Forcing λ = 1 while frozen measured −2.36 dB.)
-    REQUIRE(stepDb >= -2.05);
-    REQUIRE(stepDb <= -0.05);
+    // the level at the freeze instant: −1.05 dB.  The freeze then glides in
+    // over ReverbTank::kFreezeRampSec, during which the line loss falls
+    // linearly to 0 — on average half the ramp of free decay,
+    // 60 · 0.015 / 5.8 = 0.16 dB more — so a step-free freeze reads
+    // −1.21 dB.  Allowed: ±1 dB (level JND) around it.  (Forcing λ = 1
+    // while frozen measured −2.36 dB.)
+    REQUIRE(stepDb >= -2.21);
+    REQUIRE(stepDb <= -0.21);
+}
+
+TEST_CASE("ShimmerReverb: freeze press and release do not click", "[shimmer]")
+{
+    // Same criterion and settings as the HallReverb test: the largest
+    // sample-to-sample change after the press and after the release stays
+    // under 3× the reverb's own (a one-sample step jumps 5–10×, a smooth
+    // change stays within 2×; before the freeze ramp this test measured
+    // 2.7–3.3× here).  Both modes: in Feedback mode the shifted
+    // injection is switched off with the input; in Input mode it rides on
+    // the input.  Default shimmer amount 0.5.
+    for (Mode mode : { Mode::Feedback, Mode::Input })
+        for (float damp : { 0.3f, 1.0f })
+            for (bool keepInput : { true, false })
+            {
+                ideath::ShimmerReverb rev;
+                rev.prepare(kSR);
+                rev.setMix(1.0f);
+                rev.setSize(0.8f);
+                rev.setDamp(damp);
+                rev.setMode(mode);
+                const FreezeSteps s = freezeSteps(rev, keepInput, kSR);
+                INFO((mode == Mode::Feedback ? "Feedback" : "Input") << ", damp " << damp
+                     << (keepInput ? ", input on" : ", tail only")
+                     << ": press ×" << s.press << ", release ×" << s.release);
+                REQUIRE(s.press < 3.0);
+                REQUIRE(s.release < 3.0);
+            }
+}
+
+TEST_CASE("ShimmerReverb: input during freeze does not enter the held tail", "[shimmer]")
+{
+    // Once the freeze ramp is over the tank multiplies its whole injection
+    // — input and freshly shifted sound — by exactly 0, so the output must
+    // be bit-identical whether or not input arrives.  Both modes.
+    for (Mode mode : { Mode::Feedback, Mode::Input })
+    {
+        auto render = [mode](bool feed) {
+            ideath::ShimmerReverb rev;
+            rev.prepare(kSR);
+            rev.setMix(1.0f);
+            rev.setMode(mode);
+            rev.setShimmer(1.0f);
+            for (int i = 0; i < 4800; ++i)
+                rev.process(i == 0 ? 1.0f : 0.0f);
+            rev.setFreeze(true);
+            const int ramp = static_cast<int>(
+                std::ceil(ideath::ReverbTank::kFreezeRampSec * kSR)) + 1;
+            for (int i = 0; i < ramp; ++i)
+                rev.process(0.0f);
+            std::vector<float> y(20000);
+            White w;
+            for (auto& s : y)
+                s = rev.process(feed ? w.next() : 0.0f).first;
+            return y;
+        };
+        INFO((mode == Mode::Feedback ? "Feedback" : "Input"));
+        REQUIRE(render(true) == render(false));
+    }
 }
 
 TEST_CASE("ShimmerReverb: frozen tail never climbs in pitch", "[shimmer]")

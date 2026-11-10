@@ -134,6 +134,7 @@ void ReverbTank::prepare(float sampleRate)
     inputGain_ = std::sqrt(loss);
     inputHp_.prepare(kInputHpHz, sampleRate);
     inputHp2_.prepare(kInputHpHz, sampleRate);
+    freezeStep_ = 1.0f / std::max(1.0f, std::round(kFreezeRampSec * sampleRate));
 
     setModRate(modRate_);
     setModDepth(modDepth_);
@@ -163,6 +164,9 @@ void ReverbTank::reset()
     lfoPhase2_ = 0.25f;
     lfoOut_ = 0.0f;
     monoTap_ = 0.0f;
+    // Buffers are empty, so there is nothing to click: start at the end
+    // of the ramp.
+    freezeAmount_ = freeze_ ? 1.0f : 0.0f;
 }
 
 float ReverbTank::Diffuser::process(float x)
@@ -208,27 +212,13 @@ void ReverbTank::setModRate(float rateHz)
 
 void ReverbTank::setFreeze(bool freeze)
 {
-    if (freeze == freeze_)
-        return;
+    // Only the target moves; process() ramps freezeAmount_ toward it.  The
+    // line gains and damping filters always hold the unfrozen settings.
     freeze_ = freeze;
-    updateGains();
 }
 
 void ReverbTank::updateGains()
 {
-    if (freeze_)
-    {
-        for (Line& line : lines_)
-        {
-            line.gain = 1.0f;
-            line.setBypass();
-            line.loss = 0.0f;
-        }
-        powerGain_ = INFINITY;
-        pinkPowerGain_ = INFINITY;
-        return;
-    }
-
     // Jot: a line of L samples with gain g = 10^(−3·L / (sr·T60)) loses
     // 60 dB per T60 seconds whatever L is, so all lines decay together.
     // Damping adds kMaxDampDbPerSec·damp dB/s at kDampRefHz:
@@ -302,11 +292,36 @@ float ReverbTank::readLine(Line& line, float delay)
 
 std::pair<float, float> ReverbTank::process(float input)
 {
+    // --- Freeze ramp ---
+    // One position a ∈ [0, 1] moves the input gain (1 − a), each line's
+    // gain ((1 − a)·g + a) and the damping bypass ((1 − a)·LP + a·dry)
+    // together and linearly.  Switching them in one sample clicks: the
+    // damping filter's state belongs to the old coefficients, so the line
+    // output steps, the step is written into the line and comes back one
+    // pass (≈ 50 ms) later.  The filters therefore never change coefficients
+    // for freeze; they keep running and are mixed out.  Linear, not
+    // equal-power: LP(out) and out are the same signal, identical well
+    // below the damping corner, so the blend keeps the level there.  Around
+    // the corner the low-pass lags by 90° at |H| = 0.707, and mid-ramp
+    // (a = 1/3) |(1 − a)H + a| = 0.577, so the blend
+    // dips up to 1.8 dB below both ends for the one pass the ramp lasts —
+    // a brief timbre change, no step.  The
+    // (1 − a)·x + a forms give exactly 1 and exactly the dry read at a = 1
+    // (lossless hold) and exactly the unfrozen values at a = 0.
+    if (freeze_ ? freezeAmount_ < 1.0f : freezeAmount_ > 0.0f)
+        freezeAmount_ = std::clamp(freezeAmount_ + (freeze_ ? freezeStep_ : -freezeStep_),
+                                   0.0f, 1.0f);
+    const float frz = freezeAmount_;
+    const float keep = 1.0f - frz;
+
     // --- Input diffusion (Schroeder allpasses, lossless) ---
+    // The input is muted after the diffusers and DC blockers, so they keep
+    // running on live input while frozen and nothing they hold drains into
+    // the held tail.
     float u = inputHp2_.process(inputHp_.process(input));
     for (Diffuser& d : diffusers_)
         u = d.process(u);
-    u *= inputGain_ * kInvSqrtN;
+    u *= inputGain_ * kInvSqrtN * keep;
 
     // --- LFOs: two quadrature pairs at incommensurate rates ---
     const float s1 = std::sin(kTwoPi * lfoPhase_);
@@ -323,6 +338,7 @@ std::pair<float, float> ReverbTank::process(float input)
     // --- Read, absorb, mix ---
     float out[kLines];
     float damped[kLines];
+    float lp[kLines];
     float sum = 0.0f;
     for (int i = 0; i < kLines; ++i)
     {
@@ -332,8 +348,20 @@ std::pair<float, float> ReverbTank::process(float input)
         const float y = line.b0 * out[i] + line.z1;
         line.z1 = line.b1 * out[i] - line.a1 * y + line.z2 + kAntiDenormal;
         line.z2 = line.b2 * out[i] - line.a2 * y;
+        lp[i] = y;
         damped[i] = line.gain * y;
         sum += damped[i];
+    }
+    if (frz != 0.0f)
+    {
+        // Freeze blend, only while frozen or ramping (the unfrozen loop
+        // above stays branch-free).
+        sum = 0.0f;
+        for (int i = 0; i < kLines; ++i)
+        {
+            damped[i] = (keep * lines_[i].gain + frz) * (keep * lp[i] + frz * out[i]);
+            sum += damped[i];
+        }
     }
 
     // Householder: A = I − (2/N)·1·1ᵀ (orthogonal, O(N)).

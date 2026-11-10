@@ -249,6 +249,13 @@ TEST_CASE("HallReverb: input during freeze does not enter the held tail", "[hall
         for (int i = 0; i < 4800; ++i)
             rev.process(i == 0 ? 1.0f : 0.0f);
         rev.setFreeze(true);
+        // The input mute glides in with the freeze; once the ramp is over
+        // the input is multiplied by exactly 0, so whatever arrives must
+        // leave the output bit-identical.
+        const int ramp = static_cast<int>(
+            std::ceil(ideath::ReverbTank::kFreezeRampSec * kSR)) + 1;
+        for (int i = 0; i < ramp; ++i)
+            rev.process(0.0f);
         std::vector<float> y(20000);
         White w;
         for (auto& s : y)
@@ -256,6 +263,33 @@ TEST_CASE("HallReverb: input during freeze does not enter the held tail", "[hall
         return y;
     };
     REQUIRE(render(true) == render(false));
+}
+
+TEST_CASE("HallReverb: freeze press and release do not click", "[hallreverb]")
+{
+    // The largest sample-to-sample change after the press and after the
+    // release must stay under 3× the reverb's own largest change.  3× is
+    // the master-bus click criterion the downstream plugin uses: a step
+    // written in one sample jumps 5–10× above the signal's own motion,
+    // while a smooth level or timbre change stays within 2× (before the
+    // freeze ramp this test measured 3.0–3.8× here).  Size 0.8 is a long
+    // hall; damp 0.3 (default) and 1 are where freezing has a damping
+    // filter to take out of the lines (damp 0 has none).  Both with the
+    // sine still playing and with the tail alone.
+    for (float damp : { 0.3f, 1.0f })
+        for (bool keepInput : { true, false })
+        {
+            ideath::HallReverb rev;
+            rev.prepare(kSR);
+            rev.setMix(1.0f);
+            rev.setSize(0.8f);
+            rev.setDamp(damp);
+            const FreezeSteps s = freezeSteps(rev, keepInput, kSR);
+            INFO("damp " << damp << (keepInput ? ", input on" : ", tail only")
+                 << ": press ×" << s.press << ", release ×" << s.release);
+            REQUIRE(s.press < 3.0);
+            REQUIRE(s.release < 3.0);
+        }
 }
 
 TEST_CASE("HallReverb: dry/wet mix 0 passes the input bit-exact", "[hallreverb]")

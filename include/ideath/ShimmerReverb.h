@@ -43,7 +43,8 @@ namespace ideath {
 ///
 /// Freeze: the tank becomes lossless, input is muted and no new shifted
 /// sound is injected, so the held tail keeps its pitch content and never
-/// climbs.
+/// climbs.  Both directions glide over ReverbTank::kFreezeRampSec (30 ms),
+/// so pressing or releasing does not click.
 ///
 /// Mono in, stereo out.  Output ceiling for ±1 input: ±kMaxOutput (35),
 /// same derivation as HallReverb (the wet output is RMS-normalised to the
@@ -139,7 +140,6 @@ private:
     float damp_ = 0.3f;
     float shimmer_ = 0.5f;
     float mix_ = 0.5f;
-    bool freeze_ = false;
     Mode mode_ = Mode::Feedback;
 
     // Derived

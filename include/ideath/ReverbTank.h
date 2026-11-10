@@ -52,6 +52,21 @@ public:
     /// Peak line-read excursion at modDepth = 1 (seconds).
     static constexpr float kMaxModSec = 0.001f;
 
+    /// Freeze transition time (seconds).  Entering or leaving freeze moves
+    /// the line gains, the damping bypass and the input gain together,
+    /// linearly over this time.  30 ms: a linear ramp of length T spreads
+    /// each partial over ±1/T = ±33 Hz, inside the ≈ 100 Hz critical band
+    /// at low frequencies, so it is heard as a level / timbre change and
+    /// not as a click (20 ms would still fit at ±50 Hz; shorter ramps
+    /// approach the one-sample step).  And it ends before the shortest line
+    /// (41.6 ms) has recirculated once, so the hold is complete on the
+    /// first pass, as with an instant switch.  The cost is the decay that
+    /// still happens during the ramp — on average half the ramp of free
+    /// decay, 60 dB · 0.015 s / T60: 1.8 dB at the shortest T60 (0.5 s),
+    /// 0.2 dB at T60 3.9 s.  A 50 ms ramp would lose 3 dB at T60 0.5 s and
+    /// run past the shortest line's first pass.
+    static constexpr float kFreezeRampSec = 0.03f;
+
     /// First-order high-pass y = a·(y + x − x₁).  Zero gain at DC.  Its
     /// anti-denormal offset reaches the output as ε / (1 − a) only — a
     /// second-order (Biquad) high-pass at 20 Hz turns the same offset into
@@ -84,8 +99,12 @@ public:
     /// Line modulation rate in Hz, clamped to [0.05, 5].
     void setModRate(float rateHz);
 
-    /// Freeze: line gains go to 1, damping off.  The caller decides what to
-    /// feed (HallReverb / ShimmerReverb feed silence while frozen).
+    /// Freeze: line gains go to 1, damping off, input muted, so the tail is
+    /// held indefinitely and nothing new enters it.  The change takes
+    /// kFreezeRampSec in both directions (no click); from then on the
+    /// frozen tank is exactly lossless and its input exactly zero.  The
+    /// damping filters keep running on the line outputs while frozen, so
+    /// leaving freeze picks them up with current state.
     void setFreeze(bool freeze);
 
     /// Process one sample entering the tank.  Returns wet {L, R}.
@@ -101,17 +120,25 @@ public:
 
     /// Low-frequency power gain from input to any one tap (L, R or mono):
     /// b² / Σ(1 − g_i²).  Equals the energy of the tap's impulse response
-    /// per unit input energy (Parseval).  Infinite while frozen.
+    /// per unit input energy (Parseval).  Always the unfrozen tank's gain
+    /// (freeze does not change it).
     float powerGain() const { return powerGain_; }
 
     /// Power gain averaged over log frequency 25 Hz – 16 kHz (third-octave
     /// grid) — the gain a pink-spectrum input sees.  Below powerGain() when
-    /// damping shortens the high-frequency decay.  Infinite while frozen.
+    /// damping shortens the high-frequency decay.  Always the unfrozen
+    /// tank's gain.
     float pinkPowerGain() const { return pinkPowerGain_; }
 
     float decaySeconds() const { return t60_; }
     float modDepth() const { return modDepth_; }
+    /// Freeze target as last set (true from setFreeze(true) on, even while
+    /// the ramp is still running — see freezeAmount()).
     bool frozen() const { return freeze_; }
+
+    /// Freeze transition position: 0 = free, 1 = fully frozen, linear in
+    /// between while the kFreezeRampSec ramp runs.
+    float freezeAmount() const { return freezeAmount_; }
 
 private:
     struct Line
@@ -123,7 +150,7 @@ private:
         float loss = 0.0f;    // 1 − g², g = Jot gain at the reference frequency
         float gain = 1.0f;    // Jot line gain (DC)
         // Damping low-pass (2nd-order Butterworth, DC gain 1); omegaC = 0
-        // means bypassed.
+        // means bypassed (no damping needed at this setting).
         float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
         float z1 = 0.0f, z2 = 0.0f;
         float omegaC = 0.0f;
@@ -154,6 +181,8 @@ private:
     float modDepth_ = 0.5f;
     float modRate_ = 0.6f;
     bool freeze_ = false;
+    float freezeAmount_ = 0.0f; // ramp position, 0 = free, 1 = frozen
+    float freezeStep_ = 0.0f;   // ramp increment per sample
 
     float inputGain_ = 1.0f;
     float powerGain_ = 1.0f;

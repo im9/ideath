@@ -56,7 +56,9 @@ public:
     void setMix(float mix);
 
     /// Freeze mode.  The tank becomes lossless and input is muted, so the
-    /// tail is held indefinitely.
+    /// tail is held indefinitely.  Both directions glide over
+    /// ReverbTank::kFreezeRampSec (30 ms), so pressing or releasing does not
+    /// click.
     void setFreeze(bool freeze);
 
     /// Process one mono input sample.  Returns {left, right}.
@@ -69,7 +71,6 @@ private:
     float sampleRate_ = 44100.0f;
     float size_ = 0.7f;
     float mix_ = 0.5f;
-    bool freeze_ = false;
 
     std::vector<float> preDelay_;
     int preDelayMask_ = 0;

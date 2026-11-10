@@ -193,3 +193,12 @@ than comparing cross-host.
   - ² Stereo ping-pong with diffusion on: 59.2 ns/sample, measured before
     the phasor LFOs and the Hermite read (official bench, idle host); not
     re-measured.
+- `ReverbTank` freeze ramp (2026-11-10, same Apple M2 Max host, load
+  average 8–15): origin/main and the branch built side by side and run
+  alternately, three runs each, µs per 512-sample block.  `HallReverb`
+  main 27.9 / 25.8 / 27.7 vs. branch 27.1 / 26.6 / 26.5; `ShimmerReverb`
+  57.0 / 56.4 / 55.6 vs. 56.5 / 56.4 / 58.0; two voices 76.0 / 79.8 / 74.6
+  vs. 75.8 / 75.5 / 74.8 — no change beyond run-to-run jitter, table rows
+  kept.  The freeze blend runs in its own loop only while frozen or
+  ramping; folding it into the line loop as a per-line select cost
+  `HallReverb` ≈ +12 %.
