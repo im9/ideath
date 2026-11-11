@@ -245,6 +245,7 @@ struct VoiceParams
     bool  granularFreeze = false;
     float granularSos = 0.0f;            // 0 = overwrite, 1 = keep buffer
     bool  granularReverse = false;
+    bool  granularKeepPhase = false;     // rate changes keep the spawn phase
     uint32_t granularSeed = 0x9E3779B9u;
 
     // Looper (FeedbackBuffer)

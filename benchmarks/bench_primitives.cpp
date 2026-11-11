@@ -820,6 +820,40 @@ TEST_CASE("Bench: GranularProcessor", "[bench]")
         }
         return acc;
     };
+
+    // A host that sets the rate every sample (a modulated rate), with the
+    // rate moving so the keep-phase rescale runs on every call: 150-250 Hz
+    // around the same 200 Hz cloud.  The setGrainRate row is the same loop
+    // with the plain setter, so the difference is the rescale's cost.
+    auto rateAt = [](int i) { return 200.0f + 50.0f * sineAt(i); };
+    for (bool keep : {false, true})
+    {
+        ideath::GranularProcessor rp;
+        rp.prepare(kSR, static_cast<int>(kSR));
+        rp.setGrainRate(200.0f);
+        rp.setGrainSize(0.04f);
+        rp.setPitchSpread(5.0f);
+        rp.setPositionScatter(0.5f);
+        for (int i = 0; i < static_cast<int>(kSR); ++i)
+        {
+            rp.writeSample(sineAt(i));
+            (void)rp.process();
+        }
+
+        BENCHMARK(keep ? "GranularProcessor::process + setGrainRateKeepingPhase/sample"
+                       : "GranularProcessor::process + setGrainRate/sample")
+        {
+            float acc = 0.0f;
+            for (int i = 0; i < kBlock; ++i)
+            {
+                if (keep) rp.setGrainRateKeepingPhase(rateAt(i));
+                else      rp.setGrainRate(rateAt(i));
+                rp.writeSample(sineAt(i));
+                acc += rp.process();
+            }
+            return acc;
+        };
+    }
 }
 
 TEST_CASE("Bench: LowPassGate", "[bench]")

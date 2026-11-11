@@ -113,6 +113,7 @@ ideath REPL commands:
   granular sos <0-1>            Overdub amount (0 overwrite, 1 keep buffer)
   granular reverse [on|off]     Launch grains reading backwards
   granular seed <n>             Grain RNG seed (32-bit unsigned)
+  granular keepphase [on|off]   Rate changes keep the spawn phase
   loop <rec|stop|play|dub|off>  Looper (record, overdub, play)
   comp <thresh> <ratio> [attack] [release] [makeup]  Compressor (or "comp off")
   reverb <room|hall|shimmer> [params]  Reverb (or "reverb off")
@@ -756,6 +757,7 @@ bool parseCommand(const std::string& line, SharedState& shared)
         // granular sos <0-1>                            → overdub amount
         // granular reverse [on|off]                     → toggle / set direction
         // granular seed <n>                             → RNG seed
+        // granular keepphase [on|off]                   → rate changes keep spawn phase
         // granular <rate> <size> [pitchSpread] [scatter] [mix] [pitchOffset]
         if (tokens.size() > 1 && tokens[1] == "off")
         {
@@ -783,6 +785,15 @@ bool parseCommand(const std::string& line, SharedState& shared)
                 shared.staging.granularReverse = true;
             else
                 shared.staging.granularReverse = !shared.staging.granularReverse;
+        }
+        else if (tokens.size() > 1 && tokens[1] == "keepphase")
+        {
+            if (tokens.size() > 2 && tokens[2] == "off")
+                shared.staging.granularKeepPhase = false;
+            else if (tokens.size() > 2 && tokens[2] == "on")
+                shared.staging.granularKeepPhase = true;
+            else
+                shared.staging.granularKeepPhase = !shared.staging.granularKeepPhase;
         }
         else if (tokens.size() > 1 && tokens[1] == "seed")
         {

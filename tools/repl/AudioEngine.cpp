@@ -749,7 +749,10 @@ std::pair<float, float> AudioEngine::process()
     // --- Granular (ring-buffer grain cloud) ---
     if (params_.granularEnabled)
     {
-        granular_.setGrainRate(params_.granularRate);
+        if (params_.granularKeepPhase)
+            granular_.setGrainRateKeepingPhase(params_.granularRate);
+        else
+            granular_.setGrainRate(params_.granularRate);
         granular_.setGrainSize(params_.granularSize);
         granular_.setPitchSpread(params_.granularPitchSpread);
         granular_.setPitchOffset(params_.granularPitchOffset);

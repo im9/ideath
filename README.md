@@ -46,7 +46,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
 | **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain and LP-phase-compensated loop length (in tune at any damping); DC-free exciter (burst sum cancelled over one loop length, harmonics untouched) |
 | **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch, per-partial output gain for Rings-style Position-knob amplitude shaping |
-| **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze, sound-on-sound, reverse grains, settable RNG seed |
+| **GranularProcessor** | Ring-buffer grain cloud — Hann window, fixed 16-grain pool, per-grain pitch spread / position scatter / freeze, sound-on-sound, reverse grains, settable RNG seed, opt-in rate changes that keep the spawn phase (`setGrainRateKeepingPhase`) |
 | **HarmonicOscillator** | Plaits-style additive engine — up to 32 harmonically-related sines with LOW/MID/HIGH band controls and within-band taper |
 | **BowedString** | Bowed-string physical model — two-segment waveguide split at the bow + bow-table friction (Helmholtz motion, in tune), Schelleng `minimumPressure()` (Pressure / Position / Damping) |
 | **LowPassGate** | Buchla 292-style vactrol Low-Pass Gate — single envelope drives both VCA and VCF cutoff (Damping / Brightness); takes an external carrier |
