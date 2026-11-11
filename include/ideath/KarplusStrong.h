@@ -37,9 +37,15 @@ namespace ideath {
 /// constant over one loop length. A constant over a whole period has no
 /// component at the harmonics, so only the DC mode loses its excitation.
 ///
-/// Output is mono, nominal range ±1.0 (the exciter is ±exciterAmount, and
-/// the loop gain never exceeds 1, so the steady-state envelope is monotonic
-/// downward).
+/// Output is mono. One pluck stays within ±1.0: what it writes is within
+/// ±1 and never overlaps itself in the line, and the loop gain is below 1,
+/// so its envelope only falls. Plucks on a string that is still ringing
+/// add, as on a real string (the loop is linear): their noise bursts are
+/// independent, so N plucks still ringing sum to ≈ √N × one pluck in power,
+/// and the peak can pass ±1. This is deliberate — clamping it would thin
+/// out repeated plucks. Measured worst case with re-plucks every 25 ms or
+/// longer: ±4.8 (see the output-level table in CLAUDE.md). Always place a
+/// PeakLimiter after it, as for every primitive.
 class KarplusStrong
 {
 public:
@@ -72,6 +78,27 @@ public:
     /// at pluck() time: an exciter already in flight keeps its level.
     void setExciter(float amount);
 
+    /// Set the brightness of the pluck itself (how hard the string is
+    /// plucked: soft finger → hard pick). Clamped to [0, 1]. Shapes only
+    /// what the exciter writes, so each pluck rings out with its own
+    /// brightness; loop gain and line length (pitch, decay) are untouched.
+    /// Taken at pluck() time, like the level.
+    ///   0.5     → the raw noise burst (bit-identical to no tone at all).
+    ///   < 0.5   → one-pole LP on the burst, DC gain 1 (the burst's sum, and
+    ///             with it the low partials, is kept). Its time constant is
+    ///             τ = kSoftReleaseSec · (1 − 2·tone): the pluck released
+    ///             over τ instead of at once. At 0 the corner is
+    ///             1 / (2π · 0.5 ms) ≈ 318 Hz.
+    ///   > 0.5   → first-order high shelf x + g·(x − LP_h(x)), DC gain 1,
+    ///             g = (2·tone − 1) · kHardShelfGain, LP_h at kHardShelfHz:
+    ///             a gentle shelf: at 1, +3.5 dB at 2 kHz rising to +5.4 dB
+    ///             at Nyquist (44.1 kHz; +6 dB is its analog asymptote).
+    /// The ±1 scaling of the exciter is computed on the filtered burst, so a
+    /// bright pluck at full level comes out with its low partials lower
+    /// (the boosted burst has a higher peak). A NaN tone plucks the raw
+    /// burst (it compares neither below nor above 0.5).
+    void setExciterTone(float tone);
+
     /// Fire the exciter: schedule writing the next ~1 ms of process() calls
     /// with ±exciter-level noise added on top of the feedback signal, plus
     /// the DC correction over the next loop length. Calling pluck() again
@@ -101,6 +128,24 @@ public:
     /// Hard ceiling on the per-loop gain. Below 1.0 guarantees stability
     /// even when damping compensation pushes g_raw close to unity.
     static constexpr float kMaxLoopGain = 0.9995f;
+    /// Exciter tone 0 (soft finger): the release is smoothed over half the
+    /// 1 ms burst — the softest pluck rounds the burst over its own time
+    /// scale, into a pulse rather than a click. One-pole corner
+    /// 1 / (2π τ) ≈ 318 Hz: from C2's 8th harmonic (523 Hz, −5.7 dB) the
+    /// burst falls 6 dB per octave, to −24 dB at 5 kHz. Same unity-DC
+    /// one-pole form as the pick-direction filter of Jaffe & Smith's
+    /// extended KS.
+    static constexpr float kSoftReleaseSec = 0.0005f;
+    /// Exciter tone 1 (hard pick): shelf corner and gain. The boost rises
+    /// through 1-4 kHz, the band where the ear is most sensitive (ISO 226
+    /// equal-loudness dip) and where a pick's click reads; toward Nyquist it
+    /// approaches +6 dB (+5.4 dB at 44.1 kHz), about doubling the burst's
+    /// top end. Kept to one doubling because the ±1
+    /// scaling turns any boost into a cut of the low partials (the boosted
+    /// burst peaks ≈ 1.8× higher, so ≈ −5 dB at full level; see
+    /// setExciterTone).
+    static constexpr float kHardShelfHz   = 2000.0f;
+    static constexpr float kHardShelfGain = 1.0f;
 
 private:
     float sampleRate_      = 44100.0f;
@@ -108,6 +153,22 @@ private:
     float decaySeconds_    = 1.0f;
     float damping_         = 0.5f;
     float exciterLevel_    = 1.0f;
+    float exciterTone_     = 0.5f;
+
+    // Tone filter of the exciter in flight (set at pluck(), state from 0).
+    // Raw is the unfiltered burst and takes the original code path.
+    struct ToneFilter
+    {
+        enum class Mode { Raw, Soft, Hard };
+        Mode  mode  = Mode::Raw;
+        float pole  = 0.0f;    // one-pole LP pole a
+        float shelf = 0.0f;    // shelf gain g (Hard)
+        float lp    = 0.0f;    // LP state
+
+        /// One sample (Soft / Hard): the filtered exciter for input x.
+        float step(float x);
+    };
+    ToneFilter tone_;
 
     float delaySamples_    = 100.0f;   // sampleRate / frequency (one period)
     float lineDelaySamples_ = 100.0f;  // period − LP phase delay at f0
@@ -145,6 +206,15 @@ private:
     /// in flight). Derived from the current plan, which makes written +
     /// still-to-write = 0, so process() keeps no running sum.
     double exciterWritten() const;
+
+    /// Sum and peak |value| of what the exciter in flight still has to
+    /// write, per unit burst scale: the remaining burst through the tone
+    /// filter (from its current state, read ahead on a copy of the noise
+    /// generator), then — Soft and Hard — the filter's tail over the rest
+    /// of the window with zero input, in closed form (geometric), so a
+    /// re-plan after the burst stays O(1).
+    struct ExciterScan { double sum; double peak; };
+    ExciterScan scanExciter() const;
 
     /// Recompute loopGain_ from frequency_, decaySeconds_, damping_.
     /// Called from every setter that touches one of those three quantities.

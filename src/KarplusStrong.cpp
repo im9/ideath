@@ -35,6 +35,7 @@ void KarplusStrong::reset()
     line_.reset();
     noise_.reset();           // restore deterministic noise stream
     filterState_ = 0.0f;
+    tone_ = ToneFilter{};
     exciterRemaining_ = 0;
     dcRemaining_ = 0;
 }
@@ -80,6 +81,11 @@ void KarplusStrong::setExciter(float amount)
     exciterLevel_ = std::clamp(amount, 0.0f, 1.0f);
 }
 
+void KarplusStrong::setExciterTone(float tone)
+{
+    exciterTone_ = std::clamp(tone, 0.0f, 1.0f);
+}
+
 void KarplusStrong::pluck()
 {
     // Burst length in samples. Clamp to (line delay - 1) so the burst
@@ -87,8 +93,8 @@ void KarplusStrong::pluck()
     // once per pluck. Without this clamp, at f0 > 1/kExciterSec ≈ 1 kHz the
     // wavelength is shorter than the 1 ms burst, and the burst would
     // additively rewrite the same slot at t and t+D, producing line values
-    // up to ±(1 + g) ≈ ±2 in magnitude — breaking the ±1 nominal output bound
-    // promised by the API.
+    // up to ±(1 + g) ≈ ±2 in magnitude — breaking the ±1 per-pluck output
+    // bound promised by the API.
     //
     // For low pitches (period > 1 ms) the burst stays at the canonical 1 ms.
     // For high pitches the burst shrinks to one period — still long enough
@@ -96,7 +102,30 @@ void KarplusStrong::pluck()
     // the only purpose of the burst.
     const int wanted   = static_cast<int>(kExciterSec * sampleRate_);
     const int maxBurst = std::max(1, static_cast<int>(lineDelaySamples_) - 1);
-    const double written = exciterWritten();
+    const double written = exciterWritten();   // under the old tone filter
+
+    // Tone filter for this pluck (see setExciterTone), state from 0. 0.5 is
+    // the raw burst on its own path (Raw), with no filter arithmetic.
+    //   Soft: release time τ = kSoftReleaseSec·(1 − 2·tone), linear in the
+    //         knob, pole a = exp(−1 / (τ·sr)); τ → 0 at the centre gives
+    //         a → 0 (pass-through), so the knob has no step there.
+    //   Hard: shelf gain g = (2·tone − 1)·kHardShelfGain, 0 at the centre,
+    //         around a fixed one-pole at kHardShelfHz.
+    tone_ = ToneFilter{};
+    if (exciterTone_ < 0.5f)
+    {
+        const double tau = static_cast<double>(kSoftReleaseSec)
+                         * (1.0 - 2.0 * static_cast<double>(exciterTone_));
+        tone_.mode = ToneFilter::Mode::Soft;
+        tone_.pole = static_cast<float>(std::exp(-1.0 / (tau * sampleRate_)));
+    }
+    else if (exciterTone_ > 0.5f)
+    {
+        tone_.mode  = ToneFilter::Mode::Hard;
+        tone_.pole  = static_cast<float>(std::exp(-2.0 * kPiD * kHardShelfHz / sampleRate_));
+        tone_.shelf = (2.0f * exciterTone_ - 1.0f) * kHardShelfGain;
+    }
+
     exciterRemaining_  = std::max(1, std::min(wanted, maxBurst));
     dcRemaining_       = maxBurst;
     dcElapsed_         = 0;
@@ -111,11 +140,77 @@ double KarplusStrong::exciterWritten() const
     // the current plan still has to write.
     if (dcRemaining_ <= 0)
         return 0.0;
-    Noise probe = noise_;
     double rest = static_cast<double>(dcStep_) * dcRemaining_;
-    for (int i = 0; i < exciterRemaining_; ++i)
-        rest += static_cast<double>(burstScale_) * probe.process();
+    if (tone_.mode == ToneFilter::Mode::Raw)
+    {
+        // Term by term over the raw burst (not via scanExciter's sum):
+        // keeps tone 0.5 bit-exact with the raw-burst exciter through
+        // re-plans too.
+        Noise probe = noise_;
+        for (int i = 0; i < exciterRemaining_; ++i)
+            rest += static_cast<double>(burstScale_) * probe.process();
+    }
+    else
+    {
+        rest += static_cast<double>(burstScale_) * scanExciter().sum;
+    }
     return planTotal_ - rest;
+}
+
+float KarplusStrong::ToneFilter::step(float x)
+{
+    // One-pole LP shared by both tones: Soft outputs it, Hard adds g times
+    // its complement (x − LP, a one-pole high-pass) to the input. Both have
+    // DC gain 1. The flush keeps the geometric tail out of denormals (a
+    // short τ reaches them within the window); 1e-15 is ≈ −300 dB, and its
+    // effect on the planned sum is ≤ 1e-15 / (1 − a), far under rounding.
+    lp = (1.0f - pole) * x + pole * lp;
+    if (std::fabs(lp) < 1e-15f)
+        lp = 0.0f;
+    return mode == Mode::Soft ? lp : x + shelf * (x - lp);
+}
+
+KarplusStrong::ExciterScan KarplusStrong::scanExciter() const
+{
+    // The exciter in flight still writes burstScale_ × (this sequence):
+    //   n < exciterRemaining_:  burst noise through the tone filter,
+    //   then up to dcRemaining_: the filter's response to zero input.
+    // The burst part runs the same float steps as process() on copies of
+    // the noise generator and the filter, so the plan sums what will be
+    // written. With zero input the LP state goes l → a·l each sample and
+    // the output is c·l (c = 1 Soft, −g Hard: x + g·(0 − l)), so the tail
+    // over K samples sums to c·l·a·(1 − a^K) / (1 − a) and peaks at its
+    // first sample |c·l·a| (|a| < 1, the magnitude only falls).
+    Noise probe = noise_;
+    double sum = 0.0, peak = 0.0;
+    if (tone_.mode == ToneFilter::Mode::Raw)
+    {
+        for (int i = 0; i < exciterRemaining_; ++i)
+        {
+            const double r = probe.process();
+            sum += r;
+            peak = std::max(peak, std::fabs(r));
+        }
+        return { sum, peak };
+    }
+    ToneFilter filter = tone_;
+    for (int i = 0; i < exciterRemaining_; ++i)
+    {
+        const double y = filter.step(probe.process());
+        sum += y;
+        peak = std::max(peak, std::fabs(y));
+    }
+    const int tail = dcRemaining_ - exciterRemaining_;
+    const double a = filter.pole;
+    if (tail > 0 && filter.lp != 0.0f && a > 0.0)
+    {
+        const double c = filter.mode == ToneFilter::Mode::Soft
+                       ? 1.0 : -static_cast<double>(filter.shelf);
+        const double first = c * static_cast<double>(filter.lp) * a;
+        sum += first * (1.0 - std::pow(a, tail)) / (1.0 - a);
+        peak = std::max(peak, std::fabs(first));
+    }
+    return { sum, peak };
 }
 
 void KarplusStrong::planExciter(double written)
@@ -155,22 +250,25 @@ void KarplusStrong::planExciter(double written)
     // then clamped to ±1 and the rest of W stays in the loop. Either way
     // planTotal_ records what this plan leaves uncancelled, so a later
     // re-plan still knows what was written.
+    //
+    // With a tone filter, "noise" is the filtered exciter: the burst
+    // through the filter plus the filter's tail, which keeps running with
+    // zero input to the end of the window and is cut there (never written
+    // outside it, so the exciter still does not overlap itself). S and
+    // max|r| are taken over all of it (scanExciter()).
     const int M = dcRemaining_;
-    Noise probe = noise_;
-    double sum = 0.0, peak = 0.0;
-    for (int i = 0; i < exciterRemaining_; ++i)
-    {
-        const double r = probe.process();
-        sum += r;
-        peak = std::max(peak, std::fabs(r));
-    }
+    const ExciterScan scan = scanExciter();
+    const double sum = scan.sum, peak = scan.peak;
     const double level = exciterLevel_;
     if (M < 2)
     {
         // A one-sample window (pitch above ≈ sr/3) cannot hold a burst and
         // its opposite: the burst goes in as drawn, and neither its sum nor
-        // the W of an earlier plan is cancelled.
-        burstScale_ = static_cast<float>(level);
+        // the W of an earlier plan is cancelled. The raw sample is ≤ 1, but
+        // through the shelf it is x·(1 + g·a), so the level is still capped
+        // at 1 / peak (for the raw burst 1 / peak ≥ 1 ≥ level: unchanged).
+        burstScale_ = static_cast<float>(
+            peak > 0.0 ? std::min(level, 1.0 / peak) : level);
         dcStep_ = 0.0f;
         planTotal_ = written + static_cast<double>(burstScale_) * sum;
         return;
@@ -232,7 +330,7 @@ void KarplusStrong::recomputeLoopDelay()
     // flight with more burst to write than the line holds. pluck() clamps
     // the burst to (line − 1) at pluck time; re-clamp here so the burst
     // never overlaps itself in the line, which would push the output past
-    // the ±1 nominal bound.
+    // the ±1 per-pluck bound.
     //
     // The DC correction window follows the line too: it should span one
     // loop length from the pluck at the pitch the string now has. A host
@@ -340,10 +438,24 @@ float KarplusStrong::process()
     if (dcRemaining_ > 0)
     {
         float v = dcStep_;
-        if (exciterRemaining_ > 0)
+        if (tone_.mode == ToneFilter::Mode::Raw)
         {
-            v += burstScale_ * noise_.process();
-            --exciterRemaining_;
+            if (exciterRemaining_ > 0)
+            {
+                v += burstScale_ * noise_.process();
+                --exciterRemaining_;
+            }
+        }
+        else
+        {
+            // Tone filter: the burst, then zero input, to the window's end.
+            float x = 0.0f;
+            if (exciterRemaining_ > 0)
+            {
+                x = noise_.process();
+                --exciterRemaining_;
+            }
+            v += burstScale_ * tone_.step(x);
         }
         --dcRemaining_;
         ++dcElapsed_;

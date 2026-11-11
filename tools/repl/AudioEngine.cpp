@@ -323,6 +323,7 @@ void AudioEngine::pluckKarplus(float freq)
     karplus_.setDecay(params_.ksDecay);
     karplus_.setDamping(params_.ksDamping);
     karplus_.setExciter(params_.ksExciter);
+    karplus_.setExciterTone(params_.ksTone);
     karplus_.pluck();
 }
 
@@ -513,6 +514,7 @@ std::pair<float, float> AudioEngine::process()
             karplus_.setDecay(params_.ksDecay);
             karplus_.setDamping(params_.ksDamping);
             karplus_.setExciter(params_.ksExciter);
+            karplus_.setExciterTone(params_.ksTone);
             sample = karplus_.process();
             break;
 
