@@ -56,6 +56,7 @@ than comparing cross-host.
 | TapeDelay::processStereo (ping-pong, diffusion) ² | 30.313 µs |  59.20 |
 | FeedbackBuffer::process            |           5.273 µs |       10.30 |
 | KarplusStrong::process             |           2.841 µs |        5.55 |
+| KarplusStrong::process (tone 0)    |           4.04 µs  |        7.89 |
 | ModalResonator::process (8 part.)  |           5.748 µs |       11.23 |
 | ModalResonator::process (16 part.) |          11.631 µs |       22.72 |
 | HarmonicOscillator::process (8 part.)  |      12.156 µs |       23.74 |
@@ -116,6 +117,14 @@ than comparing cross-host.
   buffer reads (one linearly interpolated), the bridge one-pole, the bow
   table (one divide, no `exp` / `tanh`) and the bow-speed smoother with
   its flush-to-zero check. Median of three 200-sample runs.
+- `KarplusStrong` re-measured 2026-11-12 after the exciter tone
+  (`setExciterTone`). Default tone (0.5) takes the original exciter path:
+  median of five 500-sample runs interleaved with main on the same host,
+  2.95 (main) → 2.92 µs, no change; the 2.841 µs row stands. New row
+  `(tone 0)`: the burst and its LP tail run through the tone one-pole for
+  the whole correction window (≈ 85 % of samples in this bench), and each
+  pluck's read-ahead runs the burst through it too: 4.04 µs median
+  (+37 % over the raw path, a different workload, not a regression).
 - `KarplusStrong` re-measured 2026-11-06 after the DC-free exciter (pluck
   reads its ~1 ms burst ahead once to cancel its sum; the exciter adds one
   constant per sample for one loop length). Median of five 500-sample runs

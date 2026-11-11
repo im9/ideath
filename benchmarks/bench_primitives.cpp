@@ -724,6 +724,29 @@ TEST_CASE("Bench: KarplusStrong", "[bench]")
         }
         return acc;
     };
+
+    // Exciter tone 0 (soft): the burst and its LP tail run through the tone
+    // one-pole for the whole correction window, and each pluck's read-ahead
+    // also runs the burst through it (plus one pow for the tail's sum).
+    ideath::KarplusStrong soft;
+    soft.prepare(kSR);
+    soft.setFrequency(220.0f);
+    soft.setDecay(1.0f);
+    soft.setDamping(0.3f);
+    soft.setExciter(1.0f);
+    soft.setExciterTone(0.0f);
+    soft.pluck();
+
+    BENCHMARK("KarplusStrong::process (tone 0)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            if ((i % (kBlock / 2)) == 0) soft.pluck();
+            acc += soft.process();
+        }
+        return acc;
+    };
 }
 
 TEST_CASE("Bench: ModalResonator", "[bench]")

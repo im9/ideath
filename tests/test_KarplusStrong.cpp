@@ -5,6 +5,8 @@
 #include "PitchAnalysis.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -1250,4 +1252,649 @@ TEST_CASE("KarplusStrong: the exciter sums to zero and keeps the burst's fundame
     INFO("sum=" << sum << " f0 level vs raw burst=" << levelDb << " dB");
     REQUIRE(std::fabs(sum) < 1e-4);
     REQUIRE(std::fabs(levelDb) < 0.5);
+}
+
+// ---------------------------------------------------------------------------
+// Exciter tone (setExciterTone) — the pluck's own brightness
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// FNV-1a 64 over the bit patterns of a run of output samples. Exact
+// equality of bits, not closeness: tone 0.5 must leave the output that
+// tristero's saved sounds were rendered with untouched.
+struct BitHash
+{
+    std::uint64_t h = 1469598103934665603ull;
+    void push(float v)
+    {
+        std::uint32_t bits;
+        std::memcpy(&bits, &v, sizeof bits);
+        for (int b = 0; b < 4; ++b)
+        {
+            h ^= (bits >> (8 * b)) & 0xffu;
+            h *= 1099511628211ull;
+        }
+    }
+};
+
+// Every exciter path the plan has: single plucks across pitch × damping
+// (incl. the one-sample window above sr/3), a re-pluck mid-burst, a level
+// change and re-pluck mid-window, pitch raised mid-burst (window cut), pitch
+// dropped mid-window (window grown), damping changed mid-burst, and 40 Hz
+// re-plucks. `configure` runs on each fresh instance before anything else.
+template <typename Configure>
+std::uint64_t exciterScenarioHash(Configure configure)
+{
+    BitHash hash;
+    auto fresh = [&](float f0, float damping) {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        configure(ks);
+        ks.setFrequency(f0);
+        ks.setDecay(1.0f);
+        ks.setDamping(damping);
+        ks.setExciter(1.0f);
+        return ks;
+    };
+    auto run = [&](ideath::KarplusStrong& ks, int n) {
+        for (int i = 0; i < n; ++i) hash.push(ks.process());
+    };
+    for (float f0 : { 30.0f, 65.4f, 261.6f, 1046.5f, 5000.0f, 19000.0f })
+        for (float damping : { 0.0f, 0.5f, 1.0f })
+        {
+            ideath::KarplusStrong ks = fresh(f0, damping);
+            ks.pluck();
+            run(ks, 4410);
+        }
+    {
+        ideath::KarplusStrong ks = fresh(110.0f, 0.5f);
+        ks.pluck(); run(ks, 20); ks.pluck(); run(ks, 4410);
+    }
+    {
+        ideath::KarplusStrong ks = fresh(65.4f, 0.5f);
+        ks.pluck(); run(ks, 300); ks.setExciter(0.3f); ks.pluck(); run(ks, 4410);
+    }
+    {
+        ideath::KarplusStrong ks = fresh(110.0f, 0.5f);
+        ks.pluck(); run(ks, 5); ks.setFrequency(2093.0f); run(ks, 4410);
+    }
+    {
+        ideath::KarplusStrong ks = fresh(220.0f, 0.5f);
+        ks.pluck(); run(ks, 60); ks.setFrequency(65.4f); run(ks, 4410);
+    }
+    {
+        ideath::KarplusStrong ks = fresh(261.6f, 0.2f);
+        ks.pluck(); run(ks, 10); ks.setDamping(0.9f); run(ks, 4410);
+    }
+    {
+        ideath::KarplusStrong ks = fresh(329.6f, 0.5f);
+        for (int i = 0; i < 44100; ++i)
+        {
+            if (i % 1103 == 0) ks.pluck();
+            hash.push(ks.process());
+        }
+    }
+    return hash.h;
+}
+
+} // namespace
+
+TEST_CASE("KarplusStrong: default exciter output is unchanged (bit-exact reference)",
+          "[karplus][tone]")
+{
+    // Reference: the hash of exciterScenarioHash() recorded from the
+    // raw-burst exciter, before any tone filter was added (same build).
+    // Spec: default tone (0.5) reproduces it bit for bit, so saved
+    // tristero PLUCK sounds do not move.
+    const std::uint64_t h = exciterScenarioHash([](ideath::KarplusStrong&) {});
+    INFO("hash=0x" << std::hex << h);
+    REQUIRE(h == 0xd4557860c8424e4eull);
+}
+
+TEST_CASE("KarplusStrong: exciter tone 0.5 is the default exciter, bit for bit",
+          "[karplus][tone]")
+{
+    // Same scenario as the reference above, with the tone set explicitly —
+    // directly, and after a trip through both ends (the setter keeps no
+    // other state). Exact hash equality, for the same reason.
+    const std::uint64_t ref = exciterScenarioHash([](ideath::KarplusStrong&) {});
+    REQUIRE(exciterScenarioHash([](ideath::KarplusStrong& ks) {
+                ks.setExciterTone(0.5f);
+            }) == ref);
+    REQUIRE(exciterScenarioHash([](ideath::KarplusStrong& ks) {
+                ks.setExciterTone(0.0f);
+                ks.setExciterTone(1.0f);
+                ks.setExciterTone(0.5f);
+            }) == ref);
+    // Other tones do change the output (guards against a setter that is
+    // ignored, which would also pass the two checks above).
+    REQUIRE(exciterScenarioHash([](ideath::KarplusStrong& ks) {
+                ks.setExciterTone(0.0f);
+            }) != ref);
+    REQUIRE(exciterScenarioHash([](ideath::KarplusStrong& ks) {
+                ks.setExciterTone(1.0f);
+            }) != ref);
+}
+
+TEST_CASE("KarplusStrong: exciter tone clamps to [0, 1]", "[karplus][tone][boundary]")
+{
+    // Out-of-range tones behave exactly like the nearest end (exact hash
+    // equality: the clamp happens before anything is derived from the tone).
+    auto at = [](float tone) {
+        return exciterScenarioHash([tone](ideath::KarplusStrong& ks) {
+            ks.setExciterTone(tone);
+        });
+    };
+    REQUIRE(at(-3.0f) == at(0.0f));
+    REQUIRE(at(7.0f) == at(1.0f));
+}
+
+TEST_CASE("KarplusStrong: exciter tone is taken at pluck()", "[karplus][tone]")
+{
+    // Like the level: an exciter in flight keeps the tone it was plucked
+    // with. Changing the tone 5 samples into a pluck (burst and LP tail
+    // both still running, window 398 samples at A2) leaves the output
+    // identical, bit for bit, to not changing it.
+    for (float plucked : { 0.0f, 1.0f })
+    {
+        auto make = [plucked]() {
+            ideath::KarplusStrong ks;
+            ks.prepare(kSampleRate);
+            ks.setFrequency(110.0f);
+            ks.setDecay(1.0f);
+            ks.setDamping(0.5f);
+            ks.setExciterTone(plucked);
+            ks.pluck();
+            return ks;
+        };
+        ideath::KarplusStrong steady = make();
+        ideath::KarplusStrong changed = make();
+        bool same = true;
+        for (int i = 0; i < 22050; ++i)
+        {
+            if (i == 5)
+                changed.setExciterTone(1.0f - plucked);
+            const float a = steady.process(), b = changed.process();
+            same = same && std::memcmp(&a, &b, sizeof a) == 0;
+        }
+        INFO("plucked tone=" << plucked);
+        REQUIRE(same);
+    }
+}
+
+namespace {
+
+// The tone filters as specified (KarplusStrong.h), evaluated in double:
+//   tone < 0.5: one-pole LP, pole a = exp(−1 / (τ·sr)),
+//               τ = kSoftReleaseSec · (1 − 2·tone).
+//   tone > 0.5: high shelf x + g·(x − LP_h(x)), g = (2·tone − 1) ·
+//               kHardShelfGain, LP_h pole a = exp(−2π·kHardShelfHz / sr).
+// Returns |H(e^jω)|².
+double toneFilterPower(float tone, double w, double sr)
+{
+    const double pi = 3.14159265358979323846;
+    if (tone == 0.5f)
+        return 1.0;
+    // One-pole LP (1 − a) / (1 − a·e^−jω), as a complex number.
+    auto lp = [w](double a, double& re, double& im) {
+        const double dr = 1.0 - a * std::cos(w), di = a * std::sin(w);
+        const double den = dr * dr + di * di;
+        re = (1.0 - a) * dr / den;
+        im = -(1.0 - a) * di / den;
+    };
+    double re, im;
+    if (tone < 0.5f)
+    {
+        const double tau = ideath::KarplusStrong::kSoftReleaseSec * (1.0 - 2.0 * tone);
+        lp(std::exp(-1.0 / (tau * sr)), re, im);
+        return re * re + im * im;
+    }
+    const double g = (2.0 * tone - 1.0) * ideath::KarplusStrong::kHardShelfGain;
+    lp(std::exp(-2.0 * pi * ideath::KarplusStrong::kHardShelfHz / sr), re, im);
+    const double hr = 1.0 + g * (1.0 - re), hi = -g * im;
+    return hr * hr + hi * hi;
+}
+
+} // namespace
+
+TEST_CASE("KarplusStrong: exciter tone sets the pluck's high-band balance",
+          "[karplus][tone]")
+{
+    // Measure: energy at harmonics 9 and up over energy at harmonics 1-8
+    // ("above the 8th partial" vs the low partials), of the exciter alone —
+    // the first pass, t < 2·int(line), before anything comes back round
+    // (see "the exciter sums to zero" above). The whole exciter lies inside
+    // that pass, so the DTFT at k·f0 of the pass is the exciter's exactly.
+    // Harmonics only: the DC correction (a constant over M samples, M one
+    // loop length less ≈ 2.9 at A2) is ≈ 0 there (≈ 2.9 / M = 0.73 % of
+    // the burst's sum, < 0.07 dB), while between harmonics it is not.
+    //
+    // Prediction: for a white burst x (any length), E|X(ω)|² is the same at
+    // every ω, so E|Y(ω)|² ∝ |H_tone(ω)|² · |I(ω)|², I the line's linear
+    // interpolator (1 − f) + f·e^−jω. The band ratio's expectation is the
+    // ratio of those sums over the same harmonics.
+    //
+    // Tolerance ±1.5 dB, from the spread of the estimate: a 1 ms burst
+    // resolves ≈ 1 kHz, so harmonics 1-8 at A2 (110-880 Hz) carry ≈ one
+    // complex Gaussian value per pluck (2 degrees of freedom); 128 plucks →
+    // 256 dof → relative std of the low-band energy √(2/256) = 0.088,
+    // 0.38 dB; ±1.5 dB is 4 σ. Level 0.3 keeps every burst unscaled (the
+    // ±1 scaling would otherwise weight plucks by their peak):
+    // |y| ≤ (1 + g)|x| + g|LP| ≤ 1 + 2g = 3 at tone 1 (g = kHardShelfGain),
+    // so 0.3·3 + 0.3·|S|/M ≤ 0.9 + 0.3·44/398 = 0.93 < 1.
+    //
+    // "Clearly changes": tone 1 must sit ≥ 10 dB above tone 0 — 10 dB is
+    // the step heard as twice (or half) as loud (Stevens' sone scale), so
+    // the high band's share of the pluck doubles at least.
+    //
+    // Plucks 0.5 s apart at decay kMinDecay = 0.05 s: the previous note is
+    // down 10 × 60 dB before the next pass starts.
+    const double pi = 3.14159265358979323846;
+    const double f0 = 110.0;
+    const double w0 = 2.0 * pi * f0 / kSampleRate;
+    const int kMaxHarm = static_cast<int>(0.5 * kSampleRate / f0);
+
+    auto measure = [&](float tone, double& predictedDb) {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(static_cast<float>(f0));
+        ks.setDecay(ideath::KarplusStrong::kMinDecay);
+        ks.setDamping(0.5f);
+        ks.setExciter(0.3f);
+        ks.setExciterTone(tone);
+        const int pass = 2 * static_cast<int>(ks.getLineDelaySamples());
+        const double frac = ks.getLineDelaySamples()
+                          - std::floor(ks.getLineDelaySamples());
+        double lowP = 0.0, highP = 0.0;
+        for (int k = 1; k <= kMaxHarm; ++k)
+        {
+            const double w = k * w0;
+            const double ir = (1.0 - frac) + frac * std::cos(w);
+            const double ii = -frac * std::sin(w);
+            const double p = toneFilterPower(tone, w, kSampleRate) * (ir * ir + ii * ii);
+            (k <= 8 ? lowP : highP) += p;
+        }
+        predictedDb = 10.0 * std::log10(highP / lowP);
+
+        std::vector<float> y(pass);
+        double low = 0.0, high = 0.0;
+        for (int p = 0; p < 128; ++p)
+        {
+            ks.pluck();
+            for (int t = 0; t < pass; ++t) y[t] = ks.process();
+            for (int k = 1; k <= kMaxHarm; ++k)
+            {
+                double re = 0.0, im = 0.0;
+                const double w = k * w0;
+                for (int t = 0; t < pass; ++t)
+                {
+                    re += y[t] * std::cos(w * t);
+                    im -= y[t] * std::sin(w * t);
+                }
+                (k <= 8 ? low : high) += re * re + im * im;
+            }
+            for (int t = pass; t < static_cast<int>(0.5f * kSampleRate); ++t)
+                ks.process();
+        }
+        return 10.0 * std::log10(high / low);
+    };
+
+    double pred0, pred5, pred1;
+    const double db0 = measure(0.0f, pred0);
+    const double db5 = measure(0.5f, pred5);
+    const double db1 = measure(1.0f, pred1);
+    INFO("DIAG high/low (dB) tone 0: " << db0 << " (pred " << pred0 << ")"
+         << "  0.5: " << db5 << " (pred " << pred5 << ")"
+         << "  1: " << db1 << " (pred " << pred1 << ")");
+    CHECK(std::fabs(db0 - pred0) < 1.5);
+    CHECK(std::fabs(db5 - pred5) < 1.5);
+    CHECK(std::fabs(db1 - pred1) < 1.5);
+    REQUIRE(db1 - db0 >= 10.0);
+}
+
+namespace {
+
+// −60 dB time of the fundamental: amplitude at f0 over consecutive
+// one-period blocks (DTFT over round(P) samples; the 2nd and higher
+// harmonics sit on that window's zeros up to the < 0.5-sample rounding of
+// P), from the block starting at `from` seconds to the first block that is
+// 60 dB below it. Returns seconds.
+double fundamentalT60(ideath::KarplusStrong& ks, double f0, double from)
+{
+    const double pi = 3.14159265358979323846;
+    const int P = static_cast<int>(std::lround(kSampleRate / f0));
+    const double w = 2.0 * pi * f0 / kSampleRate;
+    const int skip = static_cast<int>(from * kSampleRate);
+    for (int i = 0; i < skip; ++i) ks.process();
+    double ref = -1.0;
+    for (int b = 0; b < static_cast<int>(10.0 * kSampleRate) / P; ++b)
+    {
+        double re = 0.0, im = 0.0;
+        for (int t = 0; t < P; ++t)
+        {
+            const double y = ks.process();
+            re += y * std::cos(w * t);
+            im -= y * std::sin(w * t);
+        }
+        const double a = std::hypot(re, im);
+        if (ref < 0.0)
+            ref = a;
+        else if (a <= ref * 1e-3)
+            return static_cast<double>(b) * P / kSampleRate;
+    }
+    return -1.0;
+}
+
+} // namespace
+
+TEST_CASE("KarplusStrong: exciter tone leaves the decay length unchanged",
+          "[karplus][tone][decay]")
+{
+    // The tone only shapes what the exciter writes; loop gain and line
+    // length are untouched, so the fundamental's −60 dB time is the set
+    // decay for every tone. Spec (setExciterTone): the tone leaves the
+    // decay length unchanged, within ±10 % of setDecay. The fundamental, not the broadband envelope: a
+    // brighter pluck puts more of its energy in partials that the loop LP
+    // damps faster, so a broadband −60 dB re its own peak is reached
+    // sooner without the string decaying any faster. Measured from 0.1 s
+    // (exciter and first round trips long over at 220 Hz).
+    for (float tone : { 0.0f, 0.5f, 1.0f })
+        for (float damping : { 0.3f, 0.7f })
+        {
+            ideath::KarplusStrong ks;
+            ks.prepare(kSampleRate);
+            ks.setFrequency(220.0f);
+            ks.setDecay(1.0f);
+            ks.setDamping(damping);
+            ks.setExciterTone(tone);
+            ks.pluck();
+            const double t60 = fundamentalT60(ks, 220.0, 0.1);
+            INFO("DIAG tone=" << tone << " damping=" << damping << " T60(f0)=" << t60);
+            REQUIRE(t60 > 0.9);
+            REQUIRE(t60 < 1.1);
+        }
+}
+
+TEST_CASE("KarplusStrong: exciter tone keeps the output within ±1",
+          "[karplus][tone][bounds]")
+{
+    // The ±1 contract is per exciter: what one pluck writes stays within ±1
+    // and never overlaps itself in the line, so a single pluck's output is
+    // bounded (see "output stays within ±1"; same 1e-3 float headroom).
+    // The ±1 scaling is computed on the filtered exciter and the filter's
+    // tail is cut at the window's end, so the same holds for every tone:
+    // single plucks across pitch × damping (incl. the one-sample window at
+    // 19 kHz) at the longest decay, and a pluck whose window is cut (pitch
+    // raised mid-burst) or grown (pitch dropped while the LP tail runs).
+    // Re-plucks on a sounding string add to what is already in the loop
+    // and are not covered by this contract, with or without a tone.
+    auto check = [](ideath::KarplusStrong& ks, int n) {
+        for (int i = 0; i < n; ++i)
+        {
+            const float v = ks.process();
+            REQUIRE(std::isfinite(v));
+            REQUIRE(std::fabs(v) <= 1.0f + 1e-3f);
+        }
+    };
+    for (float tone : { 0.0f, 0.25f, 0.75f, 1.0f })
+    {
+        INFO("tone=" << tone);
+        for (float freq : { 30.0f, 110.0f, 440.0f, 2000.0f, 5000.0f, 19000.0f })
+            for (float damp : { 0.0f, 0.3f, 0.7f, 1.0f })
+            {
+                INFO("freq=" << freq << " damp=" << damp);
+                ideath::KarplusStrong ks;
+                ks.prepare(kSampleRate);
+                ks.setFrequency(freq);
+                ks.setDecay(5.0f);    // longest ring: loop content stays largest
+                ks.setDamping(damp);
+                ks.setExciter(1.0f);
+                ks.setExciterTone(tone);
+                ks.pluck();
+                check(ks, 22050);
+            }
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setDecay(5.0f);
+        ks.setDamping(0.5f);
+        ks.setExciterTone(tone);
+        ks.setFrequency(110.0f);
+        ks.pluck();
+        check(ks, 5);
+        ks.setFrequency(2093.0f);
+        check(ks, 22050);
+        ks.reset();
+        ks.setFrequency(220.0f);
+        ks.pluck();
+        check(ks, 30);
+        ks.setFrequency(30.0f);
+        check(ks, 22050);
+    }
+}
+
+TEST_CASE("KarplusStrong: exciter tone stays within ±1 in the one-sample window",
+          "[karplus][tone][bounds]")
+{
+    // Above ≈ 14 kHz the line is shorter than 3 samples, so the correction
+    // window M = int(line) − 1 is one sample (M < 2): the burst is a single sample with no correction.
+    // Through the shelf that sample is x·(1 + g·a) (LP state starts at 0),
+    // up to 1.75·|x| at tone 1, so the ±1 scaling must apply here too:
+    // the same per-pluck bound (1e-3 float headroom). Many noise draws per
+    // pitch (30 plucks, 0.5 s apart at decay kMinDecay = 0.05 s, so each
+    // starts on a string 600 dB down), since one draw near 0 hides it.
+    for (float freq : { 14000.0f, 15000.0f, 16000.0f, 19000.0f })
+        for (float damp : { 0.0f, 0.7f })
+            for (float tone : { 0.75f, 1.0f })
+            {
+                INFO("freq=" << freq << " damp=" << damp << " tone=" << tone);
+                ideath::KarplusStrong ks;
+                ks.prepare(kSampleRate);
+                ks.setFrequency(freq);
+                ks.setDecay(ideath::KarplusStrong::kMinDecay);
+                ks.setDamping(damp);
+                ks.setExciter(1.0f);
+                ks.setExciterTone(tone);
+                float peak = 0.0f;
+                for (int p = 0; p < 30; ++p)
+                {
+                    ks.pluck();
+                    peak = std::max(peak, peakAbs(ks, static_cast<int>(0.5f * kSampleRate)));
+                }
+                INFO("peak=" << peak);
+                REQUIRE(peak <= 1.0f + 1e-3f);
+            }
+}
+
+TEST_CASE("KarplusStrong: exciter tone leaves no DC", "[karplus][tone][dc]")
+{
+    // The sum cancellation runs on the filtered exciter, so the < 1 %
+    // sub-30 Hz bound (and 15 s ring-out) of the DC tests above holds for
+    // every tone; the LP tail is the new part (it outlasts the burst and
+    // must be counted in the sum, and in what a re-plan sees as written).
+    auto ringOut = [](ideath::KarplusStrong& ks, SubAudioMeter& m) {
+        for (int i = 0; i < static_cast<int>(15.0f * kSampleRate); ++i)
+            m.push(ks.process());
+    };
+    auto make = [](float f0, float tone) {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(f0);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setExciter(1.0f);
+        ks.setExciterTone(tone);
+        return ks;
+    };
+    SECTION("single pluck")
+    {
+        for (float tone : { 0.0f, 1.0f })
+            for (float f0 : kDcPitches)
+            {
+                ideath::KarplusStrong ks = make(f0, tone);
+                ks.pluck();
+                SubAudioMeter m(kSampleRate);
+                ringOut(ks, m);
+                INFO("tone=" << tone << " f0=" << f0 << " fraction=" << m.fraction());
+                REQUIRE(m.fraction() < 0.01);
+            }
+    }
+    SECTION("re-pluck with another tone mid-burst and mid-tail")
+    {
+        for (int at : { 20, 150 })
+            for (float f0 : kDcPitches)
+            {
+                ideath::KarplusStrong ks = make(f0, 0.0f);
+                ks.pluck();
+                SubAudioMeter m(kSampleRate);
+                for (int i = 0; i < at; ++i) m.push(ks.process());
+                ks.setExciterTone(1.0f);
+                ks.pluck();
+                ringOut(ks, m);
+                INFO("at=" << at << " f0=" << f0 << " fraction=" << m.fraction());
+                REQUIRE(m.fraction() < 0.01);
+            }
+    }
+    SECTION("pitch dropped while the LP tail runs, raised mid-burst")
+    {
+        {
+            ideath::KarplusStrong ks = make(261.6f, 0.0f);
+            ks.pluck();
+            SubAudioMeter m(kSampleRate);
+            for (int i = 0; i < 60; ++i) m.push(ks.process());
+            ks.setFrequency(65.4f);
+            ringOut(ks, m);
+            INFO("drop fraction=" << m.fraction());
+            REQUIRE(m.fraction() < 0.01);
+        }
+        for (float tone : { 0.0f, 1.0f })
+        {
+            ideath::KarplusStrong ks = make(110.0f, tone);
+            ks.pluck();
+            SubAudioMeter m(kSampleRate);
+            for (int i = 0; i < 5; ++i) m.push(ks.process());
+            ks.setFrequency(2093.0f);
+            ringOut(ks, m);
+            INFO("raise tone=" << tone << " fraction=" << m.fraction());
+            REQUIRE(m.fraction() < 0.01);
+        }
+    }
+    SECTION("40 Hz re-plucks with alternating tone (12 s)")
+    {
+        // As "repeated plucks do not build up DC", each pluck at the other
+        // end of the tone range.
+        for (float f0 : kDcPitches)
+        {
+            ideath::KarplusStrong ks = make(f0, 0.0f);
+            SubAudioMeter m(kSampleRate);
+            const int block = static_cast<int>(kSampleRate);
+            int n = 0;
+            for (int b = 0; b < 12; ++b)
+            {
+                m.lowEnergy = m.totalEnergy = 0.0;
+                for (int i = 0; i < block; ++i)
+                {
+                    if ((b * block + i) % 1103 == 0)
+                    {
+                        ks.setExciterTone((n++ % 2) ? 1.0f : 0.0f);
+                        ks.pluck();
+                    }
+                    m.push(ks.process());
+                }
+                INFO("f0=" << f0 << " block=" << b << " fraction=" << m.fraction());
+                REQUIRE(m.fraction() < 0.01);
+            }
+        }
+    }
+}
+
+TEST_CASE("KarplusStrong: a toned exciter sums to zero and keeps H(f0) of the fundamental",
+          "[karplus][tone][dc]")
+{
+    // As "the exciter sums to zero and keeps the burst's fundamental",
+    // through the tone filter: over the first pass (a) the sum is zero
+    // (same 1e-4 rounding bound), (b) the f0 component is the raw burst's
+    // times the filter's response at f0: both filters have DC gain 1 and
+    // the burst's low partials ride on its sum, so a soft pluck keeps its
+    // fundamental (tone 0 at C2: |H| = −0.18 dB). Same 0.5 dB bound
+    // (≤ 0.15 dB from the correction window and the interpolator, see that
+    // test). Level 0.3 keeps the burst unscaled (see the band test), so the
+    // reference is 0.3 × the raw burst.
+    const double pi = 3.14159265358979323846;
+    const double f0 = 65.4;
+    const double w = 2.0 * pi * f0 / kSampleRate;
+    for (float tone : { 0.0f, 0.25f, 0.75f, 1.0f })
+    {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(static_cast<float>(f0));
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setExciter(0.3f);
+        ks.setExciterTone(tone);
+        ks.pluck();
+        const int firstPass = 2 * static_cast<int>(ks.getLineDelaySamples());
+        double sum = 0.0, re = 0.0, im = 0.0;
+        for (int t = 0; t < firstPass; ++t)
+        {
+            const double y = ks.process();
+            sum += y;
+            re += y * std::cos(w * t);
+            im -= y * std::sin(w * t);
+        }
+        ideath::Noise raw;
+        double rre = 0.0, rim = 0.0;
+        const int burst = static_cast<int>(ideath::KarplusStrong::kExciterSec * kSampleRate);
+        for (int n = 0; n < burst; ++n)
+        {
+            const double r = 0.3 * raw.process();
+            rre += r * std::cos(w * n);
+            rim -= r * std::sin(w * n);
+        }
+        const double levelDb = 20.0 * std::log10(std::hypot(re, im) / std::hypot(rre, rim));
+        const double expectDb = 10.0 * std::log10(toneFilterPower(tone, w, kSampleRate));
+        INFO("tone=" << tone << " sum=" << sum << " f0 level " << levelDb
+             << " dB, expected " << expectDb << " dB");
+        REQUIRE(std::fabs(sum) < 1e-4);
+        REQUIRE(std::fabs(levelDb - expectDb) < 0.5);
+    }
+}
+
+TEST_CASE("KarplusStrong: exciter tone has no step at 0.5", "[karplus][tone][boundary]")
+{
+    // The knob's centre is the raw burst; just either side must be almost
+    // the same pluck. Over the first pass (exciter only), at level 0.3 (no
+    // ±1 scaling, see the band test):
+    //   tone 0.5 + δ: y − x = g·(x − LP(x)), g = 2δ·kHardShelfGain,
+    //     |x − LP(x)| ≤ 2 → |Δexciter| ≤ 0.3·2g; the correction moves by
+    //     the change of the sum over M, ≤ 0.3·2g·B/M (B = 44 burst samples,
+    //     M = 398 at A2); the interpolator is a convex mix. So
+    //     |Δy| ≤ 0.6·g·(1 + 44/398) = 0.67·g = 0.0013 at δ = 0.001.
+    //   tone 0.5 − δ: pole a = exp(−1/(2δ·kSoftReleaseSec·sr)) = 1.4e-10 at
+    //     δ = 0.001, so |Δ| is of that order — far inside the same bound.
+    // Bound 0.002 (≈ −54 dBFS): above 0.0013, and a step that small at the
+    // centre detent is inaudible next to the burst itself.
+    auto firstPass = [](float tone) {
+        ideath::KarplusStrong ks;
+        ks.prepare(kSampleRate);
+        ks.setFrequency(110.0f);
+        ks.setDecay(1.0f);
+        ks.setDamping(0.5f);
+        ks.setExciter(0.3f);
+        ks.setExciterTone(tone);
+        ks.pluck();
+        std::vector<float> y(2 * static_cast<int>(ks.getLineDelaySamples()));
+        for (float& v : y) v = ks.process();
+        return y;
+    };
+    const std::vector<float> mid = firstPass(0.5f);
+    for (float tone : { 0.499f, 0.501f })
+    {
+        const std::vector<float> near = firstPass(tone);
+        float maxDiff = 0.0f;
+        for (size_t i = 0; i < mid.size(); ++i)
+            maxDiff = std::max(maxDiff, std::fabs(near[i] - mid[i]));
+        INFO("tone=" << tone << " maxDiff=" << maxDiff);
+        REQUIRE(maxDiff < 0.002f);
+    }
 }

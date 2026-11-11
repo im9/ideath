@@ -52,8 +52,9 @@ ideath REPL commands:
   dxfb <amount>                 Feedback amount for dxfm (algorithm's FB op only)
   unison <saw|square> <freq> [voices] [detune_cents]
                                 Unison oscillator source
-  pluck [freq] [decay] [damp] [exciter]
+  pluck [freq] [decay] [damp] [exciter] [tone]
                                 Karplus-Strong plucked string source
+                                (tone 0 soft finger, 0.5 raw, 1 hard pick)
   modal <fund> [partials] [decay] [inharm]
                                 Bell engine (struck on note-on / seq step).
                                 fund Hz, partials 1-16, decay sec, inharm 0-1.
@@ -1188,7 +1189,7 @@ bool parseCommand(const std::string& line, SharedState& shared)
 
     if (cmd == "pluck")
     {
-        // pluck [freq] [decay_sec] [damping 0-1] [exciter 0-1]
+        // pluck [freq] [decay_sec] [damping 0-1] [exciter 0-1] [tone 0-1]
         // Selects the Karplus-Strong source. Defaults match a comfortable
         // mid-range nylon-string-ish pluck.
         shared.staging.source = SourceType::KarplusStrong;
@@ -1200,11 +1201,14 @@ bool parseCommand(const std::string& line, SharedState& shared)
             shared.staging.ksDamping = parseFloat(tokens[3], 0.3f);
         if (tokens.size() > 4)
             shared.staging.ksExciter = parseFloat(tokens[4], 1.0f);
+        if (tokens.size() > 5)
+            shared.staging.ksTone = parseFloat(tokens[5], 0.5f);
         shared.paramsReady.store(true, std::memory_order_release);
         std::cout << "Pluck (Karplus-Strong): freq=" << shared.staging.frequency
                   << " decay=" << shared.staging.ksDecay
                   << " damp=" << shared.staging.ksDamping
-                  << " exciter=" << shared.staging.ksExciter << std::endl;
+                  << " exciter=" << shared.staging.ksExciter
+                  << " tone=" << shared.staging.ksTone << std::endl;
         return true;
     }
 

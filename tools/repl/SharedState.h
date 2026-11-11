@@ -167,6 +167,7 @@ struct VoiceParams
     float ksDecay   = 1.0f;
     float ksDamping = 0.3f;
     float ksExciter = 1.0f;
+    float ksTone    = 0.5f;   // exciter tone: 0 soft finger, 0.5 raw, 1 hard pick
 
     // ModalResonator (bell engine).  Fundamental tracks `frequency` like
     // every other source; partial count / decay / inharmonicity are exposed
