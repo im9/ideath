@@ -65,6 +65,8 @@ than comparing cross-host.
 | LowPassGateVoice::process (Decay)  |           2.946 µs |        5.75 |
 | GranularProcessor::process         |          22.825 µs |       44.58 |
 | GranularProcessor::process reverse + SOS |    25.933 µs |       50.65 |
+| GranularProcessor::process + setGrainRate/sample |    26.81 µs |    52.36 |
+| GranularProcessor::process + setGrainRateKeepingPhase/sample | 25.52 µs | 49.84 |
 | Compressor::process                |           7.647 µs |       14.94 |
 | PeakLimiter::process               |           3.376 µs |        6.59 |
 | Reverb::process                    |          11.359 µs |       22.19 |
@@ -208,3 +210,11 @@ than comparing cross-host.
   26.8 vs. 27.0 / 26.9 / 27.9; `ShimmerReverb` 58.1 / 57.0 / 60.4 vs. 61.9 /
   62.2 / 58.2; two voices 76.0 / 76.5 / 74.5 vs. 78.4 / 77.9 / 80.6 — within
   run-to-run jitter (≤ +5 %), table rows kept.
+- `GranularProcessor::setGrainRateKeepingPhase` (2026-11-11, same Apple M2 Max
+  host, load average 14–18 at the time, other simulator test runs on the
+  machine): five runs, median µs per 512-sample block.  The two new rows set
+  the rate every sample (150–250 Hz) through each setter, so their difference
+  is the keep-phase rescale: 26.81 (setGrainRate) vs. 25.52 (keep-phase), no
+  cost beyond run-to-run jitter.  `process()` is unchanged; its rows measured
+  23.34 / 26.03 vs. 22.825 / 25.933 in the table (+2 %, +0.4 %), table rows
+  kept.

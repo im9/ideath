@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -2508,4 +2509,336 @@ TEST_CASE("GranularProcessor: 10 s of SOS + reverse at extreme settings stays bo
             REQUIRE(finite);
             REQUIRE(peak <= kBound);
         }
+}
+
+// -----------------------------------------------------------------------------
+// Rate changes that keep the spawn phase (setGrainRateKeepingPhase)
+// -----------------------------------------------------------------------------
+// The spawn timer holds the time left to the next spawn.  setGrainRate leaves
+// it alone, so the period that was running when the rate changed plays out at
+// the old rate.  setGrainRateKeepingPhase treats the timer as a phase
+// accumulator instead: the fraction of a grain period still to go,
+// timer · rate, is the same just before and just after the change, so the
+// timer is scaled by oldRate / newRate.
+// =============================================================================
+
+namespace
+{
+    // Counts the grains launched by one process() call: slots that were idle
+    // before the call and active after it.  A slot that ends its grain inside
+    // a call cannot be refilled in the same call, because spawning happens
+    // before the grains are rendered, so this misses nothing as long as the
+    // pool never fills.
+    int spawnsDuring(ideath::GranularProcessor& gp, float& out)
+    {
+        using GP = ideath::GranularProcessor;
+        GP::GrainSnapshot before[GP::kMaxGrains];
+        GP::GrainSnapshot after[GP::kMaxGrains];
+        gp.snapshotGrains(before);
+        out = gp.process();
+        gp.snapshotGrains(after);
+        int spawned = 0;
+        for (int i = 0; i < GP::kMaxGrains; ++i)
+            if (!before[i].active && after[i].active) ++spawned;
+        return spawned;
+    }
+
+    // FNV-1a over the bit patterns of the output.
+    uint64_t hashOutput(const std::vector<float>& v)
+    {
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (float x : v)
+        {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &x, sizeof bits);
+            for (int b = 0; b < 4; ++b)
+            {
+                h ^= (bits >> (8 * b)) & 0xFFu;
+                h *= 0x100000001b3ull;
+            }
+        }
+        return h;
+    }
+
+    // Rate as a function of the sample index for the setGrainRate golden
+    // run: rises 3.4 → 40 Hz over 0.5 s, falls to 0 over the next 0.25 s,
+    // stays at 0 for 0.125 s, then jumps to 25 Hz.
+    float goldenRate(int n)
+    {
+        const float t = static_cast<float>(n) / kSampleRate;
+        if (t < 0.5f)   return 3.4f + (40.0f - 3.4f) * (t / 0.5f);
+        if (t < 0.75f)  return 40.0f * (0.75f - t) / 0.25f;
+        if (t < 0.875f) return 0.0f;
+        return 25.0f;
+    }
+}
+
+TEST_CASE("GranularProcessor: setGrainRate output matches the recording made before keep-phase existed",
+          "[granular][keepphase]")
+{
+    // The keep-phase setter is opt-in: hosts that only call setGrainRate must
+    // hear exactly what they heard before it was added.  The hash below was
+    // recorded from main at 658f84a (before setGrainRateKeepingPhase), with
+    // setGrainRate called every sample along goldenRate().  A different hash
+    // means setGrainRate or the spawn path changed.  Bit patterns are
+    // reproducible here because the build uses no fast-math or -march flags;
+    // a toolchain that contracts differently into FMA would need a new
+    // recording from the pre-change commit.
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setGrainSize(0.04f);
+    gp.setPitchSpread(5.0f);
+    gp.setPositionScatter(0.6f);
+    std::vector<float> out(static_cast<std::size_t>(kSampleRate));
+    for (int n = 0; n < static_cast<int>(out.size()); ++n)
+    {
+        gp.setGrainRate(goldenRate(n));
+        gp.writeSample(sineAt(n, 330.0f, kSampleRate));
+        out[static_cast<std::size_t>(n)] = gp.process();
+    }
+    const uint64_t h = hashOutput(out);
+    CAPTURE(h);
+    REQUIRE(h == 0xd6662c16b5068280ull);
+}
+
+TEST_CASE("GranularProcessor: keep-phase rate ramp spawns ∫rate dt grains", "[granular][keepphase]")
+{
+    // A phase accumulator advances by rate/sr each sample and spawns at every
+    // integer it crosses, starting with one spawn at phase 0 (the timer starts
+    // at zero).  After N samples it has spawned floor(Φ) + 1 grains, where
+    // Φ = Σ rate_n / sr is the integral of the rate that was set, so the count
+    // lies in (Φ, Φ + 1].
+    //
+    // Float drift, in periods: the timer holds at most one period
+    // (timer · rate ≤ 1), and every float operation on it rounds by at most
+    // 2⁻²⁴ of its result, i.e. ≤ 2⁻²⁴ ≈ 6e-8 periods.  Per sample there are
+    // three (the oldRate/newRate division, the rescale multiply, the
+    // decrement), plus one per spawn reload (≈ 100 here), plus the 1/sr step
+    // itself, rounded once and so off by ≤ 2⁻²⁴ relative over all Φ ≈ 100
+    // periods: (3 · 44100 + 100 + 100) · 6e-8 ≈ 8e-3 < 0.01 periods.  So the
+    // count lies in (Φ − 0.01, Φ + 1.01]: the spec's ±1 plus 0.01 of float
+    // drift at the top.
+    //
+    // Grains are 0.5 ms so at most 200 · 0.0005 = 0.1 are in flight and the
+    // pool never fills (see spawnsDuring).
+    ideath::GranularProcessor gp;
+    gp.prepare(kSampleRate, 22050);
+    gp.setGrainSize(0.0005f);
+    gp.setGrainRate(3.4f);
+
+    const int n = static_cast<int>(kSampleRate);   // 1 s ramp
+    double phase = 0.0;
+    int spawns = 0;
+    float y = 0.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        const float rate = 3.4f + (200.0f - 3.4f) * static_cast<float>(i)
+                                                  / static_cast<float>(n);
+        gp.setGrainRateKeepingPhase(rate);
+        phase += static_cast<double>(rate) / kSampleRate;
+        gp.writeSample(0.5f);
+        spawns += spawnsDuring(gp, y);
+    }
+    constexpr double kDrift = 0.01;   // periods, see above
+    CAPTURE(spawns, phase);
+    REQUIRE(static_cast<double>(spawns) > phase - kDrift);
+    REQUIRE(static_cast<double>(spawns) <= phase + 1.0 + kDrift);
+}
+
+TEST_CASE("GranularProcessor: keep-phase rate change spawns after (1 − f)/newRate s", "[granular][keepphase]")
+{
+    // Spawn at sample 0, then change the rate r0 → r1 after k process()
+    // calls, at fraction f = k · r0 / sr of the r0 period (the spawn call
+    // itself is the first of the k decrements).  The rest of the period,
+    // 1 − f, now runs at r1: ideally the next spawn is
+    // expected = (1 − f) · sr / r1 samples after the change.
+    //
+    // A spawn lands on the first call at which the timer reaches zero, so
+    // the gap is ceil(expected): gap − expected ∈ [0, 1) in exact arithmetic.
+    //
+    // Float drift widens that by d samples either way.  Every decrement
+    // rounds by at most half an ulp of the timer, and the timer is at most
+    // one period, so:
+    //   - the k decrements before the change are off by ≤ k · ½ulp(1/r0) s,
+    //     which the rescale turns into k · ½ulp(1/r0) · r0/r1 s;
+    //   - the n ≈ expected decrements after it are off by ≤ n · ½ulp(1/r1) s;
+    //   - the reload, the ratio and the rescale add ≤ 3 · 2⁻²⁴ of a period
+    //     (< 0.01 samples here).
+    // d = (k · ½ulp(1/r0) · r0/r1 + n · ½ulp(1/r1)) · sr + 0.01.  For the
+    // raise at f = 0.9 that is ≈ 0.7 samples (the spec's one sample holds in
+    // exact arithmetic; this is the float worst case on top).  For the drop
+    // the ≈ 11700 decrements of a ≈ 0.26 s timer make it ≈ 7.7 samples: the
+    // drop only has to show that the ratio is not inverted, which would be
+    // off by thousands of samples.
+    //
+    // Under setGrainRate the 1 − f of the old period would still run at r0:
+    // (1 − f) · sr / 3.4 ≈ 9730 samples at f = 0.25 for the raise, against
+    // ≈ 830 expected, so this cannot pass by accident.
+    struct Change { float r0, r1; };
+    for (Change c : {Change{3.4f, 40.0f}, Change{40.0f, 3.4f}})
+    for (float f : {0.1f, 0.25f, 0.5f, 0.9f})
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, 22050);
+        gp.setGrainSize(0.001f);     // 1 ms grains: never overlap at 40 Hz
+        gp.setGrainRate(c.r0);
+
+        const double period = kSampleRate / static_cast<double>(c.r0);
+        const int k = static_cast<int>(std::lround(f * period));
+        const double fExact = static_cast<double>(k) / period;
+
+        float y = 0.0f;
+        gp.writeSample(0.5f);
+        REQUIRE(spawnsDuring(gp, y) == 1);              // sample 0
+        for (int i = 1; i < k; ++i)
+        {
+            gp.writeSample(0.5f);
+            REQUIRE(spawnsDuring(gp, y) == 0);
+        }
+
+        gp.setGrainRateKeepingPhase(c.r1);
+        int gap = 0;
+        bool spawned = false;
+        while (!spawned && gap < 40000)
+        {
+            ++gap;
+            gp.writeSample(0.5f);
+            spawned = spawnsDuring(gp, y) > 0;
+        }
+        auto halfUlp = [](float x)
+        {
+            return 0.5 * static_cast<double>(std::nextafter(x, 2.0f * x) - x);
+        };
+        const double expected = (1.0 - fExact) * kSampleRate / c.r1;
+        const double d = (k * halfUlp(1.0f / c.r0) * c.r0 / c.r1
+                          + expected * halfUlp(1.0f / c.r1)) * kSampleRate + 0.01;
+        CAPTURE(c.r0, c.r1, f, k, gap, expected, d);
+        REQUIRE(spawned);
+        REQUIRE(static_cast<double>(gap) >= expected - d);
+        REQUIRE(static_cast<double>(gap) <  expected + 1.0 + d);
+    }
+}
+
+TEST_CASE("GranularProcessor: keep-phase survives a near-zero rate", "[granular][keepphase]")
+{
+    // Two overflows at a tiny positive rate (1e-39 Hz): oldRate / newRate is
+    // inf (20 / 1e-39 > FLT_MAX), and process()'s reload adds 1 / 1e-39 = inf
+    // to the timer at the next spawn (fresh case: the timer is 0, so that
+    // spawn is the first call).  An inf or NaN timer never reaches zero
+    // again.  The keep-phase setter holds the timer at FLT_MAX, so going back
+    // to 20 Hz scales it to ≤ FLT_MAX · 1e-39 / 20 ≈ 0.017 s, under one
+    // 20 Hz period.  Bound: one period, sr / 20 samples, + 1 for the spawn
+    // landing on the first call at or past zero.
+    for (bool warm : {false, true})   // timer 0 (fresh) and mid-period
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, 22050);
+        gp.setGrainSize(0.001f);
+        gp.setGrainRate(20.0f);
+        float y = 0.0f;
+        if (warm)
+            for (int i = 0; i < 500; ++i) { gp.writeSample(0.5f); (void)spawnsDuring(gp, y); }
+
+        gp.setGrainRateKeepingPhase(1e-39f);
+        for (int i = 0; i < 100; ++i) { gp.writeSample(0.5f); (void)spawnsDuring(gp, y); }
+        gp.setGrainRateKeepingPhase(20.0f);
+
+        int gap = 0;
+        bool spawned = false;
+        const int limit = static_cast<int>(kSampleRate / 20.0f) + 1;
+        while (!spawned && gap < limit)
+        {
+            ++gap;
+            gp.writeSample(0.5f);
+            spawned = spawnsDuring(gp, y) > 0;
+            REQUIRE(std::isfinite(y));
+        }
+        CAPTURE(warm, gap);
+        REQUIRE(spawned);
+    }
+}
+
+TEST_CASE("GranularProcessor: keep-phase with the current rate is a no-op", "[granular][keepphase]")
+{
+    // oldRate / newRate is x / x = 1 exactly in IEEE float, and timer · 1 is
+    // the timer, so the output must be bit-identical to never calling it.
+    // Called every sample, with the busy cloud's rate (50 Hz) and with 0.
+    for (float rate : {50.0f, 0.0f})
+    {
+        ideath::GranularProcessor plain, touched;
+        for (auto* gp : {&plain, &touched})
+        {
+            gp->prepare(kSampleRate, 22050);
+            configureBusy(*gp);
+            gp->setGrainRate(rate);
+        }
+        // Warm the 0 Hz case up first so grains are in flight when the rate
+        // drops to 0 and the timer is no longer at its reset value.
+        if (rate == 0.0f)
+            for (auto* gp : {&plain, &touched})
+            {
+                gp->setGrainRate(50.0f);
+                (void)runBusy(*gp, 1000);
+                gp->setGrainRate(0.0f);
+            }
+
+        std::vector<float> a(22050), b(22050);
+        for (int i = 0; i < 22050; ++i)
+        {
+            const float x = sineAt(i, 330.0f, kSampleRate);
+            plain.writeSample(x);
+            a[static_cast<std::size_t>(i)] = plain.process();
+            touched.setGrainRateKeepingPhase(rate);
+            touched.writeSample(x);
+            b[static_cast<std::size_t>(i)] = touched.process();
+        }
+        requireBitIdentical(a, b);
+    }
+}
+
+TEST_CASE("GranularProcessor: keep-phase to or from 0 Hz matches setGrainRate", "[granular][keepphase]")
+{
+    // With either rate at 0 there is no period to keep a fraction of, so the
+    // spec is setGrainRate's behaviour, bit for bit.  goldenRate() runs
+    // through 0 → x, x → 0 and 0 → 0; the two setters must agree throughout.
+    // Out-of-range calls must clamp the same way too (−5 → 0, 1e9 → sr).
+    auto run = [](bool keepPhase)
+    {
+        ideath::GranularProcessor gp;
+        gp.prepare(kSampleRate, 22050);
+        gp.setGrainSize(0.04f);
+        gp.setPitchSpread(5.0f);
+        gp.setPositionScatter(0.6f);
+        std::vector<float> out(static_cast<std::size_t>(kSampleRate));
+        for (int n = 0; n < static_cast<int>(out.size()); ++n)
+        {
+            const float rate = goldenRate(n);
+            // The keep-phase run uses the new setter on every sample where
+            // the old or the new rate is 0 (so its scaling never applies) and
+            // setGrainRate elsewhere.  A 0 Hz target is sent as −5 Hz to
+            // check that it clamps to 0 like setGrainRate's.
+            const bool zeroEdge = rate == 0.0f || goldenRate(n - 1) == 0.0f;
+            if (keepPhase && zeroEdge)
+                gp.setGrainRateKeepingPhase(rate == 0.0f ? -5.0f : rate);
+            else
+                gp.setGrainRate(rate);
+            gp.writeSample(sineAt(n, 330.0f, kSampleRate));
+            out[static_cast<std::size_t>(n)] = gp.process();
+        }
+        return out;
+    };
+    requireBitIdentical(run(false), run(true));
+
+    // Clamp at the top: 1e9 Hz clamps to sr through both setters, so the
+    // output after setting it from 0 Hz is the same.
+    ideath::GranularProcessor a, b;
+    for (auto* gp : {&a, &b})
+    {
+        gp->prepare(kSampleRate, 22050);
+        gp->setGrainSize(0.001f);
+        gp->setGrainRate(0.0f);
+    }
+    a.setGrainRate(1e9f);
+    b.setGrainRateKeepingPhase(1e9f);
+    requireBitIdentical(runBusy(a, 4410), runBusy(b, 4410));
 }

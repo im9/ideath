@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace ideath {
 
@@ -65,6 +66,26 @@ void GranularProcessor::setGrainRate(float hz)
     // avoids surprising behaviour from grainRate > sampleRate (which would
     // otherwise be reinterpreted as 0 by 1/SR step).
     grainRate_ = std::clamp(hz, 0.0f, sampleRate_);
+}
+
+void GranularProcessor::setGrainRateKeepingPhase(float hz)
+{
+    const float newRate = std::clamp(hz, 0.0f, sampleRate_);
+    // timer · rate is the fraction of the period still to go; keep it.  The
+    // ratio is formed first so an unchanged rate gives exactly 1 (x / x = 1
+    // in IEEE float) and leaves the timer bit-identical.
+    //
+    // Near-zero rates overflow: the ratio goes to inf for a tiny newRate,
+    // and process()'s reload (+= 1 / grainRate) leaves an inf timer after a
+    // tiny rate.  A zero timer is skipped (0 · inf = NaN), and the timer is
+    // held at FLT_MAX before and after scaling, so a later rise brings it
+    // back to within one new period instead of leaving it stuck at inf.
+    if (grainRate_ > 0.0f && newRate > 0.0f && spawnTimer_ > 0.0f)
+    {
+        constexpr float kMax = std::numeric_limits<float>::max();
+        spawnTimer_ = std::min(std::min(spawnTimer_, kMax) * (grainRate_ / newRate), kMax);
+    }
+    grainRate_ = newRate;
 }
 
 void GranularProcessor::setGrainSize(float seconds)

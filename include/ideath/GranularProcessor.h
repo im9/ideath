@@ -77,6 +77,22 @@ public:
     /// processor goes silent).
     void setGrainRate(float hz);
 
+    /// Same as `setGrainRate`, but keeps the spawn phase: the fraction of the
+    /// current grain period still to go is the same after the change, so a
+    /// rate rise is heard at once instead of after the old period runs out.
+    /// `setGrainRate` leaves the time to the next spawn as it was (raising
+    /// 3.4 Hz → 40 Hz can wait up to ≈ 294 ms for the first faster grain);
+    /// this one scales it by `oldRate / newRate`.
+    ///
+    /// Clamped like `setGrainRate`.  If the old or the new rate is 0 there is
+    /// no period to keep a fraction of, and it does exactly what
+    /// `setGrainRate` does.  Passing the current rate is a no-op, so a host can
+    /// call it every sample.  Opt-in: callers that only use `setGrainRate`
+    /// hear no change.  Near-zero rates (below ≈ 1e-38 Hz) would overflow
+    /// the time to the next spawn; it is held at FLT_MAX, so the phase is
+    /// lost there but a later rise spawns again within one new period.
+    void setGrainRateKeepingPhase(float hz);
+
     /// Grain length in seconds.  Clamped to `[1e-4, 1.0]` (0.1 ms → 1 s).
     void setGrainSize(float seconds);
 
@@ -234,7 +250,9 @@ private:
     bool  reverse_         = false;     // direction of newly spawned grains
 
     // Spawn timer.  Counts down by 1/sampleRate per call; when it reaches 0
-    // (or below) a grain is launched and the timer is reset to 1/grainRate.
+    // (or below) a grain is launched and 1/grainRate is added to it.
+    // setGrainRateKeepingPhase rescales it so timer · grainRate (the part of
+    // the period still to go) holds across a rate change.
     float spawnTimer_ = 0.0f;
 
     // Deterministic RNG (xorshift32, matching ideath::Noise).

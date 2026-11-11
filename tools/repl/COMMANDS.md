@@ -109,6 +109,7 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 | `granular sos <0-1>` | Sound-on-sound: each write is `input·(1−amount) + existing·amount`. 0 overwrites (default), 1 keeps the buffer and holds the write head, same as freeze |
 | `granular reverse [on\|off]` | New grains read backwards; sounding grains keep their direction (no on/off arg toggles). Grain length does not change |
 | `granular seed <n>` | Grain RNG seed, decimal or `0x` hex (default `0x9E3779B9`). A new value applies at once; the same value does nothing |
+| `granular keepphase [on\|off]` | Rate changes keep the spawn phase (`setGrainRateKeepingPhase`): the part of the current grain period still to go is kept, so a rate rise is heard at once instead of after the old period. Off (default) uses `setGrainRate`, which finishes the old period first (no on/off arg toggles) |
 | `loop <rec\|stop\|play\|dub\|off>` | Looper (record/overdub/play, up to 30s) |
 | `loop feedback <0-1>` | Looper overdub feedback |
 | `loop mix <0-1>` | Looper dry/wet mix |
