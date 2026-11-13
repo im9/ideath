@@ -36,12 +36,37 @@ void UnisonOscillator::reset()
     };
     for (int i = 0; i < kMaxVoices; ++i)
         driftPhaseInc_[i] = (driftRateHz_ * kRateJitter[i]) / sampleRate_;
+    driftInit_ = true;
 }
 
 void UnisonOscillator::setVoiceCount(int count)
 {
-    voiceCount_ = std::clamp(count, 1, kMaxVoices);
+    const int clamped = std::clamp(count, 1, kMaxVoices);
+    // Unchanged → nothing to do (cheap per-sample calls; must not restart
+    // the drift interval).
+    if (clamped == voiceCount_)
+        return;
+    const int oldCount = voiceCount_;
+    voiceCount_ = clamped;
     updateFrequencies();
+    if (driftAmountCents_ > 0.0f && !driftInit_)
+    {
+        // Join the running interval: the new voices start at their LFO's
+        // current value and reach the interval end with the others; the
+        // voices already sounding are untouched.
+        const int left = kDriftControlInterval - driftPos_;
+        for (int i = oldCount; i < voiceCount_; ++i)
+        {
+            const float rNow = std::pow(2.0f, std::sin(driftPhase_[i] * kTwoPi)
+                                                  * driftAmountCents_ / 1200.0f);
+            driftPhase_[i] += driftPhaseInc_[i] * static_cast<float>(left);
+            driftPhase_[i] -= std::floor(driftPhase_[i]);
+            const float rEnd = std::pow(2.0f, std::sin(driftPhase_[i] * kTwoPi)
+                                                  * driftAmountCents_ / 1200.0f);
+            driftRatioStep_[i] = left > 0 ? (rEnd - rNow) / static_cast<float>(left) : 0.0f;
+            driftRatio0_[i] = rNow - driftRatioStep_[i] * static_cast<float>(driftPos_);
+        }
+    }
 }
 
 void UnisonOscillator::setFrequency(float freqHz)
@@ -53,13 +78,37 @@ void UnisonOscillator::setFrequency(float freqHz)
 void UnisonOscillator::setDetune(float cents)
 {
     // No upper bound — extreme detune is musically valid (wide stereo, dissonance).
-    detuneCents_ = std::max(0.0f, cents);
+    const float clamped = std::max(0.0f, cents);
+    // Unchanged → the per-voice frequencies are already current (drift, if
+    // on, rewrites them every sample from baseVoiceFreq_; turning drift off
+    // restores them).  Skips one pow per voice for callers that set the
+    // detune every sample.
+    if (clamped == detuneCents_)
+        return;
+    detuneCents_ = clamped;
     updateFrequencies();
 }
 
 void UnisonOscillator::setDriftAmount(float cents)
 {
-    driftAmountCents_ = std::max(0.0f, cents);
+    const float clamped = std::max(0.0f, cents);
+    if (clamped == driftAmountCents_)
+        return;
+    const bool wasOn = driftAmountCents_ > 0.0f;
+    driftAmountCents_ = clamped;
+    if (clamped == 0.0f)
+    {
+        // Back to the undrifted frequencies now — process() no longer
+        // touches them once drift is off.
+        for (int i = 0; i < voiceCount_; ++i)
+            voices_[i].setFrequency(baseVoiceFreq_[i]);
+    }
+    else if (!wasOn)
+    {
+        driftInit_ = true;
+    }
+    // A change between two non-zero amounts lands at the next interval
+    // boundary (≤ kDriftControlInterval samples).
 }
 
 void UnisonOscillator::setDriftRate(float hz)
@@ -71,13 +120,18 @@ void UnisonOscillator::setDriftRate(float hz)
     };
     for (int i = 0; i < kMaxVoices; ++i)
         driftPhaseInc_[i] = (driftRateHz_ * kRateJitter[i]) / sampleRate_;
+    // A new rate takes effect at the next interval boundary.
 }
 
 float UnisonOscillator::getVoiceDriftCents(int i) const
 {
-    if (i < 0 || i >= kMaxVoices)
+    if (i < 0 || i >= kMaxVoices || driftAmountCents_ <= 0.0f)
         return 0.0f;
-    return std::sin(driftPhase_[i] * kTwoPi) * driftAmountCents_;
+    if (driftInit_ || i >= voiceCount_)
+        return std::sin(driftPhase_[i] * kTwoPi) * driftAmountCents_;
+    const double ratio = static_cast<double>(driftRatio0_[i])
+                         + static_cast<double>(driftRatioStep_[i] * static_cast<float>(driftPos_));
+    return static_cast<float>(1200.0 * std::log2(ratio));
 }
 
 void UnisonOscillator::updateFrequencies()
@@ -106,16 +160,40 @@ float UnisonOscillator::process(float waveform)
     // bit-identical to the pre-drift implementation (regression-safe).
     if (driftAmountCents_ > 0.0f)
     {
-        for (int i = 0; i < voiceCount_; ++i)
+        // Control rate: at each interval boundary evaluate the LFO one
+        // interval ahead and step the ratio linearly towards it.
+        if (driftInit_ || driftPos_ >= kDriftControlInterval)
         {
-            const float lfo = std::sin(driftPhase_[i] * kTwoPi);
-            const float driftCents = lfo * driftAmountCents_;
-            const float ratio = std::pow(2.0f, driftCents / 1200.0f);
-            voices_[i].setFrequency(baseVoiceFreq_[i] * ratio);
-
-            driftPhase_[i] += driftPhaseInc_[i];
-            driftPhase_[i] -= std::floor(driftPhase_[i]);
+            const float n = static_cast<float>(kDriftControlInterval);
+            for (int i = 0; i < voiceCount_; ++i)
+            {
+                float r0;
+                if (driftInit_)
+                {
+                    const float c = std::sin(driftPhase_[i] * kTwoPi) * driftAmountCents_;
+                    r0 = std::pow(2.0f, c / 1200.0f);
+                }
+                else
+                {
+                    // End of the previous interval, exactly (no rounding
+                    // carried from the lerp).
+                    r0 = driftRatio0_[i] + driftRatioStep_[i] * n;
+                }
+                driftPhase_[i] += driftPhaseInc_[i] * n;
+                driftPhase_[i] -= std::floor(driftPhase_[i]);
+                const float c1 = std::sin(driftPhase_[i] * kTwoPi) * driftAmountCents_;
+                const float r1 = std::pow(2.0f, c1 / 1200.0f);
+                driftRatio0_[i] = r0;
+                driftRatioStep_[i] = (r1 - r0) / n;
+            }
+            driftPos_ = 0;
+            driftInit_ = false;
         }
+        const float pos = static_cast<float>(driftPos_);
+        for (int i = 0; i < voiceCount_; ++i)
+            voices_[i].setFrequency(baseVoiceFreq_[i]
+                                    * (driftRatio0_[i] + driftRatioStep_[i] * pos));
+        ++driftPos_;
     }
 
     float sum = 0.0f;

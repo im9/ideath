@@ -292,3 +292,50 @@ TEST_CASE("ReverbTank: silent tail never produces subnormals", "[reverbtank]")
         REQUIRE(std::fpclassify(r) != FP_SUBNORMAL);
     }
 }
+
+// --- LFO as rotating phasors ----------------
+
+TEST_CASE("ReverbTank: LFO keeps unit amplitude and its rate over 10 minutes",
+          "[reverbtank]")
+{
+    // The quadrature LFOs are rotating unit phasors renormalised every
+    // sample.  Spec: (a) amplitude stays 1 — after the Newton step the
+    // magnitude error is O(ε²), so the peaks of lfo() stay within 1e−6 of
+    // 1 (a few float ulp); (b) the rate is the one asked for — lfo() runs at
+    // modRate × 1.3717; counting its upward zero crossings over T seconds
+    // gives rate·T ± 1 crossing (the count of a periodic signal is exact up
+    // to where the window cuts the last period).
+    const float rate = 5.0f; // fastest allowed: most rotations, most rounding
+    const double lfoHz = rate * 1.3717;
+    ideath::ReverbTank tank;
+    tank.prepare(kSR);
+    tank.setModRate(rate);
+    const int seconds = 600;
+    // Advance the tank on silence; checking only the last 10 s keeps the
+    // peak test where drift would have accumulated most.
+    float prev = tank.lfo();
+    long crossings = 0;
+    float peak = 0.0f, trough = 0.0f, maxAbs = 0.0f;
+    const long total = static_cast<long>(seconds * kSR);
+    for (long i = 0; i < total; ++i)
+    {
+        tank.process(0.0f);
+        const float v = tank.lfo();
+        if (prev < 0.0f && v >= 0.0f)
+            ++crossings;
+        prev = v;
+        if (i >= total - static_cast<long>(10 * kSR))
+        {
+            peak = std::max(peak, v);
+            trough = std::min(trough, v);
+        }
+        maxAbs = std::max(maxAbs, std::fabs(v));
+    }
+    // Sampled peak of a 6.9 Hz sine misses the true peak by at most
+    // 1 − cos(π·6.9/48000) = 1e−7, inside the 1e−6 band.
+    REQUIRE(maxAbs <= 1.0f + 1e-6f);
+    REQUIRE(peak >= 1.0f - 1e-6f);
+    REQUIRE(trough <= -1.0f + 1e-6f);
+    const double expected = lfoHz * seconds;
+    REQUIRE(std::fabs(static_cast<double>(crossings) - expected) <= 1.0);
+}

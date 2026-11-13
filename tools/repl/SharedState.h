@@ -56,6 +56,7 @@ struct VoiceParams
     // Saturation
     bool satEnabled = false;
     float satDrive = 1.0f;
+    int satAntialias = 0; // 0 off (plain tanh), 1 Adaa, 2 Adaa2x
 
     // Delay
     bool delayEnabled = false;
@@ -128,6 +129,7 @@ struct VoiceParams
     bool foldEnabled = false;
     float foldDrive = 1.0f;
     float foldMix = 1.0f;
+    int foldAntialias = 0; // 0 off (plain 1× fold), 1 Adaa, 2 Adaa2x
 
     // CombFilter
     bool combEnabled = false;

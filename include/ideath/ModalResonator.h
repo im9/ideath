@@ -113,7 +113,8 @@ public:
     /// stretching).  Index out-of-range is silently ignored.  Ratio is
     /// clamped to `[0.01, 64.0]` — 0.01 because the formula divides by
     /// nothing useful below that, 64 because higher ratios are always
-    /// past Nyquist for any musical fundamental.
+    /// past Nyquist for any musical fundamental.  Returns at once when the
+    /// clamped ratio equals the stored one (cheap to call every sample).
     void setPartialRatio(int idx, float ratio);
 
     /// Set the decay time (T60, seconds) of partial `idx`.  Clamped to

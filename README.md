@@ -17,7 +17,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **AREnvelope** | Attack/Sustain/Release (slow per-layer fades, gates) |
 | **Noise** | xorshift32 white noise generator |
 | **BandlimitedNoise** | xorshift32 noise + one-pole LP (Bandwidth: white → pink-ish → brown → random walk) |
-| **Saturation** | tanh drive + polynomial soft clip |
+| **Saturation** | tanh drive + polynomial soft clip; anti-aliased tanh (ADAA, optional 2×) |
 | **Wavetable** | Chiptune wavetable oscillator (4-bit Game Boy WAV-RAM style, 256-sample max, no band-limiting — keep the lo-fi stairsteps) |
 | **MultiShapeWavetable** | General-purpose multi-shape band-limited wavetable engine (inboil-style). 10 shapes × 9 mipmap levels × 2048-sample tables, continuous morph between shapes, alias-free from ~10 Hz to Nyquist |
 | **BitCrusher** | Bit depth reduction + sample rate reduction (lo-fi digital) |
@@ -33,16 +33,16 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **ReverbTank** | Shared reverb core: 8-line Householder FDN, exact T60, modulated lines, decorrelated stereo out |
 | **HallReverb** | Hall reverb: pre-delay + ReverbTank (smooth, dense, modulated tail) |
 | **ShimmerReverb** | Shimmer reverb: ReverbTank + two pitch-shift voices (−24…+24 st), feedback or input mode |
-| **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead) |
+| **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead), attack ramped across the lookahead, linked stereo mode |
 | **Compressor** | Peak envelope compressor (threshold/ratio/attack/release/makeup/knee) |
-| **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping |
+| **Wavefolder** | sin(input * drive) wavefolder for West Coast timbre shaping; optional ADAA / ADAA at 2× anti-aliasing |
 | **FeedbackBuffer** | Long circular buffer looper (record/overdub/playback) |
 | **UnisonOscillator** | Stacked detuned oscillators with optional analog pitch drift (unison spread) |
 | **SVFilter** | Trapezoidal integrated SVF (LP/HP/BP/Notch, modulation-safe) |
 | **CombFilter** | Feedback comb filter with damping for resonator / Karplus-Strong tones |
 | **AllpassFilter** | Schroeder allpass diffusor (direct-form II, integer-sample delay). Flat magnitude, phase-only reshaping — building block for diffusion networks (Freeverb tails, Gardner reverbs, sparse-impulse diffusors) |
 | **FormantFilter** | 3 parallel bandpass SVF, vowel morph A-E-I-O-U |
-| **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph |
+| **HarmonicWavetable** | 128-table morphing wavetable, additive harmonic series, band-limited, continuous morph (tables shared by all instances) |
 | **FunctionGenerator** | West Coast rise/fall envelope (0-Coast Contour, MATHS), shared curve, cycle mode, end-of-cycle pulse |
 | **KarplusStrong** | Plucked-string synthesis: noise burst into LP-filtered delay-line feedback; freq/decay/damping/exciter with filter-loss-compensated loop gain and LP-phase-compensated loop length (in tune at any damping); DC-free exciter (burst sum cancelled over one loop length, harmonics untouched); per-pluck exciter tone (soft finger LP ↔ raw burst ↔ hard pick shelf, decay untouched) |
 | **ModalResonator** | Bell / chime engine: N parallel BP modes with per-partial Q derived from decay, struck by a short noise burst, piano-string inharmonicity stretch, per-partial output gain for Rings-style Position-knob amplitude shaping |

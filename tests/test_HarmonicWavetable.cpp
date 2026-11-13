@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/HarmonicWavetable.h>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -364,4 +365,121 @@ TEST_CASE("HarmonicWavetable: low freq + full morph sweep", "[harmonic_wavetable
         REQUIRE(s >= -1.0f - 1e-6f);
         REQUIRE(s <= 1.0f + 1e-6f);
     }
+}
+
+// --- Shared tables ---
+
+// Reference: a direct per-instance build (double-precision additive sum of
+// sin(2π·h·i/N)/h, h = 1..t+1, cast to float per harmonic, then
+// peak-normalised).  A band limit at the table's Nyquist (h·sr/N > sr/2)
+// would never fire (h ≤ 128 = N/2), so the tables do not depend on the
+// sample rate.
+static std::vector<float> referenceHarmonicTables()
+{
+    constexpr int kT = ideath::HarmonicWavetable::kNumTables;
+    constexpr int kN = ideath::HarmonicWavetable::kTableSize;
+    std::vector<float> tables(static_cast<size_t>(kT) * kN, 0.0f);
+    const double twoPi = 2.0 * 3.14159265358979323846;
+    for (int t = 0; t < kT; ++t)
+    {
+        float* table = tables.data() + static_cast<size_t>(t) * kN;
+        for (int h = 1; h <= t + 1; ++h)
+        {
+            const double amp = 1.0 / static_cast<double>(h);
+            for (int i = 0; i < kN; ++i)
+                table[i] += static_cast<float>(
+                    amp * std::sin(twoPi * static_cast<double>(h)
+                                   * static_cast<double>(i)
+                                   / static_cast<double>(kN)));
+        }
+        float peak = 0.0f;
+        for (int i = 0; i < kN; ++i)
+            peak = std::max(peak, std::abs(table[i]));
+        const float invPeak = 1.0f / peak;
+        for (int i = 0; i < kN; ++i)
+            table[i] *= invPeak;
+    }
+    return tables;
+}
+
+TEST_CASE("HarmonicWavetable: tables are bit-exact with the per-instance build",
+          "[harmonic_wavetable]")
+{
+    // Spec: sharing the tables must not change a single bit of them, at any
+    // sample rate.  Exact equality (==), no tolerance.
+    const std::vector<float> ref = referenceHarmonicTables();
+    for (float sr : { 22050.0f, 44100.0f, 48000.0f, 96000.0f, 192000.0f })
+    {
+        ideath::HarmonicWavetable hw;
+        hw.prepare(sr);
+        const float* t = hw.tableData();
+        REQUIRE(t != nullptr);
+        size_t mismatches = 0;
+        for (size_t i = 0; i < ref.size(); ++i)
+            if (t[i] != ref[i])
+                ++mismatches;
+        REQUIRE(mismatches == 0);
+    }
+}
+
+TEST_CASE("HarmonicWavetable: output is bit-exact with the reference reader",
+          "[harmonic_wavetable]")
+{
+    // Same phase / crossfade arithmetic as process(), on the reference
+    // tables.  Exact equality per sample.
+    const std::vector<float> ref = referenceHarmonicTables();
+    constexpr int kN = ideath::HarmonicWavetable::kTableSize;
+    auto read = [&](int t, float phase) {
+        const float* table = ref.data() + static_cast<size_t>(t) * kN;
+        const float pos = phase * static_cast<float>(kN);
+        const int i0 = static_cast<int>(pos);
+        const int a = i0 % kN, b = (i0 + 1) % kN;
+        const float frac = pos - static_cast<float>(i0);
+        return table[a] + frac * (table[b] - table[a]);
+    };
+
+    ideath::HarmonicWavetable hw;
+    hw.prepare(48000.0f);
+    for (float morph : { 0.0f, 0.13f, 0.5f, 0.77f, 1.0f })
+    {
+        hw.setMorphPosition(morph);
+        hw.setFrequency(331.0f);
+        hw.reset();
+        float phase = 0.0f;
+        const float inc = 331.0f / 48000.0f;
+        const float tablePos = morph * 127.0f;
+        const int t0 = static_cast<int>(tablePos);
+        const int t1 = std::min(t0 + 1, 127);
+        const float tf = tablePos - static_cast<float>(t0);
+        int mismatches = 0;
+        for (int n = 0; n < 4800; ++n)
+        {
+            phase += inc;
+            phase -= std::floor(phase);
+            const float s0 = read(t0, phase), s1 = read(t1, phase);
+            if (hw.process() != s0 + tf * (s1 - s0))
+                ++mismatches;
+        }
+        REQUIRE(mismatches == 0);
+    }
+}
+
+TEST_CASE("HarmonicWavetable: instances share one table set", "[harmonic_wavetable]")
+{
+    // Spec: the tables are sample-rate independent, so every instance —
+    // whatever rate it was prepared at — reads the same memory.
+    ideath::HarmonicWavetable a, b, c;
+    a.prepare(44100.0f);
+    b.prepare(48000.0f);
+    c.prepare(96000.0f);
+    REQUIRE(a.tableData() == b.tableData());
+    REQUIRE(b.tableData() == c.tableData());
+}
+
+TEST_CASE("HarmonicWavetable: process before prepare is silent, not a crash",
+          "[harmonic_wavetable]")
+{
+    ideath::HarmonicWavetable hw;
+    hw.setFrequency(440.0f);
+    REQUIRE(hw.process() == 0.0f);
 }

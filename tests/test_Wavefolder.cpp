@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/Wavefolder.h>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 using Catch::Matchers::WithinAbs;
 
@@ -248,4 +250,263 @@ TEST_CASE("Wavefolder: stateless — process is pure across reset and intervenin
 
     wf.reset();
     REQUIRE(wf.process(input) == first);
+}
+
+// --- Anti-aliasing ---------------------------
+//
+// Threshold derivations for the cases below:
+//
+// Small-signal response.  With drive 1 and amplitude a = 1e−3, sin(x) = x
+// up to a³/6 relative (1.7e−7, −1.4e−6 dB), so the fold is linear and its
+// ADAA reduces to the ADAA of the identity, the two-point mean
+// (x + x₁)/2, |H(f)| = cos(π·f/sr) exactly.  At 2× the same mean runs at
+// 2·sr (cos(π·f/2sr)) between two halfband filters whose pass-band ripple
+// is δ ≈ 10^(−A/20) with A = β/0.1102 + 8.7 = 81.3 dB (Kaiser, β = 8) →
+// δ = 8.6e−5 each, 2δ = 0.0015 dB for the pair.  Tolerance 0.01 dB covers
+// that and the float FIR rounding (24 taps × 6e−8).
+//
+// Latency.  In the linear region each mode is a linear-phase FIR (the
+// two-point mean, or halfband·mean·halfband), whose impulse-response
+// centroid Σn·h[n] / Σh[n] equals its constant group delay — 0.5 and
+// 22.75 samples (header).  Tolerance 1e−3 sample: the centroid of a
+// float FIR rounds at ≈ 1e−6 relative.
+//
+// Alias reduction.  Requirement, not a measured fit: each level of
+// protection must at least halve the alias amplitude again, counted from
+// the plain fold — Adaa ≥ 6 dB below Off, Adaa2x ≥ 12 dB below Off — and
+// Adaa2x must beat Adaa.  (Counted per step, Adaa → Adaa2x gives only
+// ≈ 5.7 dB at f0 880 Hz / drive 10: there the remaining alias comes from
+// fold energy far above the 2× Nyquist, which no halfband removes — a
+// 127-tap filter still gives < 7 dB.  A steeper step needs ADAA2 or 4×.)
+
+#include "AliasMetric.h"
+#include <vector>
+
+namespace {
+std::vector<float> runFold(ideath::Wavefolder& wf, const std::vector<float>& x)
+{
+    std::vector<float> y(x.size());
+    for (size_t i = 0; i < x.size(); ++i)
+        y[i] = wf.process(x[i]);
+    return y;
+}
+
+double gainDb(ideath::Antialiasing mode, double hz, float mix)
+{
+    ideath::Wavefolder wf;
+    wf.prepare(48000.0f);
+    wf.setDrive(1.0f);
+    wf.setMix(mix);
+    wf.setAntialiasing(mode);
+    return 20.0 * std::log10(alias_metric::sineGain(
+        [&](float x) { return wf.process(x); }, hz, 48000.0, 1e-3));
+}
+} // namespace
+
+TEST_CASE("Wavefolder: default anti-aliasing is Off (legacy 1× fold)", "[wavefolder]")
+{
+    ideath::Wavefolder wf;
+    REQUIRE(wf.getAntialiasing() == ideath::Antialiasing::Off);
+    REQUIRE(wf.latencySamples() == 0.0f);
+}
+
+TEST_CASE("Wavefolder: mix=0 fast path is bit-exact incl. signed zero and large input",
+          "[wavefolder]")
+{
+    // (1 − 0)·x + 0·sin(d·x): 0·sin is ±0 for finite sin, and x + (±0) = x
+    // for every x except x = −0 with +0 added, where the sign of sin(−0·d)
+    // = −0 makes the product −0, so the sum stays −0.  The fast path must
+    // reproduce that bit for bit (compare bit patterns, not values).
+    ideath::Wavefolder wf;
+    wf.prepare(48000.0f);
+    wf.setDrive(37.0f);
+    wf.setMix(0.0f);
+    for (float x : { -0.0f, 0.0f, 1e-38f, -1e-30f, 0.25f, -1.0f, 3.5f, -1e6f, 1e30f })
+    {
+        const float y = wf.process(x);
+        const float ref = (1.0f - 0.0f) * x + 0.0f * std::sin(x * 37.0f);
+        REQUIRE(std::signbit(y) == std::signbit(ref));
+        REQUIRE(y == ref);
+    }
+}
+
+TEST_CASE("Wavefolder: Adaa small-signal response is the two-point mean", "[wavefolder]")
+{
+    for (double hz : { 1000.0, 5000.0, 10000.0, 15000.0 })
+    {
+        const double expected = 20.0 * std::log10(std::cos(M_PI * hz / 48000.0));
+        INFO("hz " << hz);
+        REQUIRE_THAT(gainDb(ideath::Antialiasing::Adaa, hz, 1.0f), WithinAbs(expected, 0.01));
+        // Dry is averaged the same way: mix 0.5 has the same response
+        // (an unaligned dry would comb: |½ + ½·e^(−jω/2)·cos(ω/2)| ≠ cos(ω/2)).
+        REQUIRE_THAT(gainDb(ideath::Antialiasing::Adaa, hz, 0.5f), WithinAbs(expected, 0.01));
+    }
+}
+
+TEST_CASE("Wavefolder: Adaa2x small-signal response keeps the top end", "[wavefolder]")
+{
+    for (double hz : { 1000.0, 5000.0, 10000.0, 15000.0 })
+    {
+        const double expected = 20.0 * std::log10(std::cos(M_PI * hz / 96000.0));
+        INFO("hz " << hz);
+        REQUIRE_THAT(gainDb(ideath::Antialiasing::Adaa2x, hz, 1.0f), WithinAbs(expected, 0.01));
+        REQUIRE_THAT(gainDb(ideath::Antialiasing::Adaa2x, hz, 0.5f), WithinAbs(expected, 0.01));
+        REQUIRE_THAT(gainDb(ideath::Antialiasing::Adaa2x, hz, 0.0f), WithinAbs(expected, 0.01));
+    }
+}
+
+TEST_CASE("Wavefolder: latency matches the impulse-response centroid", "[wavefolder]")
+{
+    for (auto mode : { ideath::Antialiasing::Adaa, ideath::Antialiasing::Adaa2x })
+    {
+        ideath::Wavefolder wf;
+        wf.prepare(48000.0f);
+        wf.setDrive(1.0f);
+        wf.setAntialiasing(mode);
+        double num = 0.0, den = 0.0;
+        for (int n = 0; n < 128; ++n)
+        {
+            const double y = wf.process(n == 0 ? 1e-4f : 0.0f);
+            num += n * y;
+            den += y;
+        }
+        REQUIRE_THAT(num / den, WithinAbs(wf.latencySamples(), 1e-3));
+    }
+}
+
+TEST_CASE("Wavefolder: Adaa halves alias, Adaa2x halves it again (vs Off)", "[wavefolder]")
+{
+    const float sr = 48000.0f;
+    for (float f0 : { 880.0f, 1760.0f, 3520.0f })
+    {
+        const auto x = alias_metric::bandlimitedSaw(f0, sr, alias_metric::kFftSize + alias_metric::kSkip);
+        for (float drive : { 2.0f, 4.0f, 6.0f, 10.0f })
+        {
+            double db[3];
+            int k = 0;
+            for (auto mode : { ideath::Antialiasing::Off, ideath::Antialiasing::Adaa,
+                               ideath::Antialiasing::Adaa2x })
+            {
+                ideath::Wavefolder wf;
+                wf.prepare(sr);
+                wf.setDrive(drive);
+                wf.setMix(1.0f);
+                wf.setAntialiasing(mode);
+                db[k++] = alias_metric::aliasDb(runFold(wf, x), f0, sr);
+            }
+            INFO("f0 " << f0 << " drive " << drive << ": off " << db[0] << " adaa " << db[1]
+                       << " adaa2x " << db[2]);
+            REQUIRE(db[1] <= db[0] - 6.0);
+            REQUIRE(db[2] <= db[0] - 12.0);
+            REQUIRE(db[2] < db[1]);
+        }
+    }
+}
+
+TEST_CASE("Wavefolder: Adaa output bounded by 1, Adaa2x by the filter L1 norm",
+          "[wavefolder]")
+{
+    // Adaa: sin(d·m)·sin(u)/u and the mean m are each within ±1 for
+    // |x| ≤ 1, and the mix is convex → |y| ≤ 1 (+ float rounding 1e−6).
+    // Adaa2x: the upsampler output is bounded by U = 2·Σ|g| (even branch),
+    // so the 2× mix is within max(1, U); the downsampler is an FIR, so
+    // |y| ≤ Σ|h|·max(1, U).
+    const auto& h = ideath::detail::Halfband2x::taps();
+    double l1 = 0.0, upL1 = 0.0;
+    for (int j = 0; j < ideath::detail::Halfband2x::kTaps; ++j)
+    {
+        l1 += std::fabs(h[static_cast<size_t>(j)]);
+        if (j % 2 == 0)
+            upL1 += 2.0 * std::fabs(h[static_cast<size_t>(j)]);
+    }
+    const double bound2x = l1 * std::max(1.0, upL1);
+
+    uint32_t seed = 12345u;
+    auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                       return static_cast<float>(seed) / 2147483648.0f - 1.0f; };
+    for (auto mode : { ideath::Antialiasing::Adaa, ideath::Antialiasing::Adaa2x })
+        for (float mix : { 0.0f, 0.5f, 1.0f })
+            for (float drive : { 1.0f, 7.0f, 40.0f })
+            {
+                ideath::Wavefolder wf;
+                wf.prepare(48000.0f);
+                wf.setAntialiasing(mode);
+                wf.setDrive(drive);
+                wf.setMix(mix);
+                const double bound = mode == ideath::Antialiasing::Adaa ? 1.0 + 1e-6 : bound2x + 1e-6;
+                float peak = 0.0f;
+                for (int i = 0; i < 48000; ++i)
+                {
+                    const float x = (i / 64) % 2 == 0 ? rnd() : (i % 2 ? 1.0f : -1.0f);
+                    peak = std::max(peak, std::fabs(wf.process(x)));
+                }
+                INFO("mode " << static_cast<int>(mode) << " mix " << mix << " drive " << drive);
+                REQUIRE(peak <= bound);
+            }
+}
+
+TEST_CASE("Wavefolder: Adaa per-sample drive sweep stays continuous", "[wavefolder]")
+{
+    // The sin·sinc form uses one drive for both ends of the step, so a
+    // drive moving every sample is no special case.  Continuity bound:
+    // a 100 Hz sine at amplitude 0.5 with drive gliding 1 → 20 over 1 s.
+    // The fold's slope |d/dt sin(d·x)| ≤ d·|x'| + |d'|·|x| =
+    // 20·(2π·100·0.5/48000) + (19/48000)·0.5 = 0.1311 per sample, and the
+    // ADAA mean of a function moves no faster than the function itself.
+    ideath::Wavefolder wf;
+    wf.prepare(48000.0f);
+    wf.setMix(1.0f);
+    wf.setAntialiasing(ideath::Antialiasing::Adaa);
+    float prev = 0.0f;
+    float maxStep = 0.0f;
+    for (int i = 0; i < 48000; ++i)
+    {
+        wf.setDrive(1.0f + 19.0f * i / 48000.0f);
+        const float y = wf.process(0.5f * std::sin(2.0f * 3.14159265f * 100.0f * i / 48000.0f));
+        if (i > 0)
+            maxStep = std::max(maxStep, std::fabs(y - prev));
+        prev = y;
+    }
+    REQUIRE(maxStep <= 0.1312f);
+}
+
+TEST_CASE("Wavefolder: reset clears the anti-aliasing state", "[wavefolder]")
+{
+    for (auto mode : { ideath::Antialiasing::Adaa, ideath::Antialiasing::Adaa2x })
+    {
+        ideath::Wavefolder a, b;
+        for (auto* wf : { &a, &b })
+        {
+            wf->prepare(48000.0f);
+            wf->setDrive(5.0f);
+            wf->setMix(0.7f);
+            wf->setAntialiasing(mode);
+        }
+        for (int i = 0; i < 100; ++i)
+            a.process(std::sin(0.1f * i));
+        a.reset();
+        for (int i = 0; i < 200; ++i)
+        {
+            const float x = std::sin(0.37f * i);
+            REQUIRE(a.process(x) == b.process(x));
+        }
+    }
+}
+
+TEST_CASE("Wavefolder: Adaa2x 10 s long-run stability at extreme drive", "[wavefolder]")
+{
+    // FIR filters and a one-sample ADAA memory hold no recirculating state,
+    // so nothing can drift: after 10 s at drive 100 the output must still be
+    // finite and inside the Adaa2x bound, and silence must return to exactly
+    // 0 once the 47-tap histories have flushed (all products 0·g).
+    ideath::Wavefolder wf;
+    wf.prepare(48000.0f);
+    wf.setDrive(100.0f);
+    wf.setAntialiasing(ideath::Antialiasing::Adaa2x);
+    for (int i = 0; i < 480000; ++i)
+        REQUIRE(std::isfinite(wf.process(std::sin(2.0f * 3.14159265f * 3000.0f * i / 48000.0f))));
+    float last = 1.0f;
+    for (int i = 0; i < 64; ++i)
+        last = wf.process(0.0f);
+    REQUIRE(last == 0.0f);
 }

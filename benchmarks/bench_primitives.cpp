@@ -271,6 +271,29 @@ TEST_CASE("Bench: Saturation", "[bench]")
         return acc;
     };
 
+    ideath::Saturation::AntialiasedTanh adaa;
+    adaa.prepare(kSR);
+    adaa.setDrive(3.0f);
+    BENCHMARK("Saturation::AntialiasedTanh (Adaa)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += adaa.process(sineAt(i));
+        return acc;
+    };
+
+    ideath::Saturation::AntialiasedTanh adaa2x;
+    adaa2x.prepare(kSR);
+    adaa2x.setDrive(3.0f);
+    adaa2x.setAntialiasing(ideath::Antialiasing::Adaa2x);
+    BENCHMARK("Saturation::AntialiasedTanh (Adaa2x)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += adaa2x.process(sineAt(i));
+        return acc;
+    };
+
     BENCHMARK("Saturation::softClip")
     {
         float acc = 0.0f;
@@ -413,6 +436,35 @@ TEST_CASE("Bench: Wavefolder", "[bench]")
             acc += folder.process(sineAt(i));
         return acc;
     };
+
+    ideath::Wavefolder dry;
+    dry.prepare(kSR);
+    dry.setDrive(3.0f);
+    dry.setMix(0.0f);
+    BENCHMARK("Wavefolder::process (mix 0)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+            acc += dry.process(sineAt(i));
+        return acc;
+    };
+
+    for (auto mode : { ideath::Antialiasing::Adaa, ideath::Antialiasing::Adaa2x })
+    {
+        ideath::Wavefolder aa;
+        aa.prepare(kSR);
+        aa.setDrive(3.0f);
+        aa.setMix(1.0f);
+        aa.setAntialiasing(mode);
+        BENCHMARK(mode == ideath::Antialiasing::Adaa ? "Wavefolder::process (Adaa)"
+                                                    : "Wavefolder::process (Adaa2x)")
+        {
+            float acc = 0.0f;
+            for (int i = 0; i < kBlock; ++i)
+                acc += aa.process(sineAt(i));
+            return acc;
+        };
+    }
 }
 
 TEST_CASE("Bench: Compressor", "[bench]")
@@ -448,6 +500,23 @@ TEST_CASE("Bench: PeakLimiter", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += limiter.process(sineAt(i) * 1.5f);
+        return acc;
+    };
+
+    ideath::PeakLimiter stereo;
+    stereo.prepare(kSR);
+    stereo.setThreshold(-1.0f);
+    stereo.setRelease(0.005f);
+    stereo.setLookahead(0.005f);
+    BENCHMARK("PeakLimiter::processStereo")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const float x = sineAt(i) * 1.5f;
+            const auto [l, r] = stereo.processStereo(x, 0.7f * x);
+            acc += l + r;
+        }
         return acc;
     };
 }
@@ -555,6 +624,24 @@ TEST_CASE("Bench: UnisonOscillator", "[bench]")
         float acc = 0.0f;
         for (int i = 0; i < kBlock; ++i)
             acc += osc.process(1.0f);
+        return acc;
+    };
+
+    // Host pattern: 7 voices, detune re-set every sample, drift on.
+    ideath::UnisonOscillator drift;
+    drift.prepare(kSR);
+    drift.setVoiceCount(7);
+    drift.setFrequency(440.0f);
+    drift.setDetune(20.0f);
+    drift.setDriftAmount(5.0f);
+    BENCHMARK("UnisonOscillator::process (7 v, drift, setDetune/sample)")
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            drift.setDetune(20.0f);
+            acc += drift.process(1.0f);
+        }
         return acc;
     };
 }

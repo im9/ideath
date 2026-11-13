@@ -157,3 +157,178 @@ TEST_CASE("Saturation::softClip: monotonic on [-1, 1]", "[sat]")
         prev = cur;
     }
 }
+
+// --- AntialiasedTanh -----------------------
+//
+// Threshold derivations: same as the Wavefolder anti-aliasing block.
+// Small signal (drive 1, amplitude 1e−3): tanh(x) = x up to x³/3 relative
+// (3.3e−7, −2.9e−6 dB) → the ADAA is the two-point mean, |H| = cos(π·f/sr)
+// (Adaa) or cos(π·f/2sr) between halfbands with 2δ = 0.0015 dB ripple
+// (Adaa2x).  Tolerance 0.01 dB.  Alias reduction: Adaa ≥ 6 dB below Off,
+// Adaa2x ≥ 12 dB below Off and below Adaa — each level at least halves the
+// alias amplitude again (requirement, not a fit; see test_Wavefolder.cpp).
+//
+// Mean-value bound: for monotonic tanh, the mean of tanh(d·t) over
+// [x₁, x] lies between tanh(d·x₁) and tanh(d·x).  The double-precision
+// quotient errs by ≤ 2·ε_d·|d·x| / (d·|Δ|) ≤ 4.4e−16·|x| / 1e−5 (Δ ≥ 1e−5
+// on that branch) — negligible; the midpoint fallback errs by
+// O(d²·Δ²/24) ≤ 4e−8 at d = 10, Δ < 1e−5.  Float rounding of the
+// result: 1.2e−7.  Tolerance 1e−6.
+
+#include "AliasMetric.h"
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
+namespace {
+double tanhGainDb(ideath::Antialiasing mode, double hz)
+{
+    ideath::Saturation::AntialiasedTanh t;
+    t.prepare(48000.0f);
+    t.setDrive(1.0f);
+    t.setAntialiasing(mode);
+    return 20.0 * std::log10(alias_metric::sineGain(
+        [&](float x) { return t.process(x); }, hz, 48000.0, 1e-3));
+}
+} // namespace
+
+TEST_CASE("Saturation::AntialiasedTanh: Off is bit-exact with tanhDrive", "[sat]")
+{
+    ideath::Saturation::AntialiasedTanh t;
+    t.prepare(48000.0f);
+    t.setDrive(4.0f);
+    t.setAntialiasing(ideath::Antialiasing::Off);
+    REQUIRE(t.latencySamples() == 0.0f);
+    for (int i = 0; i < 1000; ++i)
+    {
+        const float x = std::sin(0.013f * i) * 1.3f;
+        REQUIRE(t.process(x) == ideath::Saturation::tanhDrive(x, 4.0f));
+    }
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: default mode is Adaa", "[sat]")
+{
+    ideath::Saturation::AntialiasedTanh t;
+    REQUIRE(t.getAntialiasing() == ideath::Antialiasing::Adaa);
+    REQUIRE(t.latencySamples() == 0.5f);
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: constant input gives tanh exactly", "[sat]")
+{
+    // x = x₁ takes the midpoint branch: tanh(d·(x + x)/2) = tanh(d·x)
+    // bit for bit ((x + x)/2 = x exactly in float below overflow).
+    ideath::Saturation::AntialiasedTanh t;
+    t.prepare(48000.0f);
+    t.setDrive(3.0f);
+    for (float x : { 0.7f, -0.2f, 2.5f })
+    {
+        t.process(x);
+        REQUIRE(t.process(x) == ideath::Saturation::tanhDrive(x, 3.0f));
+    }
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: Adaa output is the mean between endpoint values",
+          "[sat]")
+{
+    uint32_t seed = 777u;
+    auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                       return static_cast<float>(seed) / 2147483648.0f - 1.0f; };
+    for (float drive : { 1.0f, 3.0f, 10.0f })
+    {
+        ideath::Saturation::AntialiasedTanh t;
+        t.prepare(48000.0f);
+        t.setDrive(drive);
+        float xp = 0.0f;
+        for (int i = 0; i < 20000; ++i)
+        {
+            // Mix large jumps, tiny steps (ill-conditioned branch edge) and
+            // repeats.
+            float x;
+            switch (i % 4)
+            {
+                case 0: x = 2.0f * rnd(); break;
+                case 1: x = xp + 1e-6f * rnd(); break;
+                case 2: x = xp + 2e-5f * rnd(); break;
+                default: x = xp; break;
+            }
+            const float y = t.process(x);
+            const float a = std::tanh(drive * std::min(x, xp));
+            const float b = std::tanh(drive * std::max(x, xp));
+            REQUIRE(y >= a - 1e-6f);
+            REQUIRE(y <= b + 1e-6f);
+            xp = x;
+        }
+    }
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: small-signal response", "[sat]")
+{
+    for (double hz : { 1000.0, 5000.0, 10000.0, 15000.0 })
+    {
+        INFO("hz " << hz);
+        REQUIRE_THAT(tanhGainDb(ideath::Antialiasing::Adaa, hz),
+                     WithinAbs(20.0 * std::log10(std::cos(M_PI * hz / 48000.0)), 0.01));
+        REQUIRE_THAT(tanhGainDb(ideath::Antialiasing::Adaa2x, hz),
+                     WithinAbs(20.0 * std::log10(std::cos(M_PI * hz / 96000.0)), 0.01));
+    }
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: Adaa halves alias, Adaa2x halves it again (vs Off)", "[sat]")
+{
+    const float sr = 48000.0f;
+    for (float f0 : { 880.0f, 3520.0f })
+    {
+        const auto x = alias_metric::bandlimitedSaw(f0, sr, alias_metric::kFftSize + alias_metric::kSkip);
+        for (float drive : { 3.0f, 10.0f })
+        {
+            double db[3];
+            int k = 0;
+            for (auto mode : { ideath::Antialiasing::Off, ideath::Antialiasing::Adaa,
+                               ideath::Antialiasing::Adaa2x })
+            {
+                ideath::Saturation::AntialiasedTanh t;
+                t.prepare(sr);
+                t.setDrive(drive);
+                t.setAntialiasing(mode);
+                std::vector<float> y(x.size());
+                for (size_t i = 0; i < x.size(); ++i)
+                    y[i] = t.process(x[i]);
+                db[k++] = alias_metric::aliasDb(y, f0, sr);
+            }
+            INFO("f0 " << f0 << " drive " << drive << ": off " << db[0] << " adaa " << db[1]
+                       << " adaa2x " << db[2]);
+            REQUIRE(db[1] <= db[0] - 6.0);
+            REQUIRE(db[2] <= db[0] - 12.0);
+            REQUIRE(db[2] < db[1]);
+        }
+    }
+}
+
+TEST_CASE("Saturation::AntialiasedTanh: drive clamp, reset, extreme input", "[sat]")
+{
+    ideath::Saturation::AntialiasedTanh t;
+    t.prepare(48000.0f);
+    t.setDrive(0.0f); // → 1
+    t.process(0.5f);
+    REQUIRE(t.process(0.5f) == ideath::Saturation::tanhDrive(0.5f, 1.0f));
+
+    // Huge inputs: log-cosh in the |u| + log1p(e^−2|u|) − ln 2 form cannot
+    // overflow; the mean stays within ±1 (+ rounding).
+    t.setDrive(100.0f);
+    for (float x : { 1e6f, -1e6f, 3e7f, 0.0f, -3e7f })
+    {
+        const float y = t.process(x);
+        REQUIRE(std::isfinite(y));
+        REQUIRE(std::fabs(y) <= 1.0f + 1e-6f);
+    }
+
+    ideath::Saturation::AntialiasedTanh fresh;
+    fresh.prepare(48000.0f);
+    fresh.setDrive(100.0f);
+    t.reset();
+    for (int i = 0; i < 100; ++i)
+    {
+        const float x = std::sin(0.21f * i);
+        REQUIRE(t.process(x) == fresh.process(x));
+    }
+}
