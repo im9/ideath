@@ -37,6 +37,7 @@ than comparing cross-host.
 | MultiShapeWavetable::process (Saw) |           2.804 µs |        5.48 |
 | MultiShapeWavetable::process (morph)|          3.035 µs |        5.93 |
 | UnisonOscillator::process          |           9.179 µs |       17.93 |
+| UnisonOscillator::process (7 v drift, setDetune/sample) ³ | 19.449 µs | 37.99 |
 | Noise::process                     |           1.610 µs |        3.14 |
 | LFO::process                       |           3.005 µs |        5.87 |
 | Portamento::process                |           2.136 µs |        4.17 |
@@ -48,8 +49,13 @@ than comparing cross-host.
 | SVFilter::process                  |           4.328 µs |        8.45 |
 | CombFilter::process                |           2.393 µs |        4.67 |
 | Saturation::tanhDrive              |           2.986 µs |        5.83 |
+| Saturation::AntialiasedTanh (Adaa) ³ |         9.334 µs |       18.23 |
+| Saturation::AntialiasedTanh (Adaa2x) ³ |      33.917 µs |       66.25 |
 | Saturation::softClip               |           1.783 µs |        3.48 |
-| Wavefolder::process                |           3.445 µs |        6.73 |
+| Wavefolder::process ³              |           3.760 µs |        7.34 |
+| Wavefolder::process (mix 0) ³      |           2.346 µs |        4.58 |
+| Wavefolder::process (Adaa) ³       |           5.818 µs |       11.36 |
+| Wavefolder::process (Adaa2x) ³     |          22.467 µs |       43.88 |
 | BitCrusher::process                |           2.282 µs |        4.46 |
 | DelayLine::process                 |           2.091 µs |        4.08 |
 | TapeDelay::process ¹               |                  — |  17.5–18.2 |
@@ -69,9 +75,10 @@ than comparing cross-host.
 | GranularProcessor::process + setGrainRate/sample |    26.81 µs |    52.36 |
 | GranularProcessor::process + setGrainRateKeepingPhase/sample | 25.52 µs | 49.84 |
 | Compressor::process                |           7.647 µs |       14.94 |
-| PeakLimiter::process               |           3.376 µs |        6.59 |
+| PeakLimiter::process ³             |           5.172 µs |       10.10 |
+| PeakLimiter::processStereo ³       |           5.633 µs |       11.00 |
 | Reverb::process                    |          11.359 µs |       22.19 |
-| HallReverb::process                |          26.907 µs |       52.55 |
+| HallReverb::process ³              |          22.075 µs |       43.12 |
 | ShimmerReverb::process             |          57.074 µs |      111.47 |
 | ShimmerReverb::process (two voices)|          72.760 µs |      142.11 |
 | FMSynth::process                   |          19.455 µs |       38.00 |
@@ -86,6 +93,38 @@ than comparing cross-host.
 | Phaser::process (8 stages)         |          19.956 µs |       38.98 |
 
 ## Notes
+
+- ³ Re-measured 2026-11-13 for the Tristero audit fixes, same Apple M2 Max
+  host, but under heavy unrelated load (load average 100–300).  Method:
+  `ideath_bench` built from main and from the branch, run alternately five
+  times each (100 samples per case); the table gives the branch's median
+  of the five means.  Main's medians in the same runs: tanhDrive 7.56
+  (unchanged code), Wavefolder 6.90, PeakLimiter 6.58, HallReverb 54.67,
+  ShimmerReverb 125.2 (branch 113.4), UnisonOscillator 19.60 (branch 20.47,
+  unchanged path), ModalResonator 8/16 13.59/25.93 (branch 13.38/24.85).
+  - `Wavefolder::process` (Off, mix 1): +6 % — the mode check.  The
+    anti-aliased paths sit in a separate non-inlined function; inlined,
+    the Off path measured +18 %.  `(mix 0)` skips the sin: −34 %.
+  - `PeakLimiter::process`: **+53 %**, over the 20 % rule — reviewed and
+    accepted (2026-11-13) as the cost of the ramped attack, not a
+    regression; this row is the new baseline.  The attack now ramps across the
+    lookahead: a monotonic-deque min-hold (≈ 2 ns/sample) and a running
+    mean over N (≈ 1 ns/sample) replace the instant attack.  Removing the
+    deque's modulo arithmetic changed nothing measurable.  The intended
+    stereo use is cheaper than before: one linked `processStereo` (11.0)
+    vs two mono instances (2 × 6.58 = 13.2), −17 %.
+  - `HallReverb::process`: −21 % — the tank's two quadrature LFOs are
+    rotating phasors instead of 2 × sin + 2 × cos per sample.
+    `ShimmerReverb` (same tank) −9 % in these runs, within its noise.
+  - `UnisonOscillator (7 v drift, setDetune/sample)`: Tristero's pattern.
+    Not in main's bench; an interleaved A/B harness (min of 30 × 200
+    blocks) gave main 86.7–88.3 → branch 37.7–37.9 ns/sample (−57 %):
+    setDetune returns early on an unchanged value, the drift LFO runs every
+    32 samples.  Without drift and setters the path is unchanged.
+  - New rows (`AntialiasedTanh`, `Wavefolder` Adaa / Adaa2x,
+    `processStereo`) have no predecessor.  Adaa2x costs ≈ 6× the plain
+    function: two halfband FIRs (24 MACs each per base sample) and two
+    ADAA steps.
 
 - The three "big" primitives — **HallReverb**, **ShimmerReverb**, **FMSynth** —
   dominate the budget. Any SIMD or structural work should target these first

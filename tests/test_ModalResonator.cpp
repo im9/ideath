@@ -957,3 +957,57 @@ TEST_CASE("ModalResonator: default-constructed is usable without prepare()", "[m
     for (int i = 0; i < 100; ++i)
         REQUIRE(std::isfinite(m.process()));
 }
+
+TEST_CASE("ModalResonator: re-setting unchanged partial parameters every sample is bit-exact",
+          "[modal]")
+{
+    // setPartialRatio / setPartialDecay / setPartialGain with the value
+    // already stored must not touch the filters (hosts may set them every
+    // sample).  Exact equality against an instance that sets them once.
+    ideath::ModalResonator a, b;
+    for (auto* m : { &a, &b })
+    {
+        m->prepare(48000.0f);
+        m->setFundamental(220.0f);
+        m->setPartialCount(8);
+        for (int i = 0; i < 8; ++i)
+        {
+            m->setPartialRatio(i, 1.0f + 1.37f * i);
+            m->setPartialDecay(i, 0.8f);
+            m->setPartialGain(i, 0.5f + 0.1f * i);
+        }
+        m->strike(1.0f);
+    }
+    for (int n = 0; n < 9600; ++n)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            b.setPartialRatio(i, 1.0f + 1.37f * i);
+            b.setPartialDecay(i, 0.8f);
+            b.setPartialGain(i, 0.5f + 0.1f * i);
+        }
+        REQUIRE(a.process() == b.process());
+    }
+}
+
+TEST_CASE("ModalResonator: works without prepare (44.1 kHz default)", "[modal]")
+{
+    // Default-constructible with the 44.1 kHz fallback: an unprepared
+    // instance must ring exactly like one prepared at 44.1 kHz, also when
+    // setters re-set default values (which return early).
+    ideath::ModalResonator a, b;
+    b.prepare(44100.0f);
+    for (auto* m : { &a, &b })
+    {
+        m->setPartialRatio(0, 1.0f);
+        m->strike(1.0f);
+    }
+    float peak = 0.0f;
+    for (int i = 0; i < 4410; ++i)
+    {
+        const float y = a.process();
+        REQUIRE(y == b.process());
+        peak = std::max(peak, std::fabs(y));
+    }
+    REQUIRE(peak > 0.0f);
+}

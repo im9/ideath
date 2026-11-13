@@ -8,13 +8,10 @@ void TrackManager::prepare(float sampleRate)
     for (auto& e : engines_)
         e.prepare(sampleRate);
 
-    for (PeakLimiter* l : { &limiter_, &limiterR_ })
-    {
-        l->prepare(sampleRate);
-        l->setThreshold(0.0f);   // 0 dB brickwall
-        l->setLookahead(0.005f); // 5ms lookahead
-        l->setRelease(0.05f);    // 50ms release
-    }
+    limiter_.prepare(sampleRate);
+    limiter_.setThreshold(0.0f);   // 0 dB brickwall
+    limiter_.setLookahead(0.005f); // 5ms lookahead (also the attack ramp)
+    limiter_.setRelease(0.05f);    // 50ms release
 }
 
 void TrackManager::applyPendingState()
@@ -53,10 +50,11 @@ std::pair<float, float> TrackManager::process()
     float outL, outR;
     if (limiterEnabled.load(std::memory_order_relaxed))
     {
-        // One limiter per channel (PeakLimiter is mono).  Identical inputs
-        // give identical gain, so a mono patch stays centred.
-        outL = limiter_.process(sumL);
-        outR = limiterR_.process(sumR);
+        // Linked stereo: one gain from the louder side on both channels,
+        // so the image holds when only one side limits.
+        const auto [l, r] = limiter_.processStereo(sumL, sumR);
+        outL = l;
+        outR = r;
     }
     else
     {

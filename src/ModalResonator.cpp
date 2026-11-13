@@ -21,6 +21,11 @@ ModalResonator::ModalResonator()
         alive_[i]    = true;
         gain_[i]     = 1.0f;
     }
+    // 44.1 kHz default: design the band-passes and the excitation envelope
+    // now, so an instance used without prepare() rings like a prepared one
+    // (setters that re-set a default value return early and would
+    // otherwise never design them).
+    prepare(44100.0f);
 }
 
 void ModalResonator::prepare(float sampleRate)
@@ -70,7 +75,12 @@ void ModalResonator::setPartialRatio(int idx, float ratio)
     // (lowest fundamental × highest ratio still well below Nyquist); higher
     // ratios are always muted by the Nyquist guard for any musical
     // fundamental.
-    ratio_[idx] = std::clamp(ratio, 0.01f, 64.0f);
+    const float clamped = std::clamp(ratio, 0.01f, 64.0f);
+    // Unchanged → the partial's coefficients are already current; skip the
+    // sqrt + band-pass design for callers that set ratios every sample.
+    if (clamped == ratio_[idx])
+        return;
+    ratio_[idx] = clamped;
     updatePartial(idx);
 }
 

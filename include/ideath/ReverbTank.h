@@ -183,9 +183,18 @@ private:
     float powerGain_ = 1.0f;
     float pinkPowerGain_ = 1.0f;
     float modSamples_ = 0.0f;
-    float lfoPhase_ = 0.0f;
-    float lfoPhase2_ = 0.0f;
-    float lfoInc_ = 0.0f;
+    // Line-modulation LFOs as rotating unit phasors (re = cos, im = sin of
+    // the phase): one complex multiply per sample instead of sin + cos,
+    // renormalised every sample so the magnitude cannot drift.
+    struct Phasor
+    {
+        float re = 1.0f;
+        float im = 0.0f;
+    };
+    Phasor lfo1_;
+    Phasor lfo2_;
+    Phasor lfoStep1_;
+    Phasor lfoStep2_;
     float lfoOut_ = 0.0f;
     float monoTap_ = 0.0f;
 

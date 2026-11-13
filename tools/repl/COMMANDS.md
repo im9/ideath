@@ -93,8 +93,8 @@ Algorithms 0-7 define how the 4 operators modulate each other (YM2612-style).
 |---------|-------------|
 | `filter <lp\|hp\|bp> <freq> <Q>` | Biquad filter |
 | `crush <bits> <downsample_rate>` | BitCrusher |
-| `sat <drive>` | Saturation (tanh drive) |
-| `fold <drive> [mix]` | Wavefolder (sine-based, `fold off` to disable) |
+| `sat <drive> [off\|adaa\|2x]` | Saturation (tanh drive). Third word picks anti-aliasing: `off` (default, plain tanh), `adaa` (first-order ADAA, ≈ 8–12 dB less alias, half-sample delay, −11.7 dB at 20 kHz), `2x` (ADAA at 2× between halfband filters, ≈ 15–22 dB less alias, −2.2 dB at 20 kHz, 22.75-sample delay). The mode word may come in any position after the drive and stays set until changed |
+| `fold <drive> [mix] [off\|adaa\|2x]` | Wavefolder (sine-based, `fold off` to disable). An `off`/`adaa`/`2x` word anywhere after the drive picks anti-aliasing as for `sat` (`fold 3 2x` keeps the mix); dry and wet stay time-aligned at every mix |
 | `delay <time_sec> <feedback>` | Delay line |
 | `tape <time_sec> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]` | Tape delay |
 | `tape stereo <mono\|offset\|pingpong> [offset_sec]` | Stereo repeats. `offset`: right side read later (0–0.05 s, default 0.012). `pingpong`: echoes alternate L, R, L. Wow/flutter run in quadrature on the right |

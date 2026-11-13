@@ -17,6 +17,7 @@ add_library(ideath STATIC
     src/Noise.cpp
     src/BandlimitedNoise.cpp
     src/Saturation.cpp
+    src/Antialiasing.cpp
     src/Wavetable.cpp
     src/BitCrusher.cpp
     src/DelayLine.cpp

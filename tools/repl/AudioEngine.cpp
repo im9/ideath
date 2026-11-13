@@ -25,6 +25,7 @@ void AudioEngine::prepare(float sampleRate)
     hallReverb_.prepare(sampleRate);
     shimmerReverb_.prepare(sampleRate);
     wavefolder_.prepare(sampleRate);
+    satAa_.prepare(sampleRate);
     unison_.prepare(sampleRate);
     looper_.prepare(sampleRate, 30.0f); // max 30 seconds loop
     karplus_.prepare(sampleRate);
@@ -631,12 +632,37 @@ std::pair<float, float> AudioEngine::process()
     }
 
     // --- Saturation ---
+    // Re-enabling an anti-aliased stage starts from clean state (no ADAA
+    // step from the input it last saw, no stale halfband history).
+    if (params_.satEnabled && !satWasEnabled_)
+        satAa_.reset();
+    satWasEnabled_ = params_.satEnabled;
+    if (params_.foldEnabled && !foldWasEnabled_)
+        wavefolder_.reset();
+    foldWasEnabled_ = params_.foldEnabled;
+
     if (params_.satEnabled)
-        sample = Saturation::tanhDrive(sample, params_.satDrive);
+    {
+        if (params_.satAntialias == 0)
+        {
+            satAa_.setAntialiasing(Antialiasing::Off); // resets on change
+            sample = Saturation::tanhDrive(sample, params_.satDrive);
+        }
+        else
+        {
+            satAa_.setAntialiasing(params_.satAntialias == 2 ? Antialiasing::Adaa2x
+                                                              : Antialiasing::Adaa);
+            satAa_.setDrive(params_.satDrive);
+            sample = satAa_.process(sample);
+        }
+    }
 
     // --- Wavefolder ---
     if (params_.foldEnabled)
     {
+        wavefolder_.setAntialiasing(params_.foldAntialias == 2   ? Antialiasing::Adaa2x
+                                    : params_.foldAntialias == 1 ? Antialiasing::Adaa
+                                                                 : Antialiasing::Off);
         wavefolder_.setDrive(params_.foldDrive);
         wavefolder_.setMix(params_.foldMix);
         sample = wavefolder_.process(sample);

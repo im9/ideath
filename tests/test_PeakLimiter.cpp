@@ -11,34 +11,33 @@ static constexpr float kPi = 3.14159265f;
 
 // Threshold derivations used throughout this file
 // -----------------------------------------------
-// PeakLimiter pipeline:
+// PeakLimiter pipeline (2026-11-13, ramped attack):
 //   input → lookahead delay (N = max(1, floor(lookahead·fs)) samples)
-//   envelope = peak detector on input (instant attack, one-pole release α_r)
-//   targetGain = threshold / envelope if envelope > threshold, else 1
-//   currentGain: instant attack (drops to targetGain when targetGain is smaller),
-//                one-pole release (α_r) upward toward targetGain otherwise
-//   output = delayed · currentGain
+//   target g_t = threshold / |x| if |x| > threshold, else 1
+//   min-hold of g_t over N samples → running mean over N samples
+//   one-pole release (α_r) upward; attack follows the mean directly
+//   gain = min(that, g_t of the sample leaving the delay)
+//   output = delayed · gain
 //
 // Delay is N − 1 samples (verified directly: input at call 0 is stored at
 // buf[0], read index advances to 1, and the value emerges at call N − 1
 // when the write index wraps back to 0).
 //
-// Below-threshold invariant: if |input|_peak ≤ threshold throughout, then
-// envelope ≤ threshold → targetGain ≡ 1 → currentGain ≡ 1 (stays at its
-// initial 1) → output = delayed bit-exact.
+// Below-threshold invariant: every target is exactly 1, the running mean
+// of N ones is exactly 1 (double sum of integers), the release keeps 1 → 1,
+// so output = delayed bit-exact.
 //
-// Brickwall property: because envelope instant-attacks and currentGain
-// applies instant attack, output is bounded by threshold · (1/α_r^N) in
-// the analytical worst case (a peak followed by silence for N samples).
-// For continuous bandlimited input the envelope re-attacks every half
-// signal period T/2, so the practical overshoot is far smaller; simulation
-// under the test parameters gives |out| − threshold ≲ 2e-4 absolute, so
-// a bound of threshold + 2e-3 is 10× safety.
+// Brickwall property: the final min with the outgoing sample's own target
+// makes |out| ≤ threshold up to the rounding of x·(threshold/|x|) (1 ulp).
+// The "threshold + 2e-3" bounds in the sine tests below are therefore
+// looser than necessary; they remain valid upper bounds.
 //
-// Gain recovery analytic: after a burst that drives currentGain to
-// threshold/peak, a quiet input of amplitude q < threshold recovers with
-// the release pole. Residual after 10τ_r is exp(−10) ≈ 4.5e-5 relative,
-// so after 500 ms (=10·50 ms) output is within q · ~1e-4 of q.
+// Gain recovery analytic: after a burst that drives the gain to
+// threshold/peak, a quiet input q < threshold recovers after the N-sample
+// hold and N-sample ramp with the release pole. Residual after 10τ_r is
+// exp(−10) ≈ 4.5e-5 relative (the 2·N = 176 samples of hold + ramp are
+// < 1 % of the 22 050-sample window), so after 500 ms (=10·50 ms) output
+// is within q · ~1e-4 of q.
 //
 // getGainReductionDb: with currentGain = threshold/A for steady input A
 // above threshold, gainReductionDb = 20·log10(threshold/A). For
@@ -118,8 +117,9 @@ TEST_CASE("PeakLimiter: gain recovery approaches quiet input within 1e-4 after 1
 {
     // 441 samples of input = 3.0 drives currentGain to 1/3 (threshold=1.0).
     // Following 22050 samples = 10τ_r of input = 0.3:
-    //   envelope releases from 3.0 toward 0.3 (crosses threshold at ~3000 samples)
-    //   currentGain releases from 1/3 toward 1 (release pole at α_r)
+    //   targets return to 1 at once; the min-hold keeps 1/3 for N = 88
+    //   samples, the mean ramps up over the next 88, then the gain
+    //   releases from there toward 1 (release pole at α_r)
     //   residual at 10τ_r ≈ exp(−10) ≈ 4.5e-5 relative
     //   analytical output ≈ 0.299965. Tolerance 1e-3 absorbs residual + ULP.
     ideath::PeakLimiter lim;
@@ -140,8 +140,9 @@ TEST_CASE("PeakLimiter: gain recovery approaches quiet input within 1e-4 after 1
 TEST_CASE("PeakLimiter: getGainReductionDb — 0 at silence, -12.04 dB under 4× input", "[limiter]")
 {
     // At silence: currentGain = 1 (initial) → 20·log10(1) = 0 bit-exact.
-    // Steady input 4.0 with threshold 1.0: envelope = 4 (instant attack),
-    // targetGain = 0.25, currentGain = 0.25 (instant attack). Analytical
+    // Steady input 4.0 with threshold 1.0: target 0.25 for every sample;
+    // after the N = 88-sample ramp (441 samples is well past it) the gain
+    // is exactly 0.25. Analytical
     // gainReductionDb = 20·log10(0.25) = −12.0412 dB.
     ideath::PeakLimiter lim;
     lim.prepare(kSampleRate);
@@ -310,4 +311,220 @@ TEST_CASE("PeakLimiter: 10-second stability at extreme settings", "[limiter][sta
             REQUIRE(std::fabs(out) <= thr + 5e-3f);
         REQUIRE(std::isfinite(lim.getGainReductionDb()));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ramped attack and stereo link
+// ---------------------------------------------------------------------------
+//
+// Gain computer: per input sample the target g_t = min(1, thr / |x|); a
+// running minimum over the last N targets (N = lookahead samples) followed
+// by a running mean over N samples, then one-pole release upward only, and
+// finally min(·, g_t of the sample leaving the delay).
+//
+// Ramp: the running mean of a step from 1 to g changes by (1 − g)/N per
+// sample — the largest per-sample gain step any single peak can cause.
+// Brickwall: a peak entering at sample p holds every min-hold value in
+// [p, p + N − 1] at ≤ g, so the mean at p + N − 1 — the sample where the
+// peak leaves the N − 1 delay — is ≤ g; the final min with that sample's
+// own target makes |out| ≤ thr exactly (up to the rounding of x·(thr/|x|),
+// ≤ 1 ulp → 1.2e−7 relative).
+
+#include <algorithm>
+#include <cstdint>
+
+TEST_CASE("PeakLimiter: strike transient ramps the gain over the lookahead", "[limiter]")
+{
+    // Silence, then a +7 dB strike (2.24 into a 0 dB threshold).  An
+    // instant attack would drop the gain by 7 dB in one sample, on the
+    // delayed, still-silent signal.  Spec: per-sample gain change ≤
+    // (1 − g)/N (+ 1e−6 for float rounding of the running mean), and the
+    // gain reaches g as the strike leaves the delay.
+    ideath::PeakLimiter lim;
+    lim.prepare(48000.0f);
+    lim.setThreshold(0.0f);
+    lim.setLookahead(0.002f); // N = 96
+    const int N = 96;
+    const float strike = 2.24f;
+    const float g = 1.0f / strike;
+
+    for (int i = 0; i < 500; ++i)
+        lim.process(0.0f);
+    float prevGain = 1.0f;
+    float maxStep = 0.0f;
+    float outAtStrike = 0.0f;
+    for (int i = 0; i < 400; ++i)
+    {
+        const float out = lim.process(i == 0 ? strike : 0.0f);
+        if (i == N - 1)
+            outAtStrike = out;
+        const float gain = std::pow(10.0f, lim.getGainReductionDb() / 20.0f);
+        maxStep = std::max(maxStep, prevGain - gain);
+        prevGain = gain;
+    }
+    REQUIRE(maxStep <= (1.0f - g) / N + 1e-6f);
+    REQUIRE(outAtStrike <= 1.0f);
+    REQUIRE(outAtStrike >= 1.0f - 1e-6f); // target reached, not over-limited
+}
+
+TEST_CASE("PeakLimiter: brickwall holds exactly on random peaky input", "[limiter]")
+{
+    uint32_t seed = 4242u;
+    auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                       return static_cast<float>(seed) / 4294967296.0f; };
+    for (float lookahead : { 0.0f, 0.0005f, 0.005f })
+    {
+        ideath::PeakLimiter lim;
+        lim.prepare(48000.0f);
+        lim.setThreshold(-3.0f);
+        lim.setLookahead(lookahead);
+        lim.setRelease(0.02f);
+        const float thr = std::pow(10.0f, -3.0f / 20.0f);
+        for (int i = 0; i < 96000; ++i)
+        {
+            float x = (rnd() - 0.5f) * 0.8f;
+            if (rnd() < 0.002f)
+                x = (rnd() < 0.5f ? -1.0f : 1.0f) * (1.0f + 20.0f * rnd()); // strikes up to +26 dB
+            const float out = lim.process(x);
+            REQUIRE(std::fabs(out) <= thr * (1.0f + 1.2e-7f));
+        }
+    }
+}
+
+TEST_CASE("PeakLimiter: processStereo applies one gain to both channels", "[limiter]")
+{
+    // Only the left channel peaks; the right must be reduced by the same
+    // gain so the L/R ratio (the image) of every output sample equals the
+    // input's.  Ratio compared on the delayed input pair; relative
+    // tolerance 2.4e−7 = two roundings (one multiply per channel).
+    ideath::PeakLimiter lim;
+    lim.prepare(48000.0f);
+    lim.setThreshold(-6.0f);
+    lim.setLookahead(0.003f); // N = 144, delay 143
+    const int delay = 143;
+    const float thr = std::pow(10.0f, -6.0f / 20.0f);
+
+    std::vector<std::pair<float, float>> in, out;
+    for (int i = 0; i < 9600; ++i)
+    {
+        const float t = static_cast<float>(i) / 48000.0f;
+        const float l = (i > 2000 && i < 5000 ? 1.5f : 0.3f) * std::sin(2.0f * kPi * 330.0f * t);
+        const float r = 0.4f * std::sin(2.0f * kPi * 330.0f * t + 0.3f);
+        in.emplace_back(l, r);
+        out.push_back(lim.processStereo(l, r));
+    }
+    bool limited = false;
+    for (size_t i = delay; i < in.size(); ++i)
+    {
+        const auto [dl, dr] = in[i - delay];
+        const auto [ol, orr] = out[i];
+        REQUIRE(std::fabs(ol) <= thr * (1.0f + 1.2e-7f));
+        REQUIRE(std::fabs(orr) <= thr * (1.0f + 1.2e-7f));
+        if (std::fabs(dl) > 1e-3f && std::fabs(dr) > 1e-3f)
+        {
+            const float gl = ol / dl, gr = orr / dr;
+            REQUIRE_THAT(gl, WithinAbs(gr, 2.4e-7f * std::max(1.0f, gl)));
+            if (gl < 0.9f)
+                limited = true;
+        }
+    }
+    REQUIRE(limited); // the link was actually exercised
+}
+
+TEST_CASE("PeakLimiter: processStereo with identical channels equals mono", "[limiter]")
+{
+    // max(|x|, |x|) = |x|: same targets, same gain, same delay → bit-exact.
+    ideath::PeakLimiter mono, stereo;
+    for (auto* l : { &mono, &stereo })
+    {
+        l->prepare(48000.0f);
+        l->setThreshold(-2.0f);
+        l->setLookahead(0.004f);
+    }
+    for (int i = 0; i < 20000; ++i)
+    {
+        const float x = 2.0f * std::sin(0.031f * i) * std::sin(0.0007f * i);
+        const float m = mono.process(x);
+        const auto [l, r] = stereo.processStereo(x, x);
+        REQUIRE(l == m);
+        REQUIRE(r == m);
+    }
+}
+
+TEST_CASE("PeakLimiter: reset clears the ramp state (stereo)", "[limiter]")
+{
+    ideath::PeakLimiter a, b;
+    for (auto* l : { &a, &b })
+    {
+        l->prepare(48000.0f);
+        l->setThreshold(0.0f);
+        l->setLookahead(0.002f);
+    }
+    for (int i = 0; i < 1000; ++i)
+        a.processStereo(4.0f * std::sin(0.1f * i), -3.0f);
+    a.reset();
+    for (int i = 0; i < 1000; ++i)
+    {
+        const float x = 3.0f * std::sin(0.05f * i);
+        REQUIRE(a.processStereo(x, 0.5f * x) == b.processStereo(x, 0.5f * x));
+    }
+}
+
+TEST_CASE("PeakLimiter: min-hold survives a full window of rising targets", "[limiter]")
+{
+    // A decaying strike gives strictly rising targets for longer than the
+    // window: the min-hold deque then holds one entry per sample of the
+    // window and must not overflow.  Reference: brute-force min-hold and
+    // mean over the window; the applied gain may lag below it (release
+    // pole) but must never exceed it.  1e−5 relative covers the
+    // log10 / pow round trip of the metering read.  N = 192: a hold that
+    // forgets the window minimum tracks the current target, ≈ N samples of
+    // rise ahead of the true ramp — far more than the release pole's lag
+    // (τ = 48 samples at 1 ms), so the error cannot hide behind it.
+    ideath::PeakLimiter lim;
+    lim.prepare(48000.0f);
+    lim.setThreshold(0.0f);
+    lim.setRelease(0.001f);
+    lim.setLookahead(0.004f); // N = 192
+    const int N = 192;
+    std::vector<float> targets;
+    std::vector<float> holds;
+    for (int i = 0; i < 2000; ++i)
+    {
+        const float x = 8.0f * std::exp(-0.002f * i) + 1.0f; // > thr, strictly falling
+        targets.push_back(1.0f / x);
+        lim.process(x);
+        float h = 1.0f;
+        for (int k = std::max(0, i - N + 1); k <= i; ++k)
+            h = std::min(h, targets[static_cast<size_t>(k)]);
+        holds.push_back(h);
+        if (i >= 2 * N)
+        {
+            double mean = 0.0;
+            for (int k = i - N + 1; k <= i; ++k)
+                mean += holds[static_cast<size_t>(k)];
+            mean /= N;
+            const float expected = std::min(static_cast<float>(mean),
+                                            targets[static_cast<size_t>(i - N + 1)]);
+            const float gain = std::pow(10.0f, lim.getGainReductionDb() / 20.0f);
+            REQUIRE(gain <= expected * (1.0f + 1e-5f));
+        }
+    }
+}
+
+TEST_CASE("PeakLimiter: lowering the threshold mid-stream keeps the brickwall", "[limiter]")
+{
+    // Targets already in the window were computed for the old threshold;
+    // the ceiling must still be the new one from the next output on
+    // (same 1-ulp rounding allowance as the brickwall test).
+    ideath::PeakLimiter lim;
+    lim.prepare(48000.0f);
+    lim.setThreshold(0.0f);
+    lim.setLookahead(0.005f);
+    for (int i = 0; i < 2000; ++i)
+        lim.process(0.9f * std::sin(0.05f * i));
+    lim.setThreshold(-12.0f);
+    const float thr = std::pow(10.0f, -12.0f / 20.0f);
+    for (int i = 2000; i < 4000; ++i)
+        REQUIRE(std::fabs(lim.process(0.9f * std::sin(0.05f * i))) <= thr * (1.0f + 1.2e-7f));
 }

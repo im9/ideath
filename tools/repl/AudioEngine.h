@@ -77,6 +77,9 @@ private:
     HallReverb hallReverb_;
     ShimmerReverb shimmerReverb_;
     Wavefolder wavefolder_;
+    Saturation::AntialiasedTanh satAa_;
+    bool satWasEnabled_ = false;  // edge detect: reset AA state on enable
+    bool foldWasEnabled_ = false;
     UnisonOscillator unison_;
     FeedbackBuffer looper_;
     KarplusStrong karplus_;

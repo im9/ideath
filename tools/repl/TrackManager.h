@@ -27,17 +27,13 @@ public:
     void applyPendingState();
 
     /// Process one sample: mix all active tracks (audio thread).
-    /// Returns {L, R} after the master limiters.
+    /// Returns {L, R} after the master limiter.
     std::pair<float, float> process();
 
     SharedState& getShared(int trackIndex) { return shared_[trackIndex]; }
     TrackMixState& getMix(int trackIndex) { return mix_[trackIndex]; }
     PeakLimiter& getLimiter() { return limiter_; }
-    void setLimiterThreshold(float dB)
-    {
-        limiter_.setThreshold(dB);
-        limiterR_.setThreshold(dB);
-    }
+    void setLimiterThreshold(float dB) { limiter_.setThreshold(dB); }
     ScopeBuffer& getScope() { return scope_; }
 
     std::atomic<bool> limiterEnabled{true};
@@ -46,8 +42,7 @@ private:
     std::array<AudioEngine, kMaxTracks> engines_;
     std::array<SharedState, kMaxTracks> shared_;
     std::array<TrackMixState, kMaxTracks> mix_;
-    PeakLimiter limiter_;  // left (and the one the GR readout shows)
-    PeakLimiter limiterR_;
+    PeakLimiter limiter_;  // linked stereo master limiter
     ScopeBuffer scope_;
 };
 

@@ -84,8 +84,8 @@ ideath REPL commands:
                                 note-on / sequencer step.
   filter <lp|hp|bp> <freq> <Q>  SVFilter (or "filter off")
   crush <bits> <rate>           BitCrusher (or "crush off")
-  sat <drive>                   Saturation (or "sat off")
-  fold <drive> [mix]            Wavefolder (or "fold off")
+  sat <drive> [off|adaa|2x]     Saturation, optional anti-aliasing (or "sat off")
+  fold <drive> [mix] [off|adaa|2x]  Wavefolder, optional anti-aliasing (or "fold off")
   delay <time> <feedback>       Delay line (or "delay off")
   tape <time> <feedback> [wowDepth] [wowRate] [flutterDepth] [flutterRate] [lp] [hp] [drive]
                                 Tape delay (or "tape off")
@@ -154,6 +154,17 @@ ideath REPL commands:
   quit / exit                  Exit
 )" << std::endl;
 }
+
+namespace {
+// "off" → 0, "adaa" → 1, "2x" → 2, anything else → −1.
+int parseAntialias(const std::string& word)
+{
+    if (word == "off")  return 0;
+    if (word == "adaa") return 1;
+    if (word == "2x")   return 2;
+    return -1;
+}
+} // namespace
 
 bool parseCommand(const std::string& line, SharedState& shared)
 {
@@ -546,6 +557,17 @@ bool parseCommand(const std::string& line, SharedState& shared)
             shared.staging.satEnabled = true;
             if (tokens.size() > 1)
                 shared.staging.satDrive = parseFloat(tokens[1], 1.0f);
+            for (size_t t = 2; t < tokens.size(); ++t)
+            {
+                const int aa = parseAntialias(tokens[t]);
+                if (aa < 0)
+                {
+                    std::cout << "sat: unknown word '" << tokens[t]
+                              << "' (expected off|adaa|2x)" << std::endl;
+                    return true;
+                }
+                shared.staging.satAntialias = aa;
+            }
         }
         shared.paramsReady.store(true, std::memory_order_release);
         return true;
@@ -1368,11 +1390,21 @@ bool parseCommand(const std::string& line, SharedState& shared)
         shared.staging.foldEnabled = true;
         if (tokens.size() > 1)
             shared.staging.foldDrive = parseFloat(tokens[1], 1.0f);
-        if (tokens.size() > 2)
-            shared.staging.foldMix = parseFloat(tokens[2], 1.0f);
+        // After the drive: an off|adaa|2x word sets the anti-aliasing, any
+        // other word is the mix (so "fold 3 2x" keeps the mix).
+        for (size_t t = 2; t < tokens.size(); ++t)
+        {
+            const int aa = parseAntialias(tokens[t]);
+            if (aa >= 0)
+                shared.staging.foldAntialias = aa;
+            else
+                shared.staging.foldMix = parseFloat(tokens[t], 1.0f);
+        }
         shared.paramsReady.store(true, std::memory_order_release);
+        static const char* kAaNames[] = { "off", "adaa", "2x" };
         std::cout << "Wavefolder: drive=" << shared.staging.foldDrive
-                  << " mix=" << shared.staging.foldMix << std::endl;
+                  << " mix=" << shared.staging.foldMix
+                  << " aa=" << kAaNames[shared.staging.foldAntialias] << std::endl;
         return true;
     }
 

@@ -173,8 +173,8 @@ void ReverbTank::reset()
         }
     inputHp_.reset();
     inputHp2_.reset();
-    lfoPhase_ = 0.0f;
-    lfoPhase2_ = 0.25f;
+    lfo1_ = { 1.0f, 0.0f }; // phase 0
+    lfo2_ = { 0.0f, 1.0f }; // phase 1/4
     lfoOut_ = 0.0f;
     monoTap_ = 0.0f;
     // Buffers are empty, so there is nothing to click: start at the end
@@ -220,7 +220,11 @@ void ReverbTank::setModDepth(float depth)
 void ReverbTank::setModRate(float rateHz)
 {
     modRate_ = std::clamp(rateHz, 0.05f, 5.0f);
-    lfoInc_ = modRate_ / sampleRate_;
+    // Only the step changes; the phasors keep their phase (no jump).
+    const double w1 = 6.283185307179586 * modRate_ / sampleRate_;
+    const double w2 = w1 * kLfo2Ratio;
+    lfoStep1_ = { static_cast<float>(std::cos(w1)), static_cast<float>(std::sin(w1)) };
+    lfoStep2_ = { static_cast<float>(std::cos(w2)), static_cast<float>(std::sin(w2)) };
 }
 
 void ReverbTank::setFreeze(bool freeze)
@@ -334,14 +338,20 @@ std::pair<float, float> ReverbTank::process(float input)
     u *= inputGain_ * kInvSqrtN * keep;
 
     // --- LFOs: two quadrature pairs at incommensurate rates ---
-    const float s1 = std::sin(kTwoPi * lfoPhase_);
-    const float c1 = std::cos(kTwoPi * lfoPhase_);
-    const float s2 = std::sin(kTwoPi * lfoPhase2_);
-    const float c2 = std::cos(kTwoPi * lfoPhase2_);
-    lfoPhase_ += lfoInc_;
-    lfoPhase_ -= std::floor(lfoPhase_);
-    lfoPhase2_ += lfoInc_ * kLfo2Ratio;
-    lfoPhase2_ -= std::floor(lfoPhase2_);
+    const float s1 = lfo1_.im;
+    const float c1 = lfo1_.re;
+    const float s2 = lfo2_.im;
+    const float c2 = lfo2_.re;
+    // Rotate by one step, then pull the magnitude back to 1 with one Newton
+    // step for 1/√(re² + im²) (error O(ε²) per sample, so it cannot drift).
+    auto rotate = [](Phasor& p, const Phasor& step) {
+        const float re = p.re * step.re - p.im * step.im;
+        const float im = p.re * step.im + p.im * step.re;
+        const float g = 1.5f - 0.5f * (re * re + im * im);
+        p = { re * g, im * g };
+    };
+    rotate(lfo1_, lfoStep1_);
+    rotate(lfo2_, lfoStep2_);
     lfoOut_ = c2;
     const float mod[kLines] = { s1, c1, -s1, -c1, s2, c2, -s2, -c2 };
 

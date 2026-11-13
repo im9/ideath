@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <ideath/UnisonOscillator.h>
+#include <algorithm>
 #include <cmath>
 
 using Catch::Matchers::WithinAbs;
@@ -400,4 +401,151 @@ TEST_CASE("UnisonOscillator: nudgeFundamentalPhase shifts stack uniformly",
     REQUIRE_THAT(phaseAfter, WithinAbs(expected, 1e-6f));
     REQUIRE(phaseAfter >= 0.0f);
     REQUIRE(phaseAfter < 1.0f);
+}
+
+// --- Setter cost / control-rate drift --------
+
+TEST_CASE("UnisonOscillator: setDetune with an unchanged value every sample is bit-exact",
+          "[unison]")
+{
+    // Re-setting the stored detune must not change a bit of the output
+    // (it returns early; the per-voice frequencies are already current).
+    ideath::UnisonOscillator a, b;
+    for (auto* u : { &a, &b })
+    {
+        u->prepare(48000.0f);
+        u->setVoiceCount(7);
+        u->setFrequency(220.0f);
+        u->setDetune(23.0f);
+    }
+    for (int i = 0; i < 4800; ++i)
+    {
+        b.setDetune(23.0f);
+        b.setDetune(-5.0f + 28.0f); // same value through arithmetic
+        REQUIRE(a.process(0.7f) == b.process(0.7f));
+    }
+}
+
+TEST_CASE("UnisonOscillator: turning drift off restores the undrifted frequencies",
+          "[unison][drift]")
+{
+    // After setDriftAmount(0) every voice must run at its detuned base
+    // frequency again, without needing another setter call.  Voice 0's
+    // phase increment is compared bit for bit with an instance that never
+    // drifted (same base frequency → same increment).
+    ideath::UnisonOscillator drifted, plain;
+    for (auto* u : { &drifted, &plain })
+    {
+        u->prepare(48000.0f);
+        u->setVoiceCount(3);
+        u->setFrequency(300.0f);
+        u->setDetune(12.0f);
+    }
+    drifted.setDriftAmount(8.0f);
+    drifted.setDriftRate(1.0f);
+    for (int i = 0; i < 5000; ++i)
+        drifted.process(1.0f);
+    drifted.setDriftAmount(0.0f);
+    REQUIRE(drifted.getVoiceDriftCents(0) == 0.0f);
+
+    auto wrapDelta = [](float a, float b) { float d = b - a; return d < 0.0f ? d + 1.0f : d; };
+    float pd = drifted.getFundamentalPhase(), pp = plain.getFundamentalPhase();
+    for (int i = 0; i < 100; ++i)
+    {
+        drifted.process(1.0f);
+        plain.process(1.0f);
+        const float nd = drifted.getFundamentalPhase(), np = plain.getFundamentalPhase();
+        // Same increment up to the rounding of the different phase values
+        // it is added to: 1 ulp of a value < 1 is ≤ 6e−8, two of them.
+        REQUIRE_THAT(wrapDelta(pd, nd), WithinAbs(wrapDelta(pp, np), 1.2e-7f));
+        pd = nd;
+        pp = np;
+    }
+}
+
+TEST_CASE("UnisonOscillator: control-rate drift follows the per-sample LFO", "[unison][drift]")
+{
+    // The drift LFO is evaluated every kDriftControlInterval samples and the
+    // frequency ratio interpolated linearly in between.  Spec: the applied
+    // drift (cents) must match amount·sin(2π·φ(n)) with φ advancing by
+    // rate·jitter/sr per sample, to within
+    //   interpolation: amount·(2π·f·N/sr)²/8  (max curvature of a sine times
+    //                  N²/8 for linear interpolation over N samples; in the
+    //                  ratio domain the 2^(c/1200) curvature adds a factor
+    //                  1 + O(amount·ln2/1200) — < 1 % here),
+    //   phase rounding: the float phase gains ≤ ½ ulp(1) = 6e−8 cycle per
+    //                  control step → steps·6e−8·2π·amount,
+    //   ratio rounding: ≤ 2 ulp of a ratio near 1 (pow, lerp) → 2·1.2e−7
+    //                  relative = 2·1200·1.2e−7/ln2 = 4.2e−4 cents.
+    const float sr = 48000.0f;
+    const float amount = 10.0f;
+    const float rate = 5.0f;
+    const int N = ideath::UnisonOscillator::kDriftControlInterval;
+    ideath::UnisonOscillator uni;
+    uni.prepare(sr);
+    uni.setVoiceCount(16);
+    uni.setFrequency(220.0f);
+    uni.setDriftRate(rate);
+    uni.setDriftAmount(amount);
+
+    static constexpr float kJitter[16] = {
+        1.000f, 1.137f, 0.872f, 1.241f, 0.913f, 1.078f, 0.955f, 1.193f,
+        0.831f, 1.064f, 1.158f, 0.897f, 1.022f, 1.211f, 0.943f, 1.105f
+    };
+    const int samples = 9600; // 0.2 s
+    const double fMax = rate * 1.241;
+    const double w = 2.0 * M_PI * fMax * N / sr;
+    const double tol = amount * w * w / 8.0 * 1.01
+                       + (samples / N + 1) * 6e-8 * 2.0 * M_PI * amount
+                       + 4.2e-4;
+    double worst = 0.0;
+    for (int n = 0; n < samples; ++n)
+    {
+        for (int v = 0; v < 16; ++v)
+        {
+            const double phase0 = std::fmod(v * 0.6180339887, 1.0);
+            const double phase = phase0 + n * (rate * kJitter[v] / sr);
+            const double exact = amount * std::sin(2.0 * M_PI * phase);
+            worst = std::max(worst, std::fabs(uni.getVoiceDriftCents(v) - exact));
+        }
+        uni.process(1.0f);
+    }
+    INFO("worst " << worst << " tol " << tol);
+    REQUIRE(worst <= tol);
+}
+
+TEST_CASE("UnisonOscillator: per-sample setVoiceCount does not disturb the drift", "[unison][drift]")
+{
+    // Hosts (and the REPL) re-set the voice count every sample.  With drift
+    // on, an unchanged count must leave the output bit-exact; a raised count
+    // must leave the already-active voices' drift bit-exact too (only the
+    // new voices start).
+    ideath::UnisonOscillator a, b;
+    for (auto* u : { &a, &b })
+    {
+        u->prepare(48000.0f);
+        u->setVoiceCount(4);
+        u->setFrequency(220.0f);
+        u->setDetune(15.0f);
+        u->setDriftAmount(6.0f);
+        u->setDriftRate(1.5f);
+    }
+    for (int i = 0; i < 4800; ++i)
+    {
+        b.setVoiceCount(4);
+        REQUIRE(a.process(1.0f) == b.process(1.0f));
+    }
+    for (int i = 0; i < 13; ++i) // land mid-interval
+    {
+        a.process(1.0f);
+        b.process(1.0f);
+    }
+    b.setVoiceCount(6);
+    for (int i = 0; i < 4800; ++i)
+    {
+        a.process(1.0f);
+        b.process(1.0f);
+        for (int v = 0; v < 4; ++v)
+            REQUIRE(a.getVoiceDriftCents(v) == b.getVoiceDriftCents(v));
+    }
 }
