@@ -13,19 +13,21 @@ static constexpr float kSR = 48000.0f;
 // kT60Tol = 10 %: twice the ≈ 5 % reverberation-time JND (ISO 3382-1).
 static constexpr double kT60Tol = 0.10;
 
-// Broadband T30 of the wet mono sum after a 0.5 s pink-noise burst.
+// Broadband T30 of the wet output (per channel, see stereoT30) after a
+// 0.5 s pink-noise burst.
 template <typename Reverb>
 static double broadbandT60(Reverb& rev, float nominalT60)
 {
     const size_t burst = static_cast<size_t>(0.5f * kSR);
-    std::vector<float> y(burst + tailSamples(nominalT60, kSR));
+    std::vector<float> yl(burst + tailSamples(nominalT60, kSR)), yr(yl.size());
     Pink p;
-    for (size_t i = 0; i < y.size(); ++i)
+    for (size_t i = 0; i < yl.size(); ++i)
     {
         auto [l, r] = rev.process(i < burst ? 0.5f * p.next() : 0.0f);
-        y[i] = 0.5f * (l + r);
+        yl[i] = l;
+        yr[i] = r;
     }
-    return t30(y, burst, kSR);
+    return stereoT30(yl, yr, burst, kSR);
 }
 
 static double hallT60(float size, float damp)
@@ -76,15 +78,17 @@ TEST_CASE("HallReverb: low-frequency T60 follows the size map", "[hallreverb]")
         const double m = seedAverage([&](uint32_t seed) {
             rev.reset();
             const size_t burst = static_cast<size_t>(0.5f * kSR);
-            std::vector<float> y(burst + tailSamples(nominal, kSR));
+            std::vector<float> yl(burst + tailSamples(nominal, kSR)), yr(yl.size());
             White w;
             w.s = seed;
-            for (size_t i = 0; i < y.size(); ++i)
+            for (size_t i = 0; i < yl.size(); ++i)
             {
                 auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
-                y[i] = 0.5f * (l + r);
+                yl[i] = l;
+                yr[i] = r;
             }
-            return t30(bandFilter(y, 250.0f, kSR), burst, kSR);
+            return stereoT30(bandFilter(yl, 250.0f, kSR), bandFilter(yr, 250.0f, kSR), burst,
+                             kSR);
         });
         INFO("size " << size << ": 250 Hz T60 " << m << " s, nominal " << nominal << " s");
         REQUIRE(std::fabs(m / nominal - 1.0) <= kT60Tol);
@@ -104,15 +108,17 @@ TEST_CASE("HallReverb: damp takes the highs first", "[hallreverb]")
             rev.setSize(0.5f);
             rev.setDamp(damp);
             const size_t burst = static_cast<size_t>(0.5f * kSR);
-            std::vector<float> y(burst + tailSamples(ideath::ReverbTank::kUnityT60, kSR));
+            std::vector<float> yl(burst + tailSamples(ideath::ReverbTank::kUnityT60, kSR)),
+                yr(yl.size());
             White w;
             w.s = seed;
-            for (size_t i = 0; i < y.size(); ++i)
+            for (size_t i = 0; i < yl.size(); ++i)
             {
                 auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
-                y[i] = 0.5f * (l + r);
+                yl[i] = l;
+                yr[i] = r;
             }
-            return t30(bandFilter(y, hz, kSR), burst, kSR);
+            return stereoT30(bandFilter(yl, hz, kSR), bandFilter(yr, hz, kSR), burst, kSR);
         });
     };
     const double hf0 = bandT60(0.0f, 6000.0f), hf1 = bandT60(1.0f, 6000.0f);

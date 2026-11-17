@@ -36,6 +36,12 @@ static constexpr float kInvSqrtN = 0.35355339f; // 1 / √8
 // 200 Hz–2 kHz and > 2 kHz bands.  Equal total length (900 samples at
 // 48 kHz = 18.75 ms) gives both channels the same mean group delay, so
 // neither side leads (no precedence-effect pull on transients).
+//
+// For a sustained partial, though, fixed chains leave L and R the same
+// sine Δφ(f) apart: ρ = cos Δφ(f), measured −0.94 at 440 Hz and +0.99 at
+// 523 Hz.  So every stage's delay moves slowly (kDecorrModSec, eight
+// rates), and Δφ keeps rotating.  The nominal lengths stay as above, so
+// the modulation is centred on the same mean group delay.
 static constexpr float kOutVec[ReverbTank::kLines] = { 1, 1, 1, 1, -1, -1, -1, -1 };
 static constexpr int kDecorrLeft48k[4] = { 113, 167, 241, 379 };
 static constexpr int kDecorrRight48k[4] = { 127, 181, 263, 329 };
@@ -50,6 +56,20 @@ static constexpr float kInputHpHz = 20.0f;
 // Second LFO runs at this ratio of the first so the eight line
 // modulations never realign.
 static constexpr float kLfo2Ratio = 1.3717f;
+
+// Decorrelator modulation: stage s of the eight (left 0–3, right 0–3
+// interleaved: L0 R0 L1 R1 …) runs at kDecorrModRateMinHz · r^s, r =
+// (max / min)^(1/7) = 1.152.  No two rates are in an exact small-integer
+// ratio; the nearest, r⁵ = 2.02 against 2:1, slips a whole cycle every
+// 1 / (0.057 Hz · 0.024) ≈ 730 s, so the stages do not lock into a repeating
+// pattern.  Start phases s/8 of a turn: the stages start spread over their
+// excursions, not all at the nominal lengths.
+static double decorrRate(int stage)
+{
+    const double ratio = static_cast<double>(ReverbTank::kDecorrModRateMaxHz)
+                         / static_cast<double>(ReverbTank::kDecorrModRateMinHz);
+    return ReverbTank::kDecorrModRateMinHz * std::pow(ratio, stage / 7.0);
+}
 
 static int nextPow2(int n)
 {
@@ -126,11 +146,24 @@ void ReverbTank::prepare(float sampleRate)
         d.buffer.assign(static_cast<size_t>(d.size), 0.0f);
         d.g = g;
     };
+    auto setupMod = [scale, sampleRate](ModDiffuser& d, int length48k, float g, int stage) {
+        d.length = std::max(2.0f, std::round(static_cast<float>(length48k) * scale));
+        // The allpass interpolator needs d ≥ 1.5 (n ≥ 1, reads strictly in
+        // the past); only binds below ≈ 4.2 kHz sample rate.
+        d.excursion = std::min(kDecorrModSec * sampleRate, d.length - 1.5f);
+        const int size = nextPow2(static_cast<int>(std::ceil(d.length + d.excursion)) + 4);
+        d.buffer.assign(static_cast<size_t>(size), 0.0f);
+        d.mask = size - 1;
+        d.g = g;
+        const double w = 6.283185307179586 * decorrRate(stage) * kDecorrControlSamples
+                         / sampleRate;
+        d.step = { static_cast<float>(std::cos(w)), static_cast<float>(std::sin(w)) };
+    };
     for (int k = 0; k < 4; ++k)
     {
         setup(diffusers_[static_cast<size_t>(k)], kDiffuserLengths48k[k], kDiffuserG[k]);
-        setup(decorrLeft_[static_cast<size_t>(k)], kDecorrLeft48k[k], kDecorrG);
-        setup(decorrRight_[static_cast<size_t>(k)], kDecorrRight48k[k], -kDecorrG);
+        setupMod(decorrLeft_[static_cast<size_t>(k)], kDecorrLeft48k[k], kDecorrG, 2 * k);
+        setupMod(decorrRight_[static_cast<size_t>(k)], kDecorrRight48k[k], -kDecorrG, 2 * k + 1);
     }
 
     // Input gain b: steady-state per-line output power is
@@ -165,12 +198,24 @@ void ReverbTank::reset()
         line.ic2 = 0.0f;
         line.apState = 0.0f;
     }
-    for (auto* chain : { &diffusers_, &decorrLeft_, &decorrRight_ })
-        for (Diffuser& d : *chain)
+    for (Diffuser& d : diffusers_)
+    {
+        std::fill(d.buffer.begin(), d.buffer.end(), 0.0f);
+        d.index = 0;
+    }
+    for (int k = 0; k < 4; ++k)
+        for (int side = 0; side < 2; ++side)
         {
+            ModDiffuser& d = (side == 0 ? decorrLeft_ : decorrRight_)[static_cast<size_t>(k)];
             std::fill(d.buffer.begin(), d.buffer.end(), 0.0f);
-            d.index = 0;
+            d.write = 0;
+            d.apState = 0.0f;
+            const double ph = 6.283185307179586 * (2 * k + side) / 8.0;
+            d.lfo = { static_cast<float>(std::cos(ph)), static_cast<float>(std::sin(ph)) };
+            d.delay = d.length + d.excursion * d.lfo.im;
+            d.delayStep = 0.0f;
         }
+    decorrCountdown_ = 0;
     inputHp_.reset();
     inputHp2_.reset();
     lfo1_ = { 1.0f, 0.0f }; // phase 0
@@ -190,6 +235,50 @@ float ReverbTank::Diffuser::process(float x)
     buffer[static_cast<size_t>(index)] = w;
     if (++index >= size)
         index = 0;
+    return delayed - g * w;
+}
+
+// Rotate a unit phasor by one step, then pull the magnitude back to 1 with
+// one Newton step for 1/√(re² + im²) (error O(ε²) per sample, so it cannot
+// drift).
+static inline void rotatePhasor(float& re, float& im, float stepRe, float stepIm)
+{
+    const float r = re * stepRe - im * stepIm;
+    const float i = re * stepIm + im * stepRe;
+    const float g = 1.5f - 0.5f * (r * r + i * i);
+    re = r * g;
+    im = i * g;
+}
+
+// First-order allpass (Thiran) fractional-delay read of a power-of-two
+// ring buffer whose next write goes to `write`.  Unit magnitude at every
+// frequency, so a modulated read loses no high end (a Hermite or linear
+// read of a moving delay is a time-varying low-pass — measured −4 dB at
+// 16 kHz in the tank's steady state).  d = N + Δ with Δ ∈ [0.5, 1.5)
+// keeps η = (1 − Δ)/(1 + Δ) in (−0.2, 0.33], well away from the pole at −1.
+static inline float thiranRead(const std::vector<float>& buffer, int mask, int write,
+                               float delay, float& apState)
+{
+    const int n = static_cast<int>(delay - 0.5f);
+    const float frac = delay - static_cast<float>(n);
+    const float eta = (1.0f - frac) / (1.0f + frac);
+    const float xa = buffer[static_cast<size_t>((write - n) & mask)];
+    const float xb = buffer[static_cast<size_t>((write - n - 1) & mask)];
+    const float y = eta * xa + xb - eta * apState;
+    apState = y;
+    return y;
+}
+
+float ReverbTank::ModDiffuser::process(float x)
+{
+    // Schroeder allpass with a moving delay: w = x + g·w[n−d(t)],
+    // y = w[n−d(t)] − g·w.  With the delay element itself an allpass the
+    // stage is (D − g)/(1 − g·D), an allpass, at every instant.
+    delay += delayStep;
+    const float delayed = thiranRead(buffer, mask, write, delay, apState);
+    const float w = x + g * delayed + kAntiDenormal;
+    buffer[static_cast<size_t>(write)] = w;
+    write = (write + 1) & mask;
     return delayed - g * w;
 }
 
@@ -288,20 +377,9 @@ void ReverbTank::updateGains()
 
 float ReverbTank::readLine(Line& line, float delay)
 {
-    // First-order allpass (Thiran) fractional delay: unit magnitude at every
-    // frequency, so a modulated line loses no high end per pass (a Hermite
-    // or linear read of a moving delay is a time-varying low-pass that
-    // compounds over the tail — measured −4 dB at 16 kHz in steady state).
-    // d = N + Δ with Δ ∈ [0.5, 1.5) keeps η = (1 − Δ)/(1 + Δ) in
-    // (−0.2, 0.33], well away from the pole at −1.
-    const int n = static_cast<int>(delay - 0.5f);
-    const float frac = delay - static_cast<float>(n);
-    const float eta = (1.0f - frac) / (1.0f + frac);
-    const float xa = line.buffer[static_cast<size_t>((line.write - n) & line.mask)];
-    const float xb = line.buffer[static_cast<size_t>((line.write - n - 1) & line.mask)];
-    const float y = eta * xa + xb - eta * line.apState;
-    line.apState = y;
-    return y;
+    // Allpass interpolation: a Hermite or linear read of a moving delay is
+    // a time-varying low-pass that compounds over the tail.
+    return thiranRead(line.buffer, line.mask, line.write, delay, line.apState);
 }
 
 std::pair<float, float> ReverbTank::process(float input)
@@ -342,16 +420,8 @@ std::pair<float, float> ReverbTank::process(float input)
     const float c1 = lfo1_.re;
     const float s2 = lfo2_.im;
     const float c2 = lfo2_.re;
-    // Rotate by one step, then pull the magnitude back to 1 with one Newton
-    // step for 1/√(re² + im²) (error O(ε²) per sample, so it cannot drift).
-    auto rotate = [](Phasor& p, const Phasor& step) {
-        const float re = p.re * step.re - p.im * step.im;
-        const float im = p.re * step.im + p.im * step.re;
-        const float g = 1.5f - 0.5f * (re * re + im * im);
-        p = { re * g, im * g };
-    };
-    rotate(lfo1_, lfoStep1_);
-    rotate(lfo2_, lfoStep2_);
+    rotatePhasor(lfo1_.re, lfo1_.im, lfoStep1_.re, lfoStep1_.im);
+    rotatePhasor(lfo2_.re, lfo2_.im, lfoStep2_.re, lfoStep2_.im);
     lfoOut_ = c2;
     const float mod[kLines] = { s1, c1, -s1, -c1, s2, c2, -s2, -c2 };
 
@@ -398,10 +468,23 @@ std::pair<float, float> ReverbTank::process(float input)
     }
     monoTap_ = tap * kInvSqrtN;
 
+    // Decorrelator LFOs at control rate: next knot, linear ramp toward it.
+    if (--decorrCountdown_ < 0)
+    {
+        decorrCountdown_ = kDecorrControlSamples - 1;
+        for (auto* chain : { &decorrLeft_, &decorrRight_ })
+            for (ModDiffuser& d : *chain)
+            {
+                rotatePhasor(d.lfo.re, d.lfo.im, d.step.re, d.step.im);
+                const float target = d.length + d.excursion * d.lfo.im;
+                d.delayStep = (target - d.delay) * (1.0f / kDecorrControlSamples);
+            }
+    }
+
     float left = monoTap_, right = monoTap_;
-    for (Diffuser& d : decorrLeft_)
+    for (ModDiffuser& d : decorrLeft_)
         left = d.process(left);
-    for (Diffuser& d : decorrRight_)
+    for (ModDiffuser& d : decorrRight_)
         right = d.process(right);
     return { left, right };
 }

@@ -145,15 +145,20 @@ TEST_CASE("ShimmerReverb: Input mode never stacks a second shift", "[shimmer]")
         oneVoice(rev, 12.0f, mode, 1.0f);
         rev.setModDepth(0.5f);
         const auto x = noiseBand(220.0f, static_cast<size_t>(4.0f * kSR));
-        std::vector<float> y(x.size());
-        for (size_t i = 0; i < y.size(); ++i)
+        std::vector<float> yl(x.size()), yr(x.size());
+        for (size_t i = 0; i < yl.size(); ++i)
         {
             auto [l, r] = rev.process(2.0f * x[i]);
-            y[i] = 0.5f * (l + r);
+            yl[i] = l;
+            yr[i] = r;
         }
+        // Band power summed over L and R (not of the mono sum, whose
+        // decorrelator comb moves differently in each band).
         const size_t from = static_cast<size_t>(2.0f * kSR);
-        const double first = bandPower(y, from, y.size(), 440.0, 300.0, kSR);
-        const double second = bandPower(y, from, y.size(), 880.0, 300.0, kSR);
+        const double first = bandPower(yl, from, yl.size(), 440.0, 300.0, kSR)
+                           + bandPower(yr, from, yr.size(), 440.0, 300.0, kSR);
+        const double second = bandPower(yl, from, yl.size(), 880.0, 300.0, kSR)
+                            + bandPower(yr, from, yr.size(), 880.0, 300.0, kSR);
         return 10.0 * std::log10(second / first);
     };
     const double input = ratio(Mode::Input);
@@ -183,13 +188,14 @@ static double unshiftedT60(Mode mode, float amount)
         const size_t burst = static_cast<size_t>(0.5f * kSR);
         const auto x = noiseBand(220.0f, burst, seed);
         const double t60 = ideath::HallReverb::sizeToT60(0.5f);
-        std::vector<float> y(burst + tailSamples(t60, kSR));
-        for (size_t i = 0; i < y.size(); ++i)
+        std::vector<float> yl(burst + tailSamples(t60, kSR)), yr(yl.size());
+        for (size_t i = 0; i < yl.size(); ++i)
         {
             auto [l, r] = rev.process(i < burst ? 2.0f * x[i] : 0.0f);
-            y[i] = 0.5f * (l + r);
+            yl[i] = l;
+            yr[i] = r;
         }
-        return t30(bandFilter(y, 220.0f, kSR), burst, kSR);
+        return stereoT30(bandFilter(yl, 220.0f, kSR), bandFilter(yr, 220.0f, kSR), burst, kSR);
     });
 }
 
@@ -223,15 +229,17 @@ TEST_CASE("ShimmerReverb: size sets the same low-frequency T60 as HallReverb", "
         const double m = seedAverage([&](uint32_t seed) {
             rev.reset();
             const size_t burst = static_cast<size_t>(0.5f * kSR);
-            std::vector<float> y(burst + tailSamples(t60, kSR));
+            std::vector<float> yl(burst + tailSamples(t60, kSR)), yr(yl.size());
             White w;
             w.s = seed;
-            for (size_t i = 0; i < y.size(); ++i)
+            for (size_t i = 0; i < yl.size(); ++i)
             {
                 auto [l, r] = rev.process(i < burst ? 0.5f * w.next() : 0.0f);
-                y[i] = 0.5f * (l + r);
+                yl[i] = l;
+                yr[i] = r;
             }
-            return t30(bandFilter(y, 250.0f, kSR), burst, kSR);
+            return stereoT30(bandFilter(yl, 250.0f, kSR), bandFilter(yr, 250.0f, kSR), burst,
+                             kSR);
         });
         INFO("size " << size << ": " << m << " s, nominal " << t60 << " s");
         REQUIRE(std::fabs(m / t60 - 1.0) <= kT60Tol);
@@ -451,15 +459,21 @@ TEST_CASE("ShimmerReverb: frozen tail never climbs in pitch", "[shimmer]")
             for (size_t i = 0; i < x.size(); ++i)
                 rev.process(2.0f * x[i]);
             rev.setFreeze(true);
-            std::vector<float> y(static_cast<size_t>(10.0f * kSR));
-            for (size_t i = 0; i < y.size(); ++i)
+            std::vector<float> yl(static_cast<size_t>(10.0f * kSR)), yr(yl.size());
+            for (size_t i = 0; i < yl.size(); ++i)
             {
                 auto [l, r] = rev.process(0.0f);
-                y[i] = 0.5f * (l + r);
+                yl[i] = l;
+                yr[i] = r;
             }
+            // Band power summed over L and R: the mono sum's decorrelator
+            // comb moves over the 9 s and swung a 440 Hz band by 2.3 dB.
             const size_t sec = static_cast<size_t>(kSR);
-            return 10.0 * std::log10(bandPower(y, y.size() - sec, y.size(), hz, 300.0, kSR)
-                                     / bandPower(y, 0, sec, hz, 300.0, kSR));
+            const size_t n = yl.size();
+            return 10.0 * std::log10((bandPower(yl, n - sec, n, hz, 300.0, kSR)
+                                      + bandPower(yr, n - sec, n, hz, 300.0, kSR))
+                                     / (bandPower(yl, 0, sec, hz, 300.0, kSR)
+                                        + bandPower(yr, 0, sec, hz, 300.0, kSR)));
         }, 6);
         INFO(hz << " Hz band: " << change << " dB over 9 s (mean of 6 seeds)");
         REQUIRE(change <= 1.0);
@@ -569,20 +583,23 @@ TEST_CASE("ShimmerReverb: Input-mode shift level does not depend on note length"
                            + static_cast<size_t>(k) * static_cast<size_t>(0.1f * kSR) / seeds;
         const size_t n = static_cast<size_t>(burstSec * kSR);
         const auto x = noiseBand(bandHz, n, 0x9E3779B9u * static_cast<uint32_t>(k + 1), kWideQ);
-        std::vector<float> y(onset + n + static_cast<size_t>(4.0f * kSR));
+        std::vector<float> yl(onset + n + static_cast<size_t>(4.0f * kSR)), yr(yl.size());
         double eIn = 0.0;
-        for (size_t i = 0; i < y.size(); ++i)
+        for (size_t i = 0; i < yl.size(); ++i)
         {
             const float in = (i >= onset && i < onset + n) ? 2.0f * x[i - onset] : 0.0f;
             eIn += static_cast<double>(in) * in;
             auto [l, r] = rev.process(in);
-            y[i] = 0.5f * (l + r);
+            yl[i] = l;
+            yr[i] = r;
         }
-        const auto band = bandFilter(bandFilter(y, measureHz, kSR, kWideQ), measureHz, kSR, kWideQ);
+        // Energy summed over L and R (the mono sum's decorrelator comb
+        // would weight the two bands differently).
         double e = 0.0;
-        for (float v : band)
-            e += static_cast<double>(v) * v;
-        return e / eIn;
+        for (const auto* y : { &yl, &yr })
+            for (float v : bandFilter(bandFilter(*y, measureHz, kSR, kWideQ), measureHz, kSR, kWideQ))
+                e += static_cast<double>(v) * v;
+        return 0.5 * e / eIn;
     };
     for (float semis : { 12.0f, 24.0f, -12.0f, -24.0f })
         for (float burstSec : { 0.05f, 0.15f, 0.4f, 3.0f })

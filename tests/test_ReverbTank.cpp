@@ -22,6 +22,8 @@ static constexpr double kLevelTolDb = 1.0;
 // (A sine burst excites only the one or two modes within its ≈ 1 Hz
 // bandwidth; under line modulation those beat and the T30 regression
 // scattered from −23 % to +65 % between neighbouring burst frequencies.)
+// L and R are measured separately and their T30s averaged (stereoT30:
+// the mono sum runs through the decorrelators' slowly moving comb).
 static double bandT60(float t60, float damp, float hz, float q = 2.0f)
 {
     return seedAverage([&](uint32_t seed) {
@@ -30,15 +32,16 @@ static double bandT60(float t60, float damp, float hz, float q = 2.0f)
         tank.setDecay(t60);
         tank.setDamp(damp);
         const size_t burst = static_cast<size_t>(0.5f * kSR);
-        std::vector<float> y(burst + tailSamples(t60, kSR));
+        std::vector<float> yl(burst + tailSamples(t60, kSR)), yr(yl.size());
         White w;
         w.s = seed;
-        for (size_t i = 0; i < y.size(); ++i)
+        for (size_t i = 0; i < yl.size(); ++i)
         {
             auto [l, r] = tank.process(i < burst ? 0.5f * w.next() : 0.0f);
-            y[i] = 0.5f * (l + r);
+            yl[i] = l;
+            yr[i] = r;
         }
-        return t30(bandFilter(y, hz, kSR, q), burst, kSR);
+        return stereoT30(bandFilter(yl, hz, kSR, q), bandFilter(yr, hz, kSR, q), burst, kSR);
     });
 }
 
@@ -59,15 +62,25 @@ TEST_CASE("ReverbTank: damp shortens the 4 kHz decay by the specified absorption
           "[reverbtank]")
 {
     // Spec: T60(4 kHz) = 60 / (60/T60 + kMaxDampDbPerSec · damp).
-    // Absorption grows with frequency, so the decay is measured in a
-    // 1/6-octave band (q = 8): across a 2/3-octave band it already spans
-    // 1.73 s (3.2 kHz) to 1.05 s (5 kHz) at damp 0.5 and the T30 of the
-    // mixture leans on the slow lower edge.
+    // Absorption grows with frequency, so the band T30 leans on the slow
+    // lower edge of the band: across a 2/3-octave band the T60 already
+    // spans 1.73 s (3.2 kHz) to 1.05 s (5 kHz) at damp 0.5.  The band must
+    // be narrow enough that even its lower edge is inside the tolerance.
+    // The damping's dB loss per pass grows at most as f⁴ (Butterworth
+    // slope above the corner; less below it), so at the lower −3 dB edge
+    // f·(1 − 1/(2q)) the absorption is ≥ (1 − 1/(2q))⁴ of its 4 kHz value.
+    // q = 32 → 0.939; at damp 1 the edge T60 is then 60 / (15 + 60·0.939)
+    // = 0.84 s vs 0.80 s, +5 %: the band cannot pull the T30 past 10 %.
+    // (q = 8 gives 0.78 → +24 % at the edge; the T30 landed at +9 … +11 %,
+    // straddling the tolerance.)  The two cascaded Q = 32 band-passes ring
+    // for 2Q / (2π·4 kHz) = 2.5 ms per e-fold — 18 ms T60, negligible
+    // against 0.8 s — and the 125 Hz band still holds ≈ 64 tank modes
+    // (modal density Σ L / sr = 0.51 modes/Hz).
     const float t60 = 4.0f;
     for (float damp : { 0.0f, 0.5f, 1.0f })
     {
         const double expect = 60.0 / (60.0 / t60 + ideath::ReverbTank::kMaxDampDbPerSec * damp);
-        const double hf = bandT60(t60, damp, 4000.0f, 8.0f);
+        const double hf = bandT60(t60, damp, 4000.0f, 32.0f);
         INFO("damp " << damp << ": 4 kHz T60 " << hf << " s, expected " << expect << " s");
         REQUIRE(hf > 0.0);
         REQUIRE(std::fabs(hf / expect - 1.0) <= kT60Tol);
@@ -142,36 +155,186 @@ TEST_CASE("ReverbTank: left and right are decorrelated", "[reverbtank]")
     REQUIRE(std::fabs(corr) <= 0.3);
 }
 
+// Sustained tonal input: one tap feeds both decorrelator chains, so for a
+// steady partial L and R are the same sine with a phase offset Δφ(f).  With
+// fixed chains ρ = cos Δφ(f) swings between −0.94 and +1 from one note to
+// the next; the chains' delays are slowly modulated so Δφ rotates and the
+// time-averaged correlation stays small at every pitch.
+//
+// Window: 2 s settle, then 17.6 s.  The tail is still building during the
+// window (a mode driven at resonance grows as 1 − e^(−δt), δ = 6.91 / T60
+// = 0.64 /s at size 0.75: −2.8 dB at 2 s), which weights the later part
+// more but cannot bias ρ or the L/R balance — both are ratios taken on the
+// same tail.  17.6 s is one full period of the slowest decorrelator LFO
+// (kDecorrModRateMinHz = 0.057 Hz → 17.54 s), so every stage completes its
+// whole excursion inside the average and the result does not depend on
+// where its phase started.
+struct SustainedStats
+{
+    double el = 0.0, er = 0.0, elr = 0.0;
+    double rho() const { return elr / std::sqrt(el * er); }
+    double balanceDb() const { return 10.0 * std::log10(er / el); }
+    // Power of the mono fold-down (L + R)/2 relative to the mean channel
+    // power: 0 dB coherent, −3 dB uncorrelated, −∞ for ρ = −1.
+    double monoDb() const { return 10.0 * std::log10((el + er + 2.0 * elr) / (2.0 * (el + er))); }
+};
+
+static SustainedStats sustainedTriangle(int midi)
+{
+    const float sr = 44100.0f;
+    const double f = 440.0 * std::pow(2.0, (midi - 69) / 12.0);
+    ideath::ReverbTank tank;
+    tank.prepare(sr);
+    tank.setDecay(0.5f * std::pow(60.0f, 0.75f)); // size 0.75
+    SustainedStats st;
+    const int settle = static_cast<int>(2.0f * sr);
+    const int total = settle + static_cast<int>(17.6f * sr);
+    for (int i = 0; i < total; ++i)
+    {
+        const float ph = static_cast<float>(std::fmod(f * i / sr, 1.0));
+        const float x = 0.3f * (ph < 0.5f ? 4.0f * ph - 1.0f : 3.0f - 4.0f * ph);
+        auto [l, r] = tank.process(x);
+        if (i >= settle)
+        {
+            st.el += static_cast<double>(l) * l;
+            st.er += static_cast<double>(r) * r;
+            st.elr += static_cast<double>(l) * r;
+        }
+    }
+    return st;
+}
+
 TEST_CASE("ReverbTank: sustained tones stay centred", "[reverbtank]")
 {
     // A sustained tone excites only a few modes, and a fixed output tap
     // gives each mode a random L/R projection: low notes leaned up to
-    // 15 dB to one side.  Per-note L/R energy difference over 6 s must stay
-    // within ±3 dB: an interchannel level difference of 3 dB moves a
-    // centred phantom image ≈ 10° — the edge of "still centred" for a
-    // drone.  Triangle tones every minor third, C2–C6, at size 0.75.
-    const float sr = 44100.0f;
+    // 15 dB to one side.  Per-note L/R energy difference must stay within
+    // ±3 dB: an interchannel level difference of 3 dB moves a centred
+    // phantom image ≈ 10° — the edge of "still centred" for a drone.
+    // Triangle tones every minor third, C2–C6, at size 0.75.
     for (int midi = 36; midi <= 84; midi += 3)
     {
-        const double f = 440.0 * std::pow(2.0, (midi - 69) / 12.0);
-        ideath::ReverbTank tank;
-        tank.prepare(sr);
-        tank.setDecay(0.5f * std::pow(60.0f, 0.75f));
-        double el = 0.0, er = 0.0;
-        for (int i = 0; i < static_cast<int>(8.0f * sr); ++i)
+        const SustainedStats st = sustainedTriangle(midi);
+        INFO("MIDI " << midi << ": R − L = " << st.balanceDb() << " dB");
+        REQUIRE(std::fabs(st.balanceDb()) <= 3.0);
+    }
+}
+
+TEST_CASE("ReverbTank: sustained tones are decorrelated at every pitch", "[reverbtank]")
+{
+    // Same notes and setup as the centring test.  |ρ̄| ≤ 0.3: the same
+    // Beranek bound as the noise test (1 − IACC ≥ 0.7 in the best-rated
+    // halls) — a held note's tail must read as wide as a noise tail.
+    //
+    // Mono fold-down: (L + R)/2 carries (1 + ρ̄)/2 of the channel power for
+    // equal channels; with |ρ̄| ≤ 0.3 that is ≥ 10·log10(0.35) = −4.56 dB.
+    // The fixed chains lost up to −12 dB on single notes in this setup
+    // (ρ = −0.87 at A4) — the partial all but vanished from a mono
+    // playback.  For unequal
+    // channels the cross term is smaller still (2√(P_L·P_R) ≤ P_L + P_R),
+    // so −4.56 dB holds for every note that passes the ρ bound.
+    for (int midi = 36; midi <= 84; midi += 3)
+    {
+        const SustainedStats st = sustainedTriangle(midi);
+        INFO("MIDI " << midi << ": rho " << st.rho() << ", mono " << st.monoDb()
+                     << " dB, R − L " << st.balanceDb() << " dB");
+        CHECK(std::fabs(st.rho()) <= 0.3);
+        CHECK(st.monoDb() >= 10.0 * std::log10(0.35));
+    }
+}
+
+// Amplitude-weighted RMS instantaneous-frequency deviation of x from f, in
+// cents.  f = sr / N exactly and the demodulation block is a whole number
+// of periods, so the image at −2f cancels inside each block (no ripple
+// from the demodulator itself).  Weighting each block-to-block phase step
+// by |z_k|·|z_k−1| keeps the meaningless phase jumps at amplitude nulls
+// (a sum of modes beating) from dominating.
+static double rmsCentsDeviation(const std::vector<float>& x, int period, double sr)
+{
+    const int block = period * static_cast<int>(std::ceil(0.008 * sr / period)); // ≈ 8 ms
+    const double w = 2.0 * kPi / period;
+    const double f = sr / period;
+    double prevRe = 0.0, prevIm = 0.0, sw = 0.0, swd = 0.0;
+    for (size_t b = 0; b + static_cast<size_t>(block) <= x.size(); b += static_cast<size_t>(block))
+    {
+        double re = 0.0, im = 0.0;
+        for (int n = 0; n < block; ++n)
         {
-            const float ph = static_cast<float>(std::fmod(f * i / sr, 1.0));
-            const float x = 0.3f * (ph < 0.5f ? 4.0f * ph - 1.0f : 3.0f - 4.0f * ph);
-            auto [l, r] = tank.process(x);
-            if (i >= static_cast<int>(2.0f * sr))
-            {
-                el += static_cast<double>(l) * l;
-                er += static_cast<double>(r) * r;
-            }
+            const double ph = w * static_cast<double>((b + static_cast<size_t>(n)) % static_cast<size_t>(period));
+            re += x[b + static_cast<size_t>(n)] * std::cos(ph);
+            im -= x[b + static_cast<size_t>(n)] * std::sin(ph);
         }
-        const double d = 10.0 * std::log10(er / el);
-        INFO("MIDI " << midi << " (" << f << " Hz): R − L = " << d << " dB");
-        REQUIRE(std::fabs(d) <= 3.0);
+        if (b > 0)
+        {
+            const double cr = re * prevRe + im * prevIm; // z · conj(z_prev)
+            const double ci = im * prevRe - re * prevIm;
+            const double dHz = std::atan2(ci, cr) / (2.0 * kPi * block / sr);
+            const double cents = 1200.0 * std::log2(1.0 + dHz / f);
+            const double weight = std::hypot(re, im) * std::hypot(prevRe, prevIm);
+            sw += weight;
+            swd += weight * cents * cents;
+        }
+        prevRe = re;
+        prevIm = im;
+    }
+    return std::sqrt(swd / sw);
+}
+
+TEST_CASE("ReverbTank: decorrelator modulation bends pitch no more than the tank's own",
+          "[reverbtank]")
+{
+    // Moving a delay changes the pitch through it by −dd/dt.  Paper upper
+    // bound: a peak excursion A at rate f_m moves the delay at up to
+    // 2π·f_m·A s/s — 2π · 0.153 Hz · 2 ms = 1.9e−3, 3.3 cents — and inside
+    // a Schroeder allpass the group delay near a peak is (1 + g)/(1 − g) =
+    // 4.7 times the line, so ≈ 16 cents per stage and ≈ 63 cents if all
+    // four stages peaked together.  The real deviation is measured here.
+    //
+    // Bound: the tank's lines are already modulated by design (kMaxModSec,
+    // default depth 0.5, rate 0.6 Hz), which bends a sustained tone's tail
+    // by some amount the reverb was accepted with.  The decorrelators may
+    // add at most as much again: decorrelator-only deviation (tank lines
+    // still, so the tap is an exact sine) ≤ the tank's own deviation at its
+    // defaults (measured on monoTap(), before the decorrelators).  Two
+    // independent deviations add in power, so the total stays within √2
+    // (+3 dB) of what the tank alone produced.
+    //
+    // Pitches: f = sr / N near C4, C6 and C♯8 (N = 168, 42, 10 → 262.5,
+    // 1050, 4410 Hz) — the deviation in cents does not depend on f to
+    // first order; three octaves apart check that.  Both channels: the
+    // chains run different rates (the fastest, 0.153 Hz, is on the right).
+    // 17.6 s after 2 s settle covers a full period of the slowest
+    // decorrelator LFO (17.54 s).
+    const double sr = 44100.0;
+    for (int period : { 168, 42, 10 })
+    {
+        enum class Out { Tap, Left, Right };
+        auto run = [&](float modDepth, Out out) {
+            ideath::ReverbTank tank;
+            tank.prepare(static_cast<float>(sr));
+            tank.setDecay(0.5f * std::pow(60.0f, 0.75f));
+            tank.setModDepth(modDepth);
+            const int settle = static_cast<int>(2.0 * sr);
+            std::vector<float> y(static_cast<size_t>(17.6 * sr));
+            for (int i = 0; i < settle + static_cast<int>(y.size()); ++i)
+            {
+                const float x = 0.3f * static_cast<float>(std::sin(2.0 * kPi * (i % period) / period));
+                auto [l, r] = tank.process(x);
+                if (i >= settle)
+                    y[static_cast<size_t>(i - settle)] =
+                        out == Out::Tap ? tank.monoTap() : (out == Out::Left ? l : r);
+            }
+            return rmsCentsDeviation(y, period, sr);
+        };
+        const double own = run(0.5f, Out::Tap);
+        const double decorrL = run(0.0f, Out::Left);
+        const double decorrR = run(0.0f, Out::Right);
+        const double both = run(0.5f, Out::Left);
+        INFO("f " << sr / period << " Hz: tank own " << own << " cents, decorrelators L "
+                  << decorrL << " / R " << decorrR << " cents, both (L) " << both
+                  << " cents (RMS)");
+        CHECK(decorrL <= own);
+        CHECK(decorrR <= own);
     }
 }
 

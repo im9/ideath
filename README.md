@@ -30,7 +30,7 @@ Named after a place in Richard Brautigan's *In Watermelon Sugar*.
 | **FMSynth** | Chiptune 4-operator FM synthesizer (8 algorithms, per-op ADSR/feedback, YM2612 / Sega Mega Drive spec) |
 | **DXFMSynth** | DX7-style 6-operator FM synth (32 algorithms from dexed/msfa table, per-op ratio/detune/level/ADSR/feedback/velocity/LFO sensitivities, global LFO with PMS/AMS routing). Not DX7-patch-compatible — uses ADSR envelopes and continuous-ratio parameters instead of DX7's quantized/rate-scaled originals |
 | **Reverb** | Freeverb stereo reverb (8 comb + 4 allpass, size/damp/freeze) |
-| **ReverbTank** | Shared reverb core: 8-line Householder FDN, exact T60, modulated lines, decorrelated stereo out |
+| **ReverbTank** | Shared reverb core: 8-line Householder FDN, exact T60, modulated lines, decorrelated stereo out (slowly modulated decorrelators: held notes stay wide and centred at every pitch) |
 | **HallReverb** | Hall reverb: pre-delay + ReverbTank (smooth, dense, modulated tail) |
 | **ShimmerReverb** | Shimmer reverb: ReverbTank + two pitch-shift voices (−24…+24 st), feedback or input mode |
 | **PeakLimiter** | Lookahead brickwall peak limiter (threshold/release/lookahead), attack ramped across the lookahead, linked stereo mode |
