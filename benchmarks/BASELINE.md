@@ -78,9 +78,9 @@ than comparing cross-host.
 | PeakLimiter::process ³             |           5.172 µs |       10.10 |
 | PeakLimiter::processStereo ³       |           5.633 µs |       11.00 |
 | Reverb::process                    |          11.359 µs |       22.19 |
-| HallReverb::process ³              |          22.075 µs |       43.12 |
-| ShimmerReverb::process             |          57.074 µs |      111.47 |
-| ShimmerReverb::process (two voices)|          72.760 µs |      142.11 |
+| HallReverb::process ³ ⁴            |          25.43 µs  |       49.67 |
+| ShimmerReverb::process ⁴           |          59.32 µs  |      115.86 |
+| ShimmerReverb::process (two voices) ⁴ |        77.33 µs  |      151.03 |
 | FMSynth::process                   |          19.455 µs |       38.00 |
 | DXFMSynth::process (algo 1)        |          55.222 µs |      107.86 |
 | DXFMSynth::process (algo 32 add)   |          29.006 µs |       56.65 |
@@ -266,3 +266,19 @@ than comparing cross-host.
   cost beyond run-to-run jitter.  `process()` is unchanged; its rows measured
   23.34 / 26.03 vs. 22.825 / 25.933 in the table (+2 %, +0.4 %), table rows
   kept.
+- ⁴ `ReverbTank` modulated output decorrelators (2026-11-17, same Apple M2
+  Max host, load average 3–4): origin/main and the branch built side by
+  side, three alternating runs, µs per 512-sample block.  `HallReverb` main
+  21.20 / 21.59 / 20.99 vs. branch 25.68 / 24.67 / 25.93 (+19.6 % on the
+  means); `ShimmerReverb` 56.22 / 54.48 / 55.82 vs. 60.57 / 58.59 / 58.80
+  (+6.9 %); two voices 76.15 / 71.81 / 74.06 vs. 78.66 / 75.55 / 77.77
+  (+4.5 %).  Rows replaced by the branch means.  (Measured at decorrelator
+  rates 0.071–0.191 Hz; the final 0.057–0.153 Hz changes only the LFO
+  step constants, not the work per sample.)  The eight decorrelator
+  stages now read through allpass interpolation at a moving delay.
+  Per-sample phasor LFOs cost +41 % on `HallReverb`; advancing them every
+  kDecorrControlSamples = 32 samples with a linear delay ramp brought it to
+  the figure above.  Replacing the interpolator's division with a series
+  and running the L and R chains in one loop changed nothing beyond jitter
+  (not kept).  The remaining ≈ 8 ns/sample is the eight interpolated reads
+  themselves.

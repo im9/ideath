@@ -1655,7 +1655,8 @@ TEST_CASE("GranularProcessor: setPitchOffset clamps to [-24, +24] semitones",
         gp.setPitchSpread(0.0f);
         gp.setPositionScatter(0.5f);
         gp.setPitchOffset(offset);
-        std::vector<float> out(2048);
+        // Keeps samples 20000 … 22049: 2050 of them.
+        std::vector<float> out(22050 - 20000);
         for (int i = 0; i < 22050; ++i)
         {
             gp.writeSample(sineAt(i, 100.0f, kSampleRate));

@@ -17,10 +17,15 @@ namespace ideath {
 /// All eight line reads are LFO-modulated through first-order allpass
 /// interpolation (unit magnitude, so modulation costs no high end).
 /// Stereo output: one tap reads all eight lines (a Hadamard sign row), then
-/// two different allpass decorrelator chains (equal total length, 18.75 ms)
-/// make L and R.  Allpasses have unit magnitude, so both channels carry the
-/// same energy at every frequency (a held note stays centred), while their
-/// different dispersion decorrelates the diffuse tail.
+/// two different allpass decorrelator chains (equal mean total length,
+/// 18.75 ms) make L and R.  Allpasses have unit magnitude, so both channels
+/// carry the same energy at every frequency (a held note stays centred),
+/// while their different dispersion decorrelates the diffuse tail.  Each
+/// decorrelator stage's delay is slowly modulated (±kDecorrModSec, its own
+/// rate in kDecorrModRateMinHz … kDecorrModRateMaxHz), so the L/R phase
+/// difference of a sustained partial keeps rotating: a held note's tail is
+/// as wide as a noise tail on average at every pitch, instead of anywhere
+/// from ρ = −0.94 to +1 depending on where the note falls.
 ///
 /// Level: the input gain is set so that a stationary broadband input comes
 /// out at the same RMS as it went in when T60 = kUnityT60.  The steady-state
@@ -51,6 +56,44 @@ public:
 
     /// Peak line-read excursion at modDepth = 1 (seconds).
     static constexpr float kMaxModSec = 0.001f;
+
+    /// Peak delay excursion of each output decorrelator stage (seconds).
+    /// Fixed chains give a sustained partial ρ = cos Δφ(f); rotating Δφ
+    /// averages that toward 0, but only if the rotation spans enough phase
+    /// at the lowest notes: the phase a stage can add at f is ≈ 2π·f·A·k
+    /// (k between 0.2 and 4.7, the Schroeder group-delay range at g = 0.65).
+    /// Simulated time-averaged |ρ| for sustained sines 41–7040 Hz: 1 ms
+    /// leaves 0.49 at 41–55 Hz, 2 ms brings the worst note to 0.16
+    /// (measured in the tank: ≤ 0.23 for triangle tones C2–C6).  The
+    /// shortest stage (113 samples at 48 kHz, 2.35 ms) keeps ≥ 0.35 ms;
+    /// below ≈ 4.2 kHz sample rate the excursion is cut to keep every
+    /// stage's delay ≥ 1.5 samples.
+    static constexpr float kDecorrModSec = 0.002f;
+
+    /// Decorrelator modulation rates (Hz): eight stages spread
+    /// geometrically between these, alternating between the chains.  The
+    /// fastest sets the pitch bend: a delay moving at 2π·f_m·A s/s shifts
+    /// the pitch by that ratio — 1.9e−3 (3.3 cents at the stage's mean
+    /// group delay) at 0.153 Hz.  The bend is held to no more than the
+    /// tank's own line modulation bends a held note at its defaults; at
+    /// 0.071–0.191 Hz the right chain measured 4.85 cents RMS at 4.4 kHz
+    /// against the tank's 4.19, and the bend scales with the rate, so the
+    /// range was scaled by 0.8.  The time-averaged ρ depends on the
+    /// excursion, not the rate, so it is unchanged.  The slowest rate sets
+    /// how long a held note takes to go through its whole decorrelation:
+    /// one period, 17.5 s.
+    static constexpr float kDecorrModRateMinHz = 0.057f;
+    static constexpr float kDecorrModRateMaxHz = 0.153f;
+
+    /// The decorrelator LFOs advance every this many samples; the delays
+    /// ramp linearly in between.  A sine of excursion A sampled every K
+    /// samples and joined by straight lines is off by at most
+    /// A·(ω·K)²/8: 96 · (2π · 0.153 · 32 / 48000)² / 8 = 5e−6 samples at
+    /// 48 kHz — nothing next to the 96-sample swing — and the pitch bend
+    /// (the slope) is held for K / sr = 0.7 ms at a time, moving in steps
+    /// of A·ω²·K / sr = 1.2e−6 s/s (0.002 cents).  Saves eight phasor
+    /// rotations per sample.
+    static constexpr int kDecorrControlSamples = 32;
 
     /// Freeze transition time (seconds).  Entering or leaving freeze moves
     /// the line gains, the damping mix-out and the input gain together,
@@ -167,6 +210,37 @@ private:
         float process(float x);
     };
 
+    // LFOs (line and decorrelator modulation) as rotating unit phasors
+    // (re = cos, im = sin of the phase): one complex multiply per sample
+    // instead of sin + cos, renormalised every sample so the magnitude
+    // cannot drift.
+    struct Phasor
+    {
+        float re = 1.0f;
+        float im = 0.0f;
+    };
+
+    // Output decorrelator stage: Schroeder allpass whose delay moves
+    // slowly around `length`, read through the same first-order allpass
+    // interpolator as the lines (unit magnitude, so the stage stays an
+    // allpass at every delay).  `lfo` advances by `step` once per
+    // kDecorrControlSamples; `delay` ramps toward it by `delayStep`.
+    struct ModDiffuser
+    {
+        std::vector<float> buffer;
+        int mask = 0;
+        int write = 0;
+        float length = 0.0f;    // nominal delay (samples)
+        float excursion = 0.0f; // peak delay excursion (samples)
+        float g = 0.0f;
+        float apState = 0.0f;
+        float delay = 0.0f;
+        float delayStep = 0.0f;
+        Phasor lfo;
+        Phasor step;
+        float process(float x);
+    };
+
     void updateGains();
     float readLine(Line& line, float delay);
 
@@ -183,14 +257,6 @@ private:
     float powerGain_ = 1.0f;
     float pinkPowerGain_ = 1.0f;
     float modSamples_ = 0.0f;
-    // Line-modulation LFOs as rotating unit phasors (re = cos, im = sin of
-    // the phase): one complex multiply per sample instead of sin + cos,
-    // renormalised every sample so the magnitude cannot drift.
-    struct Phasor
-    {
-        float re = 1.0f;
-        float im = 0.0f;
-    };
     Phasor lfo1_;
     Phasor lfo2_;
     Phasor lfoStep1_;
@@ -204,8 +270,9 @@ private:
     DcBlocker inputHp2_;
     std::array<Line, kLines> lines_;
     std::array<Diffuser, 4> diffusers_;
-    std::array<Diffuser, 4> decorrLeft_;
-    std::array<Diffuser, 4> decorrRight_;
+    int decorrCountdown_ = 0;
+    std::array<ModDiffuser, 4> decorrLeft_;
+    std::array<ModDiffuser, 4> decorrRight_;
 };
 
 } // namespace ideath

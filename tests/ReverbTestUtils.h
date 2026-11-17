@@ -145,6 +145,23 @@ inline double t30(const std::vector<float>& y, size_t from, double sr)
     return -60.0 / slope;
 }
 
+// Decay of a stereo reverb output: T30 of each channel, averaged.  Not
+// the T30 of the mono sum (L + R)/2: the ReverbTank decorrelators rotate
+// the L/R phase of every partial slowly, so the mono sum runs through a
+// moving comb whose gain at a band can rise or fall across a short tail —
+// and with reset() between seeds it moves the same way every seed, so the
+// seed average cannot remove it (measured: HallReverb size 0, 250 Hz,
+// mono −17.6 % against L +0.9 % / R +1.1 %).  Each channel alone is the
+// tank tap through an allpass, which keeps the decay.  Returns 0 (as t30
+// does) if either channel never reaches −35 dB.
+inline double stereoT30(const std::vector<float>& l, const std::vector<float>& r,
+                        size_t from, double sr)
+{
+    const double tl = t30(l, from, sr);
+    const double tr = t30(r, from, sr);
+    return (tl > 0.0 && tr > 0.0) ? 0.5 * (tl + tr) : 0.0;
+}
+
 // Mean of `measure(seed)` over `n` noise seeds.  A single noise-burst T30
 // scatters by σ ≈ 5 % at T60 = 0.5 s (16-seed measurement: a 2/3-octave
 // band holds only ~60 modes of random amplitude); ISO 3382-1 averages
